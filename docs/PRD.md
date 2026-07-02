@@ -4,7 +4,7 @@
 |---|---|
 | Status | Draft v0.1 |
 | Date | 2026-07-02 |
-| Owner | Chidi Jones |
+| Owner | Maxwell |
 | Related | [ARCHITECTURE.md](ARCHITECTURE.md) · [ROADMAP.md](ROADMAP.md) · [DECISIONS.md](DECISIONS.md) |
 
 ## 1. Vision

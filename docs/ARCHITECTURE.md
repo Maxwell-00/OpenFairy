@@ -214,7 +214,7 @@ Retention: session logs and memory are permanent until user-deleted (FR-4 contro
 ```
 fairy/
 ├── packages/
-│   ├── protocol/          # event envelope, client protocol types, versioning (zero deps)
+│   ├── protocol/          # event envelope, client protocol types, versioning (no workspace deps; ajv + ulid only)
 │   ├── config/            # layered config loader + schema validation (defaults → user → workspace → session)
 │   ├── kernel/            # turn runner, context engine, tool router, affect engine
 │   ├── model-gateway/     # transports, registry, role router, normalization, perception

@@ -14,13 +14,13 @@ jobs:
         os: [ubuntu-latest, windows-latest]
 
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v5
+      - name: Install pnpm (version from root package.json "packageManager")
+        uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v5
         with:
           node-version: 24
           cache: pnpm
-      - name: Enable corepack
-        run: corepack enable
       - name: Install
         run: pnpm install --frozen-lockfile
       - name: Lint

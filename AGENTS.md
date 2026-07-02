@@ -1,4 +1,4 @@
-# AGENTS.md — Fairy
+# CLAUDE.md — Fairy
 
 Personal AI companion (ZZZ-Fairy-inspired): resident gateway, any OpenAI-compatible LLM as the brain, memory, low-latency voice, sandboxed execution, bounded persona. Single owner (Chidi), zh/en bilingual.
 
@@ -33,15 +33,17 @@ Personal AI companion (ZZZ-Fairy-inspired): resident gateway, any OpenAI-compati
 
 ## Platform notes (owner's environment)
 
-- Development happens on **Windows** (repo at `E:\Claude_Projects\Projects\Fairy`). Gateway/kernel/CLI develop and run fine on native Node on Windows.
+- Development happens on **Windows** (repo at `E:\Claude_Projects\Projects\Fairy\OpenFairy`; the parent `Fairy\` folder holds non-repo design inputs — see Repo layout notes). Gateway/kernel/CLI develop and run fine on native Node on Windows.
 - **Docker Desktop (WSL2 backend) is required** the moment the sandbox runner or local speech workers enter play; owner is willing to move to WSL Ubuntu if CLI/deployment ergonomics demand it. Prefer solutions that work in both; avoid bash-only scripts in the repo (use cross-platform npm scripts or node scripts).
 - Watch for CRLF/path-separator issues; `.gitattributes` with LF normalization at M0.
 
 ## Repo layout notes
 
-- `docs-zh/` — **owner-maintained Chinese translations. Never edit.** When you change an English doc, tell the owner which files need re-translation.
-- `ChatGPT_Suggestions/` — external review inputs; read-only reference, already fully absorbed into ADR-014…020.
-- `.auto-memory/` (workspace root) — Claude session memory; not project content.
+- **This repo (`OpenFairy/`) is the single canonical home of code AND docs.** The `docs/` set here is normative; do not create copies elsewhere.
+- The **parent folder** (`E:\Claude_Projects\Projects\Fairy\`) holds non-repo material — never treat it as part of the codebase:
+  - `ChatGPT_Suggestions/` — external review inputs; read-only, fully absorbed into ADR-014…020.
+  - `docs-zh/` — owner-maintained Chinese translations. **Never edit.** When you change an English doc, tell the owner which files need re-translation.
+  - `.auto-memory/` — Claude session memory; not project content.
 
 ## What to build next (in order)
 

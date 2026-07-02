@@ -46,7 +46,7 @@ All events use the envelope of ARCHITECTURE §6 (`v, id, sid, turn, ts, actor, t
 
 ## 3. Evolution rules
 
-- Additive changes (new optional fields, new types) bump minor; readers MUST ignore unknown fields and unknown `x.*`/newer-minor types gracefully.
+- Additive changes (new optional fields, new types) bump minor; readers MUST ignore unknown fields and unknown `x.*`/newer-minor types gracefully. Precisely: an unknown type (extension or newer-minor, i.e. any non-registered name) is validated at **envelope level only**, preserved verbatim in the log, and skipped by consumers — never an error.
 - Breaking changes bump the envelope `v` (major) and require a migration script + one release of dual-write.
 - Every type ships **golden fixtures** (valid + invalid samples). Client SDKs, the replay debugger, and the conformance kit all test against the same fixtures — one source of truth for "what Fairy speaks."
 

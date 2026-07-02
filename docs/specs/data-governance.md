@@ -13,7 +13,7 @@ Once Fairy mixes a local main brain, overseas research models, third-party visio
 Every artifact, memory record, attachment, tool result, and turn input carries:
 
 - **Sensitivity:** `public < internal < personal < secret`
-- **Residency:** `local-only | region-restricted(<set>) | global-ok` — a **hard constraint**, closed enum, nothing else is a residency value.
+- **Residency:** `local-only | region-restricted | global-ok` — a **hard constraint**, closed enum, nothing else is a residency value. The region *set* is not part of the label: `region-restricted` resolves against `governance.home_regions` config at enforcement time (§4). (Wire value confirmed by protocol schemas.)
 
 **Routing hints are not labels.** Preferences like "use the local model when you can" live in a separate, non-gating field:
 
