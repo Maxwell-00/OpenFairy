@@ -1,0 +1,57 @@
+models: []
+roles: {}
+governance:
+  home_regions: []
+  categories:
+    credentials:
+      sensitivity: secret
+      residency: local-only
+      patterns: []
+    health:
+      sensitivity: personal
+      residency: local-only
+      patterns: []
+    finance:
+      sensitivity: personal
+      residency: local-only
+      patterns: []
+    relationship:
+      sensitivity: personal
+      patterns: []
+    workplace:
+      sensitivity: internal
+      patterns: []
+    legal:
+      sensitivity: personal
+      residency: local-only
+      patterns: []
+research:
+  engines: []
+  budgets:
+    default:
+      searches: 12
+      fetches: 20
+    deep:
+      searches: 40
+      fetches: 60
+  domains:
+    deny: []
+    prefer_primary: []
+    grade_overrides: {}
+  snapshots:
+    ttl: 7d
+    max_store: 5GB
+    evict: LRU
+sandbox:
+  image: fairy-sandbox:ubuntu-lts
+  default_profile: safe
+  profiles:
+    safe:
+      network: none
+      filesystem: workspace
+    dev:
+      network: allowlist
+      filesystem: workspace
+    trusted:
+      network: full
+      filesystem: declared-host-paths

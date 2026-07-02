@@ -1,0 +1,27 @@
+{
+  "name": "fairy",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@11.7.0",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "lint": "eslint . --max-warnings=0",
+    "typecheck": "pnpm -r typecheck",
+    "test": "pnpm -r test",
+    "dep-check": "dependency-cruiser --config .dependency-cruiser.cjs packages apps",
+    "doctor": "node scripts/run-doctor.mjs"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.39.1",
+    "@types/node": "^24.10.1",
+    "dependency-cruiser": "^17.3.0",
+    "eslint": "^9.39.1",
+    "json-schema-to-typescript": "^15.0.4",
+    "typescript": "^5.9.3",
+    "typescript-eslint": "^8.46.4",
+    "vitest": "^4.0.6"
+  }
+}

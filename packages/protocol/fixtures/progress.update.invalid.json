@@ -1,0 +1,19 @@
+{
+  "actor": "agent",
+  "id": "evt_01J00000000000000000000009",
+  "labels": {
+    "residency": "global-ok",
+    "sensitivity": "internal"
+  },
+  "payload": {
+    "detail": "Fetching sources",
+    "pct": 2,
+    "stage": "search"
+  },
+  "provenance": "agent",
+  "sid": "ses_01J00000000000000000000000",
+  "ts": "2026-07-02T10:00:00.000Z",
+  "turn": 1,
+  "type": "progress.update",
+  "v": 1
+}

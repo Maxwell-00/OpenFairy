@@ -1,0 +1,95 @@
+{
+  "$id": "https://openfairy.local/schemas/protocol/v1/turn.delta.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": true,
+  "properties": {
+    "actor": {
+      "pattern": "^(user|agent|tool|system|subagent:[A-Za-z0-9_.-]+|workflow:[A-Za-z0-9_.-]+)$",
+      "type": "string"
+    },
+    "id": {
+      "pattern": "^evt_[0-9A-HJKMNP-TV-Z]{26}$",
+      "type": "string"
+    },
+    "labels": {
+      "additionalProperties": true,
+      "properties": {
+        "residency": {
+          "enum": [
+            "local-only",
+            "region-restricted",
+            "global-ok"
+          ],
+          "type": "string"
+        },
+        "sensitivity": {
+          "enum": [
+            "public",
+            "internal",
+            "personal",
+            "secret"
+          ],
+          "type": "string"
+        }
+      },
+      "required": [
+        "sensitivity",
+        "residency"
+      ],
+      "type": "object"
+    },
+    "payload": {
+      "additionalProperties": true,
+      "properties": {
+        "index": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "text": {
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "text"
+      ],
+      "type": "object"
+    },
+    "provenance": {
+      "pattern": "^(user|agent|tool:[^\\s]+|web:[^\\s]+|mcp:[^\\s]+)$",
+      "type": "string"
+    },
+    "sid": {
+      "pattern": "^ses_[0-9A-HJKMNP-TV-Z]{26}$",
+      "type": "string"
+    },
+    "ts": {
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$",
+      "type": "string"
+    },
+    "turn": {
+      "minimum": 0,
+      "type": "integer"
+    },
+    "type": {
+      "const": "turn.delta"
+    },
+    "v": {
+      "const": 1
+    }
+  },
+  "required": [
+    "v",
+    "id",
+    "sid",
+    "turn",
+    "ts",
+    "actor",
+    "type",
+    "provenance",
+    "labels",
+    "payload"
+  ],
+  "title": "Fairy protocol event turn.delta v1",
+  "type": "object"
+}

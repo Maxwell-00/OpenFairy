@@ -1,0 +1,28 @@
+{
+  "actor": "agent",
+  "id": "evt_01J00000000000000000000023",
+  "labels": {
+    "residency": "global-ok",
+    "sensitivity": "internal"
+  },
+  "payload": {
+    "claim": "Fairy uses event logs.",
+    "grade": "official",
+    "retrieved_at": "2026-07-02T10:00:00.000Z",
+    "source": {
+      "snapshot_ref": "snap-1",
+      "span": {
+        "end": 42,
+        "start": 0
+      },
+      "title": "Fairy",
+      "url": "https://example.test/fairy"
+    }
+  },
+  "provenance": "web:example.test",
+  "sid": "ses_01J00000000000000000000000",
+  "ts": "2026-07-02T10:00:00.000Z",
+  "turn": 1,
+  "type": "citation.recorded",
+  "v": 1
+}

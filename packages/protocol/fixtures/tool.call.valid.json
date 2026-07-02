@@ -1,0 +1,21 @@
+{
+  "actor": "tool",
+  "id": "evt_01J00000000000000000000005",
+  "labels": {
+    "residency": "global-ok",
+    "sensitivity": "internal"
+  },
+  "payload": {
+    "args": {
+      "q": "Fairy"
+    },
+    "call_id": "call-1",
+    "tool": "web.search"
+  },
+  "provenance": "agent",
+  "sid": "ses_01J00000000000000000000000",
+  "ts": "2026-07-02T10:00:00.000Z",
+  "turn": 1,
+  "type": "tool.call",
+  "v": 1
+}

@@ -1,0 +1,181 @@
+{
+  "event_types": [
+    {
+      "family": "turn",
+      "type": "turn.input"
+    },
+    {
+      "family": "turn",
+      "type": "turn.delta"
+    },
+    {
+      "family": "turn",
+      "type": "turn.final"
+    },
+    {
+      "family": "turn",
+      "type": "turn.interrupted"
+    },
+    {
+      "family": "reasoning",
+      "type": "reasoning.delta"
+    },
+    {
+      "family": "tool",
+      "type": "tool.call"
+    },
+    {
+      "family": "tool",
+      "type": "tool.result"
+    },
+    {
+      "family": "approval",
+      "type": "approval.request"
+    },
+    {
+      "family": "approval",
+      "type": "approval.resolved"
+    },
+    {
+      "family": "progress",
+      "type": "progress.update"
+    },
+    {
+      "family": "plan",
+      "type": "plan.proposed"
+    },
+    {
+      "family": "plan",
+      "type": "plan.step.updated"
+    },
+    {
+      "family": "plan",
+      "type": "plan.deviation"
+    },
+    {
+      "family": "loop",
+      "type": "loop.iteration.started"
+    },
+    {
+      "family": "loop",
+      "type": "loop.iteration.completed"
+    },
+    {
+      "family": "loop",
+      "type": "loop.stopped"
+    },
+    {
+      "family": "workflow",
+      "type": "workflow.checkpoint"
+    },
+    {
+      "family": "workflow",
+      "type": "workflow.run.updated"
+    },
+    {
+      "family": "workflow",
+      "type": "workflow.approval.parked"
+    },
+    {
+      "family": "memory",
+      "type": "memory.written"
+    },
+    {
+      "family": "memory",
+      "type": "memory.superseded"
+    },
+    {
+      "family": "memory",
+      "type": "memory.deleted"
+    },
+    {
+      "family": "memory",
+      "type": "memory.gate.decision"
+    },
+    {
+      "family": "research",
+      "type": "citation.recorded"
+    },
+    {
+      "family": "research",
+      "type": "snapshot.created"
+    },
+    {
+      "family": "research",
+      "type": "sourceset.reviewed"
+    },
+    {
+      "family": "speech",
+      "type": "speech.asr.partial"
+    },
+    {
+      "family": "speech",
+      "type": "speech.asr.final"
+    },
+    {
+      "family": "speech",
+      "type": "speech.tts.chunk"
+    },
+    {
+      "family": "speech",
+      "type": "speech.mark"
+    },
+    {
+      "family": "affect",
+      "type": "affect.updated"
+    },
+    {
+      "family": "artifact",
+      "type": "artifact.created"
+    },
+    {
+      "family": "governance",
+      "type": "label.declassified"
+    },
+    {
+      "family": "governance",
+      "type": "route.denied"
+    },
+    {
+      "family": "governance",
+      "type": "budget.updated"
+    },
+    {
+      "family": "governance",
+      "type": "audit.appended"
+    },
+    {
+      "family": "delivery",
+      "type": "delivery.sent"
+    },
+    {
+      "family": "delivery",
+      "type": "delivery.digested"
+    },
+    {
+      "family": "delivery",
+      "type": "delivery.collapsed"
+    },
+    {
+      "family": "delivery",
+      "type": "delivery.expired"
+    },
+    {
+      "family": "session",
+      "type": "session.created"
+    },
+    {
+      "family": "session",
+      "type": "session.compacted"
+    },
+    {
+      "family": "session",
+      "type": "session.resumed"
+    },
+    {
+      "family": "error",
+      "type": "error"
+    }
+  ],
+  "protocol_version": 1
+}

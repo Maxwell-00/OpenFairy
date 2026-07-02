@@ -1,0 +1,21 @@
+{
+  "actor": "agent",
+  "id": "evt_01J00000000000000000000041",
+  "labels": {
+    "residency": "global-ok",
+    "sensitivity": "internal"
+  },
+  "payload": {
+    "range": {
+      "end_turn": 10,
+      "start_turn": 1
+    },
+    "summary_ref": "artifacts/compaction-1.md"
+  },
+  "provenance": "agent",
+  "sid": "ses_01J00000000000000000000000",
+  "ts": "2026-07-02T10:00:00.000Z",
+  "turn": 1,
+  "type": "session.compacted",
+  "v": 1
+}

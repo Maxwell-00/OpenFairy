@@ -1,0 +1,96 @@
+{
+  "$id": "https://openfairy.local/schemas/protocol/v1/speech.mark.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": true,
+  "properties": {
+    "actor": {
+      "pattern": "^(user|agent|tool|system|subagent:[A-Za-z0-9_.-]+|workflow:[A-Za-z0-9_.-]+)$",
+      "type": "string"
+    },
+    "id": {
+      "pattern": "^evt_[0-9A-HJKMNP-TV-Z]{26}$",
+      "type": "string"
+    },
+    "labels": {
+      "additionalProperties": true,
+      "properties": {
+        "residency": {
+          "enum": [
+            "local-only",
+            "region-restricted",
+            "global-ok"
+          ],
+          "type": "string"
+        },
+        "sensitivity": {
+          "enum": [
+            "public",
+            "internal",
+            "personal",
+            "secret"
+          ],
+          "type": "string"
+        }
+      },
+      "required": [
+        "sensitivity",
+        "residency"
+      ],
+      "type": "object"
+    },
+    "payload": {
+      "additionalProperties": true,
+      "properties": {
+        "mark_id": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "position_ms": {
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "mark_id",
+        "position_ms"
+      ],
+      "type": "object"
+    },
+    "provenance": {
+      "pattern": "^(user|agent|tool:[^\\s]+|web:[^\\s]+|mcp:[^\\s]+)$",
+      "type": "string"
+    },
+    "sid": {
+      "pattern": "^ses_[0-9A-HJKMNP-TV-Z]{26}$",
+      "type": "string"
+    },
+    "ts": {
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$",
+      "type": "string"
+    },
+    "turn": {
+      "minimum": 0,
+      "type": "integer"
+    },
+    "type": {
+      "const": "speech.mark"
+    },
+    "v": {
+      "const": 1
+    }
+  },
+  "required": [
+    "v",
+    "id",
+    "sid",
+    "turn",
+    "ts",
+    "actor",
+    "type",
+    "provenance",
+    "labels",
+    "payload"
+  ],
+  "title": "Fairy protocol event speech.mark v1",
+  "type": "object"
+}

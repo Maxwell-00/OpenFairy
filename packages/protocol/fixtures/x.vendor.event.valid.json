@@ -1,0 +1,17 @@
+{
+  "actor": "agent",
+  "id": "evt_01J00000000000000000000000",
+  "labels": {
+    "residency": "global-ok",
+    "sensitivity": "public"
+  },
+  "payload": {
+    "vendor_payload": true
+  },
+  "provenance": "agent",
+  "sid": "ses_01J00000000000000000000000",
+  "ts": "2026-07-02T10:00:00.000Z",
+  "turn": 1,
+  "type": "x.vendor.event",
+  "v": 1
+}

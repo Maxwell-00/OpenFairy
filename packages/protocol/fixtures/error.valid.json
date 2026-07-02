@@ -1,0 +1,19 @@
+{
+  "actor": "agent",
+  "id": "evt_01J00000000000000000000043",
+  "labels": {
+    "residency": "global-ok",
+    "sensitivity": "internal"
+  },
+  "payload": {
+    "class": "ToolError",
+    "message": "Command failed",
+    "retryable": false
+  },
+  "provenance": "agent",
+  "sid": "ses_01J00000000000000000000000",
+  "ts": "2026-07-02T10:00:00.000Z",
+  "turn": 1,
+  "type": "error",
+  "v": 1
+}

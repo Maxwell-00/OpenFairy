@@ -1,0 +1,27 @@
+{
+  "actor": "tool",
+  "id": "evt_01J00000000000000000000006",
+  "labels": {
+    "residency": "global-ok",
+    "sensitivity": "internal"
+  },
+  "payload": {
+    "artifacts": [],
+    "call_id": "call-1",
+    "labels": {
+      "residency": "global-ok",
+      "sensitivity": "public"
+    },
+    "provenance": "tool:web.search",
+    "result": {
+      "items": []
+    },
+    "status": "ok"
+  },
+  "provenance": "agent",
+  "sid": "ses_01J00000000000000000000000",
+  "ts": "2026-07-02T10:00:00.000Z",
+  "turn": 1,
+  "type": "tool.result",
+  "v": 1
+}

@@ -1,0 +1,21 @@
+{
+  "actor": "agent",
+  "id": "evt_01J00000000000000000000038",
+  "labels": {
+    "residency": "global-ok",
+    "sensitivity": "internal"
+  },
+  "payload": {
+    "channel": "desktop",
+    "class": "critical",
+    "created_at": "2026-07-02T08:00:00.000Z",
+    "reason": "Task failed",
+    "source_workflow": "overnight"
+  },
+  "provenance": "agent",
+  "sid": "ses_01J00000000000000000000000",
+  "ts": "2026-07-02T10:00:00.000Z",
+  "turn": 1,
+  "type": "delivery.collapsed",
+  "v": 1
+}
