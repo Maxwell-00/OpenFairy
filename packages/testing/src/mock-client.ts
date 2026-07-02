@@ -63,11 +63,30 @@ export class MockFairyClient {
     return this.waitFor((event) => event.type === "session.created");
   }
 
+  async attachSession(sid: string, replayFrom?: string): Promise<void> {
+    this.#socket.send(JSON.stringify({
+      op: "session.attach",
+      ...(replayFrom ? { replay_from: replayFrom } : {}),
+      sid
+    }));
+    await this.waitFor((event) => event.sid === sid && event.type === "session.created");
+  }
+
   async sendTurnInput(sid: string, payload: TurnInputPayload): Promise<readonly EventEnvelope[]> {
     const before = this.#events.length;
-    this.#socket.send(JSON.stringify({ op: "turn.input", payload, sid }));
+    this.#socket.send(JSON.stringify({ content: payload.content, op: "turn.input", sid, ...(payload.channel ? { channel: payload.channel } : {}) }));
     await this.waitFor((event) => event.sid === sid && event.type === "turn.final");
     return this.#events.slice(before);
+  }
+
+  sendTurnInputNoWait(sid: string, payload: TurnInputPayload): number {
+    const before = this.#events.length;
+    this.#socket.send(JSON.stringify({ content: payload.content, op: "turn.input", sid, ...(payload.channel ? { channel: payload.channel } : {}) }));
+    return before;
+  }
+
+  async cancelTurn(sid: string): Promise<void> {
+    this.#socket.send(JSON.stringify({ op: "turn.cancel", sid }));
   }
 
   waitFor(predicate: (event: EventEnvelope) => boolean, timeoutMs = 5000): Promise<EventEnvelope> {
@@ -133,5 +152,17 @@ export const assertM0TurnShape = (events: readonly EventEnvelope[]): void => {
   const turns = new Set(events.map((event) => event.turn));
   if (turns.size !== 1 || !turns.has(1)) {
     throw new Error(`unexpected M0 turn numbers: ${[...turns].join(",")}`);
+  }
+};
+
+export const assertM1TurnCompletes = (events: readonly EventEnvelope[]): void => {
+  const types = events.map((event) => event.type);
+  if (!types.includes("turn.input") || !types.includes("turn.final")) {
+    throw new Error(`unexpected M1 turn shape: ${types.join(",")}`);
+  }
+
+  const final = events.find((event) => event.type === "turn.final");
+  if (!final || !final.payload || typeof final.payload !== "object" || !("usage" in final.payload)) {
+    throw new Error("M1 turn.final is missing usage");
   }
 };

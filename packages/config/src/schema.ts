@@ -44,7 +44,7 @@ export const configSchema = {
           },
           tags: { type: "array", items: { type: "string" } }
         },
-        required: ["id", "transport", "model"]
+        required: ["id", "transport", "base_url", "model", "data_clearance"]
       }
     },
     roles: {
@@ -80,9 +80,18 @@ export const configSchema = {
             }
           },
           required: ["token"]
-        }
+        },
+        watchdog_s: { type: "number", exclusiveMinimum: 0 }
       },
       required: ["port", "auth"]
+    },
+    kernel: {
+      type: "object",
+      additionalProperties: true,
+      properties: {
+        system_prompt: { type: "string", minLength: 1 }
+      },
+      required: ["system_prompt"]
     },
     governance: {
       type: "object",
@@ -141,5 +150,5 @@ export const configSchema = {
       required: ["image", "default_profile", "profiles"]
     }
   },
-  required: ["models", "roles", "gateway", "governance", "research", "sandbox"]
+  required: ["models", "roles", "gateway", "kernel", "governance", "research", "sandbox"]
 } as const;

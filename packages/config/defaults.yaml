@@ -2,8 +2,11 @@ models: []
 roles: {}
 gateway:
   port: 8787
+  watchdog_s: 60
   auth:
     token: dev-token
+kernel:
+  system_prompt: "You are Fairy, Chidi's helpful bilingual AI companion. Be concise, capable, and honest."
 governance:
   home_regions: []
   categories:

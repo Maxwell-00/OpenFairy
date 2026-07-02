@@ -38,12 +38,28 @@ importers:
       '@fairy/config':
         specifier: workspace:*
         version: link:../../packages/config
+      '@fairy/protocol':
+        specifier: workspace:*
+        version: link:../../packages/protocol
+      ws:
+        specifier: ^8.18.3
+        version: 8.21.0
+    devDependencies:
+      '@types/ws':
+        specifier: ^8.18.1
+        version: 8.18.1
 
   apps/gateway:
     dependencies:
       '@fairy/config':
         specifier: workspace:*
         version: link:../../packages/config
+      '@fairy/kernel':
+        specifier: workspace:*
+        version: link:../../packages/kernel
+      '@fairy/model-gateway':
+        specifier: workspace:*
+        version: link:../../packages/model-gateway
       '@fairy/protocol':
         specifier: workspace:*
         version: link:../../packages/protocol
@@ -66,11 +82,22 @@ importers:
         specifier: ^2.8.1
         version: 2.9.0
 
-  packages/kernel: {}
+  packages/kernel:
+    dependencies:
+      '@fairy/model-gateway':
+        specifier: workspace:*
+        version: link:../model-gateway
+      '@fairy/protocol':
+        specifier: workspace:*
+        version: link:../protocol
 
   packages/memory: {}
 
-  packages/model-gateway: {}
+  packages/model-gateway:
+    devDependencies:
+      '@fairy/testing':
+        specifier: workspace:*
+        version: link:../testing
 
   packages/orchestrator: {}
 

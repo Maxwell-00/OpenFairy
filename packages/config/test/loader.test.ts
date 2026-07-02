@@ -114,6 +114,7 @@ describe("loadConfig", () => {
         "models:",
         "  - id: local-glm",
         "    transport: openai-chat",
+        "    base_url: http://127.0.0.1:8000/v1",
         "    model: glm-4.7",
         "    api_key_ref: secret://vllm",
         "    data_clearance:",
@@ -138,8 +139,12 @@ describe("loadConfig", () => {
         "models:",
         "  - id: cloud",
         "    transport: openai-chat",
+        "    base_url: https://api.example.test/v1",
         "    model: gpt",
-        "    api_key_ref: not-a-secret-ref"
+        "    api_key_ref: not-a-secret-ref",
+        "    data_clearance:",
+        "      max_sensitivity: internal",
+        "      residency: [global-ok]"
       ].join("\n")
     );
 

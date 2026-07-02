@@ -1,3 +1,5 @@
+import { TurnRunner, type TurnRunnerHistory } from "@fairy/kernel";
+import { createModelGateway, type ChatMessage } from "@fairy/model-gateway";
 import {
   createEventId,
   createSessionId,
@@ -12,17 +14,21 @@ import {
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import { WebSocket, WebSocketServer } from "ws";
 
-import { runDevEchoResponder } from "./dev/echo-responder.js";
 import { EventLog } from "./event-log.js";
 import type { GatewayRuntimeConfig } from "./config.js";
 
-export const gatewayVersion = "0.0.0-m0";
+export const gatewayVersion = "0.1.0-m1";
 
 const defaultLabels: Labels = { sensitivity: "internal", residency: "global-ok" };
 
 interface SessionState {
   readonly sid: `ses_${string}`;
+  createdAt: string;
+  history: ChatMessage[];
+  lastActive: string;
+  title?: string;
   turn: number;
+  turnCount: number;
 }
 
 interface ClientMessage {
@@ -30,7 +36,10 @@ interface ClientMessage {
   readonly sid?: unknown;
   readonly title?: unknown;
   readonly payload?: unknown;
+  readonly content?: unknown;
+  readonly channel?: unknown;
   readonly event?: unknown;
+  readonly replay_from?: unknown;
 }
 
 const json = (response: ServerResponse, status: number, body: unknown): void => {
@@ -58,6 +67,75 @@ const queryToken = (request: IncomingMessage): string | undefined => {
 const supportedEventFamilies = (): string[] =>
   [...new Set(eventRegistry.map((entry) => entry.family))].sort();
 
+const isSessionId = (value: unknown): value is `ses_${string}` =>
+  typeof value === "string" && /^ses_[0-9A-HJKMNP-TV-Z]{26}$/.test(value);
+
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  Boolean(value && typeof value === "object" && !Array.isArray(value));
+
+const textFromContent = (content: unknown): string => {
+  if (!Array.isArray(content)) {
+    return "";
+  }
+  return content
+    .map((part) => (isRecord(part) && part.kind === "text" && typeof part.text === "string" ? part.text : ""))
+    .filter((part) => part.length > 0)
+    .join("\n");
+};
+
+const payloadText = (payload: unknown): string =>
+  isRecord(payload) ? textFromContent(payload.content) : "";
+
+const turnPayload = (message: ClientMessage): Record<string, unknown> => {
+  if (isRecord(message.payload)) {
+    return message.payload;
+  }
+
+  if (Array.isArray(message.content)) {
+    return {
+      ...(typeof message.channel === "string" ? { channel: message.channel } : {}),
+      content: message.content
+    };
+  }
+
+  if (typeof message.content === "string") {
+    return {
+      ...(typeof message.channel === "string" ? { channel: message.channel } : {}),
+      content: [{ kind: "text", text: message.content }]
+    };
+  }
+
+  throw new Error("turn.input requires content");
+};
+
+const createEmptySession = (sid: `ses_${string}`): SessionState => {
+  const now = new Date().toISOString();
+  return {
+    createdAt: now,
+    history: [],
+    lastActive: now,
+    sid,
+    turn: 0,
+    turnCount: 0
+  };
+};
+
+const hasOpenTurn = (events: readonly EventEnvelope[]): EventEnvelope | undefined => {
+  const inputs = new Map<number, EventEnvelope>();
+  const terminal = new Set<number>();
+  for (const event of events) {
+    if (event.type === "turn.input") {
+      inputs.set(event.turn, event);
+    }
+    if (event.type === "turn.final" || event.type === "turn.interrupted" || event.type === "error") {
+      terminal.add(event.turn);
+    }
+  }
+
+  const openTurns = [...inputs.values()].filter((event) => !terminal.has(event.turn));
+  return openTurns.at(-1);
+};
+
 export class MinimalGateway {
   readonly #config: GatewayRuntimeConfig;
   readonly #log: EventLog;
@@ -66,16 +144,23 @@ export class MinimalGateway {
   readonly #startedAt = Date.now();
   readonly #sessions = new Map<string, SessionState>();
   readonly #connections = new Set<WebSocket>();
+  readonly #subscriptions = new Map<string, Set<WebSocket>>();
+  readonly #runner: TurnRunner;
 
   constructor(config: GatewayRuntimeConfig) {
     this.#config = config;
     this.#log = new EventLog(config.dataDir);
+    this.#runner = new TurnRunner({
+      modelGateway: createModelGateway(config.config),
+      systemPrompt: config.systemPrompt
+    });
     this.#server = createServer((request, response) => this.#handleHttp(request, response));
     this.#wss = new WebSocketServer({ server: this.#server });
     this.#wss.on("connection", (socket, request) => this.#handleConnection(socket, request));
   }
 
   async start(): Promise<{ host: string; port: number }> {
+    await this.#recoverSessions();
     await new Promise<void>((resolve, reject) => {
       this.#server.once("error", reject);
       this.#server.listen(this.#config.port, this.#config.host, () => {
@@ -99,6 +184,71 @@ export class MinimalGateway {
     await this.#log.flush();
   }
 
+  async #recoverSessions(): Promise<void> {
+    for (const sid of await this.#log.listSessionIds()) {
+      const events = await this.#log.readSessionEvents(sid);
+      const open = hasOpenTurn(events);
+      if (open) {
+        const interrupted = this.#makeEnvelope({
+          actor: "system",
+          payload: {
+            last_heard_mark: events.at(-1)?.id ?? "gateway_restart",
+            reason: "gateway_restart"
+          },
+          provenance: "agent",
+          sid,
+          turn: open.turn,
+          type: "turn.interrupted"
+        });
+        await this.#log.append(interrupted);
+        events.push(interrupted);
+      }
+
+      this.#sessions.set(sid, this.#stateFromEvents(sid, events));
+    }
+  }
+
+  #stateFromEvents(sid: `ses_${string}`, events: readonly EventEnvelope[]): SessionState {
+    const state = createEmptySession(sid);
+    for (const event of events) {
+      this.#recordEventInState(state, event);
+    }
+    return state;
+  }
+
+  #recordEventInState(state: SessionState, event: EventEnvelope): void {
+    state.turn = Math.max(state.turn, event.turn);
+    state.lastActive = event.ts;
+
+    if (event.type === "session.created") {
+      if (isRecord(event.payload)) {
+        state.createdAt = typeof event.payload.created_at === "string" ? event.payload.created_at : event.ts;
+        if (typeof event.payload.title === "string") {
+          state.title = event.payload.title;
+        } else {
+          delete state.title;
+        }
+      }
+      return;
+    }
+
+    if (event.type === "turn.input") {
+      state.turnCount += 1;
+      const text = payloadText(event.payload);
+      if (text) {
+        state.history.push({ content: text, role: "user" });
+      }
+      return;
+    }
+
+    if (event.type === "turn.final") {
+      const text = payloadText(event.payload);
+      if (text) {
+        state.history.push({ content: text, role: "assistant" });
+      }
+    }
+  }
+
   #handleHttp(request: IncomingMessage, response: ServerResponse): void {
     if (request.method !== "GET") {
       json(response, 405, { error: "method_not_allowed" });
@@ -119,13 +269,35 @@ export class MinimalGateway {
     if (path === "/meta") {
       json(response, 200, {
         capabilities: {
-          echo_responder: true,
-          kernel: false,
-          model_calls: false,
-          session_resume: false
+          echo_responder: false,
+          kernel: true,
+          model_calls: true,
+          session_attach: true,
+          session_resume: true,
+          turn_cancel: true
         },
         protocol_version: protocolVersion,
         supported_event_families: supportedEventFamilies()
+      });
+      return;
+    }
+
+    if (path === "/sessions") {
+      const token = queryToken(request) ?? bearerToken(request);
+      if (token !== this.#config.authToken) {
+        json(response, 401, { error: "unauthorized" });
+        return;
+      }
+      json(response, 200, {
+        sessions: [...this.#sessions.values()]
+          .map((session) => ({
+            created: session.createdAt,
+            id: session.sid,
+            last_active: session.lastActive,
+            title: session.title ?? null,
+            turn_count: session.turnCount
+          }))
+          .sort((left, right) => right.last_active.localeCompare(left.last_active))
       });
       return;
     }
@@ -141,7 +313,12 @@ export class MinimalGateway {
     }
 
     this.#connections.add(socket);
-    socket.on("close", () => this.#connections.delete(socket));
+    socket.on("close", () => {
+      this.#connections.delete(socket);
+      for (const subscribers of this.#subscriptions.values()) {
+        subscribers.delete(socket);
+      }
+    });
     socket.on("message", (data) => {
       void this.#handleMessage(socket, data.toString()).catch((error: unknown) => {
         void this.#emitError(socket, undefined, String((error as Error).message ?? error));
@@ -157,11 +334,19 @@ export class MinimalGateway {
       return;
     }
 
+    if (message.op === "session.attach") {
+      if (!isSessionId(message.sid)) {
+        throw new Error("session.attach requires sid");
+      }
+      await this.#attachSession(socket, message.sid, typeof message.replay_from === "string" ? message.replay_from : undefined);
+      return;
+    }
+
     if (message.op === "turn.input") {
-      if (typeof message.sid !== "string") {
+      if (!isSessionId(message.sid)) {
         throw new Error("turn.input requires sid");
       }
-      await this.#acceptTurnInput(socket, message.sid, message.payload);
+      await this.#acceptTurnInput(socket, message.sid, turnPayload(message));
       return;
     }
 
@@ -170,22 +355,38 @@ export class MinimalGateway {
       if (!result.ok || result.event.type !== "turn.input") {
         throw new Error("event op requires a valid turn.input envelope");
       }
-      await this.#acceptTurnInput(socket, result.event.sid, result.event.payload);
+      await this.#acceptTurnInput(socket, result.event.sid as `ses_${string}`, result.event.payload);
       return;
     }
 
+    if (message.op === "turn.cancel") {
+      if (!isSessionId(message.sid)) {
+        throw new Error("turn.cancel requires sid");
+      }
+      const cancelled = this.#runner.cancel(message.sid);
+      if (!cancelled) {
+        this.#sendRaw(socket, { cancelled, ok: true, op: "turn.cancel", sid: message.sid });
+      }
+      return;
+    }
+
+    if (isSessionId(message.sid)) {
+      await this.#emitError(socket, message.sid, `unknown op ${String(message.op)}`);
+      return;
+    }
     throw new Error(`unknown op ${String(message.op)}`);
   }
 
   async #createSession(socket: WebSocket, title?: string): Promise<EventEnvelope> {
     const sid = createSessionId();
-    this.#sessions.set(sid, { sid, turn: 0 });
+    this.#sessions.set(sid, createEmptySession(sid));
+    this.#subscribe(socket, sid);
 
-    return this.#emit(socket, {
+    return this.#emit({
       actor: "system",
       payload: {
         created_at: new Date().toISOString(),
-        title: title ?? "M0 session"
+        title: title ?? "Fairy session"
       },
       provenance: "agent",
       sid,
@@ -194,45 +395,84 @@ export class MinimalGateway {
     });
   }
 
-  async #acceptTurnInput(socket: WebSocket, sid: string, payload: unknown): Promise<void> {
+  async #attachSession(socket: WebSocket, sid: `ses_${string}`, replayFrom?: string): Promise<void> {
     const state = this.#sessions.get(sid);
     if (!state) {
       throw new Error(`unknown session ${sid}`);
     }
 
-    state.turn += 1;
-    const input = await this.#emit(socket, {
+    this.#subscribe(socket, sid);
+    const events = await this.#log.readSessionEvents(sid);
+    const start = replayFrom
+      ? Math.max(0, events.findIndex((event) => event.id >= replayFrom))
+      : 0;
+    for (const event of events.slice(start)) {
+      this.#sendEvent(socket, event);
+    }
+    state.lastActive = events.at(-1)?.ts ?? state.lastActive;
+  }
+
+  async #acceptTurnInput(socket: WebSocket, sid: `ses_${string}`, payload: unknown): Promise<void> {
+    const state = this.#sessions.get(sid);
+    if (!state) {
+      throw new Error(`unknown session ${sid}`);
+    }
+
+    this.#subscribe(socket, sid);
+    if (this.#runner.isRunning(sid)) {
+      await this.#emitError(socket, sid, "A turn is already in flight for this session.");
+      return;
+    }
+
+    const text = payloadText(payload);
+    if (!text) {
+      await this.#emitError(socket, sid, "turn.input content must include at least one text part.");
+      return;
+    }
+
+    const history: TurnRunnerHistory = { messages: [...state.history] };
+    const turn = state.turn + 1;
+    await this.#emit({
       actor: "user",
       payload: payload as Record<string, unknown>,
       provenance: "user",
-      sid: state.sid,
-      turn: state.turn,
+      sid,
+      turn,
       type: "turn.input"
     });
 
-    await runDevEchoResponder(input, (type, responsePayload) =>
-      this.#emit(socket, {
-        actor: "agent",
-        payload: responsePayload,
-        provenance: "agent",
-        sid: state.sid,
-        turn: state.turn,
-        type
-      })
-    );
+    await this.#runner.runTurn({
+      emit: (event) =>
+        this.#emit({
+          actor: event.type === "error" || event.type === "turn.interrupted" ? "system" : "agent",
+          payload: event.payload,
+          provenance: "agent",
+          sid,
+          turn,
+          type: event.type
+        }).then(() => undefined),
+      history,
+      input: text,
+      labels: defaultLabels,
+      sid,
+      turn
+    });
   }
 
-  async #emit(
-    socket: WebSocket,
-    event: {
-      actor: Actor;
-      payload: Record<string, unknown>;
-      provenance: Provenance;
-      sid: `ses_${string}`;
-      turn: number;
-      type: string;
-    }
-  ): Promise<EventEnvelope> {
+  #subscribe(socket: WebSocket, sid: `ses_${string}`): void {
+    const subscribers = this.#subscriptions.get(sid) ?? new Set<WebSocket>();
+    subscribers.add(socket);
+    this.#subscriptions.set(sid, subscribers);
+  }
+
+  #makeEnvelope(event: {
+    actor: Actor;
+    payload: Record<string, unknown>;
+    provenance: Provenance;
+    sid: `ses_${string}`;
+    turn: number;
+    type: string;
+  }): EventEnvelope {
     const envelope: EventEnvelope = {
       actor: event.actor,
       id: createEventId(),
@@ -250,24 +490,50 @@ export class MinimalGateway {
     if (!result.ok) {
       throw new Error(result.issues.map((issue) => `${issue.path}: ${issue.message}`).join("; "));
     }
+    return envelope;
+  }
 
+  async #emit(event: {
+    actor: Actor;
+    payload: Record<string, unknown>;
+    provenance: Provenance;
+    sid: `ses_${string}`;
+    turn: number;
+    type: string;
+  }): Promise<EventEnvelope> {
+    const envelope = this.#makeEnvelope(event);
     await this.#log.append(envelope);
-    if (socket.readyState === WebSocket.OPEN) {
-      socket.send(JSON.stringify(envelope));
+    const state = this.#sessions.get(envelope.sid);
+    if (state) {
+      this.#recordEventInState(state, envelope);
+    }
+
+    for (const subscriber of this.#subscriptions.get(envelope.sid) ?? []) {
+      this.#sendEvent(subscriber, envelope);
     }
 
     return envelope;
   }
 
+  #sendEvent(socket: WebSocket, event: EventEnvelope): void {
+    if (socket.readyState === WebSocket.OPEN) {
+      socket.send(JSON.stringify(event));
+    }
+  }
+
+  #sendRaw(socket: WebSocket, value: unknown): void {
+    if (socket.readyState === WebSocket.OPEN) {
+      socket.send(JSON.stringify(value));
+    }
+  }
+
   async #emitError(socket: WebSocket, sid: `ses_${string}` | undefined, message: string): Promise<void> {
     if (!sid) {
-      if (socket.readyState === WebSocket.OPEN) {
-        socket.send(JSON.stringify({ error: message }));
-      }
+      this.#sendRaw(socket, { error: message });
       return;
     }
 
-    await this.#emit(socket, {
+    await this.#emit({
       actor: "system",
       payload: { class: "UserError", message, retryable: false },
       provenance: "agent",

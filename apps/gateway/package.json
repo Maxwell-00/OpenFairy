@@ -11,6 +11,8 @@
   },
   "dependencies": {
     "@fairy/config": "workspace:*",
+    "@fairy/kernel": "workspace:*",
+    "@fairy/model-gateway": "workspace:*",
     "@fairy/protocol": "workspace:*",
     "ws": "^8.18.3"
   },

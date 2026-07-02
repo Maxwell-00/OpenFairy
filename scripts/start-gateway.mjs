@@ -25,6 +25,8 @@ const run = (command, args) => {
 
 run("pnpm", ["--filter", "@fairy/protocol", "build"]);
 run("pnpm", ["--filter", "@fairy/config", "build"]);
+run("pnpm", ["--filter", "@fairy/model-gateway", "build"]);
+run("pnpm", ["--filter", "@fairy/kernel", "build"]);
 run("pnpm", ["--filter", "@fairy/gateway", "build"]);
 
 const forwardedArgs = process.argv.slice(2);

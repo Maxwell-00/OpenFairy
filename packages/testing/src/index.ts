@@ -1,9 +1,12 @@
 import { eventTypes } from "@fairy/protocol";
 
+export { MockOpenAIChatServer } from "./mock-openai.js";
+export type { MockOpenAIScript, MockOpenAIUsage } from "./mock-openai.js";
 export {
   acceptIncomingEvent,
   assertM0TurnShape,
   assertMonotonicUlidsPerSession,
+  assertM1TurnCompletes,
   assertSchemaValidStream,
   MockFairyClient
 } from "./mock-client.js";

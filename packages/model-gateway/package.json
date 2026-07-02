@@ -3,9 +3,13 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
-  "exports": { ".": { "types": "./src/index.ts", "import": "./src/index.ts" } },
+  "exports": { ".": { "types": "./src/index.ts", "import": "./dist/index.js" } },
   "scripts": {
+    "build": "tsc -p tsconfig.build.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "vitest run"
+    "test": "pnpm --filter @fairy/protocol build && vitest run"
+  },
+  "devDependencies": {
+    "@fairy/testing": "workspace:*"
   }
 }

@@ -13,6 +13,11 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@fairy/config": "workspace:*"
+    "@fairy/config": "workspace:*",
+    "@fairy/protocol": "workspace:*",
+    "ws": "^8.18.3"
+  },
+  "devDependencies": {
+    "@types/ws": "^8.18.1"
   }
 }

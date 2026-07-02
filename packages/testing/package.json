@@ -11,7 +11,7 @@
   },
   "scripts": {
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "vitest run"
+    "test": "pnpm --filter @fairy/protocol build && vitest run"
   },
   "dependencies": {
     "@fairy/protocol": "workspace:*",

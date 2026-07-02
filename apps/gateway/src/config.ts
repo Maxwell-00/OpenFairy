@@ -9,8 +9,10 @@ export interface GatewayCliOptions {
 
 export interface GatewayRuntimeConfig {
   readonly authToken: string;
+  readonly config: Record<string, unknown>;
   readonly dataDir: string;
   readonly host: "127.0.0.1";
+  readonly systemPrompt: string;
   readonly port: number;
 }
 
@@ -28,6 +30,14 @@ const readAuthToken = (gateway: Record<string, unknown>): string => {
     return "dev-token";
   }
   return auth.token;
+};
+
+const readSystemPrompt = (config: Record<string, unknown>): string => {
+  const kernel = config.kernel;
+  if (isRecord(kernel) && typeof kernel.system_prompt === "string") {
+    return kernel.system_prompt;
+  }
+  return "You are Fairy, Chidi's helpful bilingual AI companion. Be concise, capable, and honest.";
 };
 
 const resolveSecretRefForDevGateway = (ref: string, env: NodeJS.ProcessEnv): string => {
@@ -98,8 +108,10 @@ export const loadGatewayConfig = (
     authToken: configuredToken.startsWith("secret://")
       ? resolveSecretRefForDevGateway(configuredToken, env)
       : configuredToken,
+    config: loaded.config,
     dataDir: resolve(options.dataDir ?? configuredDataDir),
     host: "127.0.0.1",
+    systemPrompt: readSystemPrompt(loaded.config),
     port: options.port ?? configuredPort
   };
 };
