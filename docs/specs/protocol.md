@@ -87,6 +87,7 @@ Client→gateway messages are small **op frames**, not envelopes; only the gatew
 | `session.create` | `{op}` | Creates session, emits `session.created` |
 | `turn.input` | `{op, sid, content}` | Constructs + logs + streams the canonical `turn.input` envelope, then the response stream |
 | `event` | `{op, event}` | Pass-through for pre-built envelopes; validated; **M0 accepts only `turn.input`** (accepted set will be advertised via `/meta` capabilities as it widens) |
+| `turn.cancel` | `{op, sid}` | Aborts the in-flight turn for the session: model stream aborted, `turn.interrupted` emitted with a cancellation mark; no-op (ack only) if nothing is in flight. Normative since M1-01 |
 
 Gateway→client is the **raw canonical envelope stream** — no wrapper. Auth at WS connect: `Authorization: Bearer <token>` or `?token=` query; missing/invalid → close `4401` with no stream (details: sandbox-security §7). Unknown ops → `error` event; connection stays open.
 
