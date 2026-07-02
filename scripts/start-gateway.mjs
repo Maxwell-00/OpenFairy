@@ -1,43 +1,22 @@
-import { spawn, spawnSync } from "node:child_process";
+// Source-first launcher: the whole repo runs from TypeScript via tsx until the
+// M5 packaging milestone (see CLAUDE.md "Internal packages resolve source-first").
+// No dist builds at runtime — dist/dual-world resolution caused CI-only failures twice.
+import { spawn } from "node:child_process";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-
-const run = (command, args) => {
-  const result =
-    process.platform === "win32"
-      ? spawnSync("cmd.exe", ["/d", "/s", "/c", [command, ...args].join(" ")], {
-          cwd: repoRoot,
-          encoding: "utf8",
-          stdio: "inherit"
-        })
-      : spawnSync(command, args, {
-          cwd: repoRoot,
-          encoding: "utf8",
-          stdio: "inherit"
-        });
-
-  if (result.status !== 0) {
-    process.exit(result.status ?? 1);
-  }
-};
-
-run("pnpm", ["--filter", "@fairy/protocol", "build"]);
-run("pnpm", ["--filter", "@fairy/config", "build"]);
-run("pnpm", ["--filter", "@fairy/model-gateway", "build"]);
-run("pnpm", ["--filter", "@fairy/kernel", "build"]);
-run("pnpm", ["--filter", "@fairy/gateway", "build"]);
 
 const forwardedArgs = process.argv.slice(2);
 if (forwardedArgs[0] === "--") {
   forwardedArgs.shift();
 }
 
-const gateway = spawn(process.execPath, ["apps/gateway/dist/bin/gateway.js", ...forwardedArgs], {
-  cwd: repoRoot,
-  stdio: "inherit"
-});
+const gateway = spawn(
+  process.execPath,
+  ["--import", "tsx", "apps/gateway/src/bin/gateway.ts", ...forwardedArgs],
+  { cwd: repoRoot, stdio: "inherit" }
+);
 
 const forward = (signal) => {
   if (!gateway.killed) {

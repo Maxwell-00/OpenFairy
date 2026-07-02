@@ -38,3 +38,11 @@ Configure a real provider in `%APPDATA%\fairy\fairy.yaml`, then `pnpm --filter @
 ## Verdict
 
 Implementation quality high; the CI failure was a pre-existing latent defect that this task's growth exposed, now removed class-wide. After owner push: expect green both OS → **M1-01 closed**, M1-02 (tools + permission engine v1) is next.
+
+---
+
+## Addendum (post-push CI failure #2, same day)
+
+The source-first exports fix surfaced its runtime counterpart: the e2e spawns the gateway as a **plain `node` child process** via `scripts/start-gateway.mjs`, which built five packages and ran `dist/` — but dist-compiled code now resolved `@fairy/config` to `src/index.ts`, whose TS-style `./errors.js` import specifiers plain Node cannot map to `.ts` files (`ERR_MODULE_NOT_FOUND`, both OS).
+
+**Resolution — one world, enforced:** all execution (dev, tests, e2e children, daemon) runs from source via `tsx` (`node --import tsx <entry>.ts`). `scripts/start-gateway.mjs` rewritten as a thin tsx spawner (no builds — also removes ~5 tsc runs from every e2e test); `scripts/run-cli.mjs` added (generic: `pnpm fairy chat|sessions|doctor`); `run-doctor.mjs` delegates. `tsx` added as root devDependency (owner runs `pnpm add -D -w tsx` to write the lockfile). Convention hardened in CLAUDE.md: spawning plain `node` on `.ts` or on `dist/` is a bug until M5 packaging introduces a deliberate build step.

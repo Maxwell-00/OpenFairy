@@ -12,7 +12,8 @@
     "typecheck": "pnpm -r typecheck",
     "test": "pnpm -r test",
     "dep-check": "dependency-cruiser --config .dependency-cruiser.cjs packages apps",
-    "doctor": "node scripts/run-doctor.mjs"
+    "doctor": "node scripts/run-doctor.mjs",
+    "fairy": "node scripts/run-cli.mjs"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.1",

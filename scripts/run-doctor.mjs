@@ -1,25 +1,15 @@
+// Thin wrapper kept for the root `pnpm doctor` script; delegates to run-cli.mjs.
 import { spawnSync } from "node:child_process";
+import { dirname, join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 
-const run = (command, args) => {
-  const result =
-    process.platform === "win32"
-      ? spawnSync("cmd.exe", ["/d", "/s", "/c", [command, ...args].join(" ")], {
-          encoding: "utf8",
-          stdio: "inherit"
-        })
-      : spawnSync(command, args, {
-          encoding: "utf8",
-          stdio: "inherit"
-        });
+const here = dirname(fileURLToPath(import.meta.url));
+const repoRoot = resolve(here, "..");
 
-  if (result.status !== 0) {
-    if (result.error) {
-      console.error(result.error.message);
-    }
-    process.exit(result.status ?? 1);
-  }
-};
+const result = spawnSync(
+  process.execPath,
+  [join(here, "run-cli.mjs"), "doctor", ...process.argv.slice(2)],
+  { cwd: repoRoot, stdio: "inherit" }
+);
 
-run("pnpm", ["--filter", "@fairy/config", "build"]);
-run("pnpm", ["--filter", "@fairy/cli", "build"]);
-run("node", ["apps/cli/dist/bin/fairy.js", "doctor"]);
+process.exit(result.status ?? 1);

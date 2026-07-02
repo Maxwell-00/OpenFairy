@@ -1,0 +1,123 @@
+Run pnpm -r test
+Scope: 12 of 13 workspace projects
+packages/channels test$ vitest run
+packages/memory test$ vitest run
+packages/orchestrator test$ vitest run
+packages/config test$ vitest run
+packages/orchestrator test:  RUN  v4.1.9 D:/a/OpenFairy/OpenFairy/packages/orchestrator
+packages/channels test:  RUN  v4.1.9 D:/a/OpenFairy/OpenFairy/packages/channels
+packages/memory test:  RUN  v4.1.9 D:/a/OpenFairy/OpenFairy/packages/memory
+packages/config test:  RUN  v4.1.9 D:/a/OpenFairy/OpenFairy/packages/config
+packages/orchestrator test:  ✓ test/index.test.ts (1 test) 5ms
+packages/orchestrator test:  Test Files  1 passed (1)
+packages/orchestrator test:       Tests  1 passed (1)
+packages/orchestrator test:    Start at  13:29:39
+packages/orchestrator test:    Duration  421ms (transform 32ms, setup 0ms, import 56ms, tests 5ms, environment 0ms)
+packages/channels test:  ✓ test/index.test.ts (1 test) 5ms
+packages/channels test:  Test Files  1 passed (1)
+packages/channels test:       Tests  1 passed (1)
+packages/channels test:    Start at  13:29:39
+packages/channels test:    Duration  420ms (transform 36ms, setup 0ms, import 60ms, tests 5ms, environment 0ms)
+packages/orchestrator test: Done
+packages/protocol test$ vitest run
+packages/memory test:  ✓ test/index.test.ts (1 test) 5ms
+packages/memory test:  Test Files  1 passed (1)
+packages/memory test:       Tests  1 passed (1)
+packages/memory test:    Start at  13:29:39
+packages/memory test:    Duration  442ms (transform 31ms, setup 0ms, import 56ms, tests 5ms, environment 0ms)
+packages/channels test: Done
+packages/research test$ vitest run
+packages/memory test: Done
+packages/tools-std test$ vitest run
+packages/config test:  ✓ test/loader.test.ts (7 tests) 109ms
+packages/config test:  Test Files  1 passed (1)
+packages/config test:       Tests  7 passed (7)
+packages/config test:    Start at  13:29:39
+packages/config test:    Duration  873ms (transform 105ms, setup 0ms, import 377ms, tests 109ms, environment 0ms)
+packages/config test: Done
+packages/research test:  RUN  v4.1.9 D:/a/OpenFairy/OpenFairy/packages/research
+packages/protocol test:  RUN  v4.1.9 D:/a/OpenFairy/OpenFairy/packages/protocol
+packages/tools-std test:  RUN  v4.1.9 D:/a/OpenFairy/OpenFairy/packages/tools-std
+packages/research test:  ✓ test/index.test.ts (1 test) 5ms
+packages/research test:  Test Files  1 passed (1)
+packages/research test:       Tests  1 passed (1)
+packages/research test:    Start at  13:29:40
+packages/research test:    Duration  346ms (transform 27ms, setup 0ms, import 47ms, tests 5ms, environment 0ms)
+packages/research test: Done
+packages/tools-std test:  ✓ test/index.test.ts (1 test) 5ms
+packages/tools-std test:  Test Files  1 passed (1)
+packages/tools-std test:       Tests  1 passed (1)
+packages/tools-std test:    Start at  13:29:40
+packages/tools-std test:    Duration  379ms (transform 29ms, setup 0ms, import 47ms, tests 5ms, environment 0ms)
+packages/tools-std test: Done
+packages/protocol test:  ✓ test/conformance.test.ts (100 tests) 69ms
+packages/protocol test:  Test Files  1 passed (1)
+packages/protocol test:       Tests  100 passed (100)
+packages/protocol test:    Start at  13:29:40
+packages/protocol test:    Duration  746ms (transform 104ms, setup 0ms, import 401ms, tests 69ms, environment 0ms)
+packages/protocol test: Done
+apps/cli test$ vitest run
+packages/testing test$ vitest run
+packages/testing test:  RUN  v4.1.9 D:/a/OpenFairy/OpenFairy/packages/testing
+apps/cli test:  RUN  v4.1.9 D:/a/OpenFairy/OpenFairy/apps/cli
+packages/testing test:  ✓ test/index.test.ts (1 test) 6ms
+apps/cli test:  ✓ test/doctor.test.ts (2 tests) 2824ms
+apps/cli test:      ✓ prints a plain-text report  2819ms
+apps/cli test:  Test Files  1 passed (1)
+apps/cli test:       Tests  2 passed (2)
+apps/cli test:    Start at  13:29:41
+apps/cli test:    Duration  3.84s (transform 193ms, setup 0ms, import 735ms, tests 2.82s, environment 0ms)
+apps/cli test: Done
+packages/testing test:  ❯ test/gateway.e2e.test.ts (3 tests | 3 failed) 25527ms
+packages/testing test:      × serves health/meta/sessions, streams a model-backed turn, and writes valid JSONL 8665ms
+packages/testing test:      × appends a synthetic interruption after restart and continues with the next turn number 8410ms
+packages/testing test:      × cancels an in-flight turn and emits turn.interrupted 8449ms
+packages/testing test: ⎯⎯⎯⎯⎯⎯⎯ Failed Tests 3 ⎯⎯⎯⎯⎯⎯⎯
+packages/testing test:  FAIL  test/gateway.e2e.test.ts > gateway M1 e2e > serves health/meta/sessions, streams a model-backed turn, and writes valid JSONL
+packages/testing test:  FAIL  test/gateway.e2e.test.ts > gateway M1 e2e > appends a synthetic interruption after restart and continues with the next turn number
+packages/testing test:  FAIL  test/gateway.e2e.test.ts > gateway M1 e2e > cancels an in-flight turn and emits turn.interrupted
+packages/testing test: Error: gateway exited before startup with code 1
+packages/testing test: $ tsc -p tsconfig.build.json
+packages/testing test: $ tsc -p tsconfig.build.json
+packages/testing test: $ tsc -p tsconfig.build.json
+packages/testing test: $ tsc -p tsconfig.build.json
+packages/testing test: $ tsc -p tsconfig.build.json
+packages/testing test: node:internal/modules/esm/resolve:271
+packages/testing test:     throw new ERR_MODULE_NOT_FOUND(
+packages/testing test:           ^
+packages/testing test: Error [ERR_MODULE_NOT_FOUND]: Cannot find module 'D:\a\OpenFairy\OpenFairy\packages\config\src\errors.js' imported from D:\a\OpenFairy\OpenFairy\packages\config\src\index.ts
+packages/testing test:     at finalizeResolution (node:internal/modules/esm/resolve:271:11)
+packages/testing test:     at moduleResolve (node:internal/modules/esm/resolve:865:10)
+packages/testing test:     at defaultResolve (node:internal/modules/esm/resolve:992:11)
+packages/testing test:     at #cachedDefaultResolve (node:internal/modules/esm/loader:691:20)
+packages/testing test:     at #resolveAndMaybeBlockOnLoaderThread (node:internal/modules/esm/loader:708:38)
+packages/testing test:     at ModuleLoader.resolveSync (node:internal/modules/esm/loader:740:52)
+packages/testing test:     at #resolve (node:internal/modules/esm/loader:673:17)
+packages/testing test:     at ModuleLoader.getOrCreateModuleJob (node:internal/modules/esm/loader:593:35)
+packages/testing test:     at ModuleJob.syncLink (node:internal/modules/esm/module_job:163:33)
+packages/testing test:     at ModuleJob.link (node:internal/modules/esm/module_job:253:17) {
+packages/testing test:   code: 'ERR_MODULE_NOT_FOUND',
+packages/testing test:   url: 'file:///D:/a/OpenFairy/OpenFairy/packages/config/src/errors.js'
+packages/testing test: }
+packages/testing test: Node.js v24.17.0
+packages/testing test: 
+packages/testing test:  ❯ ChildProcess.<anonymous> test/gateway.e2e.test.ts:48:14
+packages/testing test:      46|     process.once("exit", (code) => {
+packages/testing test:      47|       clearTimeout(timer);
+packages/testing test:      48|       reject(new Error(`gateway exited before startup with code ${code…
+packages/testing test:        |              ^
+packages/testing test:      49|     });
+packages/testing test:      50|   });
+packages/testing test: ⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/3]⎯
+packages/testing test:  Test Files  1 failed | 1 passed (2)
+packages/testing test:       Tests  3 failed | 1 passed (4)
+packages/testing test:    Start at  13:29:41
+packages/testing test:    Duration  26.43s (transform 254ms, setup 0ms, import 1.23s, tests 25.53s, environment 0ms)
+packages/testing test: ::error file=D%3A/a/OpenFairy/OpenFairy/packages/testing/test/gateway.e2e.test.ts,title=test/gateway.e2e.test.ts > gateway M1 e2e > serves health/meta/sessions%2C streams a model-backed turn%2C and writes valid JSONL,line=48,column=14::Error: gateway exited before startup with code 1%0A$ tsc -p tsconfig.build.json%0A$ tsc -p tsconfig.build.json%0A$ tsc -p tsconfig.build.json%0A$ tsc -p tsconfig.build.json%0A$ tsc -p tsconfig.build.json%0Anode:internal/modules/esm/resolve:271%0D%0A    throw new ERR_MODULE_NOT_FOUND(%0D%0A          ^%0D%0A%0D%0AError [ERR_MODULE_NOT_FOUND]: Cannot find module 'D:\a\OpenFairy\OpenFairy\packages\config\src\errors.js' imported from D:\a\OpenFairy\OpenFairy\packages\config\src\index.ts%0D%0A    at finalizeResolution (node:internal/modules/esm/resolve:271:11)%0D%0A    at moduleResolve (node:internal/modules/esm/resolve:865:10)%0D%0A    at defaultResolve (node:internal/modules/esm/resolve:992:11)%0D%0A    at #cachedDefaultResolve (node:internal/modules/esm/loader:691:20)%0D%0A    at #resolveAndMaybeBlockOnLoaderThread (node:internal/modules/esm/loader:708:38)%0D%0A    at ModuleLoader.resolveSync (node:internal/modules/esm/loader:740:52)%0D%0A    at #resolve (node:internal/modules/esm/loader:673:17)%0D%0A    at ModuleLoader.getOrCreateModuleJob (node:internal/modules/esm/loader:593:35)%0D%0A    at ModuleJob.syncLink (node:internal/modules/esm/module_job:163:33)%0D%0A    at ModuleJob.link (node:internal/modules/esm/module_job:253:17) {%0D%0A  code: 'ERR_MODULE_NOT_FOUND',%0D%0A  url: 'file:///D:/a/OpenFairy/OpenFairy/packages/config/src/errors.js'%0D%0A}%0D%0A%0D%0ANode.js v24.17.0%0D%0A%0A ❯ ChildProcess.<anonymous> test/gateway.e2e.test.ts:48:14%0A%0A
+packages/testing test: ::error file=D%3A/a/OpenFairy/OpenFairy/packages/testing/test/gateway.e2e.test.ts,title=test/gateway.e2e.test.ts > gateway M1 e2e > appends a synthetic interruption after restart and continues with the next turn number,line=48,column=14::Error: gateway exited before startup with code 1%0A$ tsc -p tsconfig.build.json%0A$ tsc -p tsconfig.build.json%0A$ tsc -p tsconfig.build.json%0A$ tsc -p tsconfig.build.json%0A$ tsc -p tsconfig.build.json%0Anode:internal/modules/esm/resolve:271%0D%0A    throw new ERR_MODULE_NOT_FOUND(%0D%0A          ^%0D%0A%0D%0AError [ERR_MODULE_NOT_FOUND]: Cannot find module 'D:\a\OpenFairy\OpenFairy\packages\config\src\errors.js' imported from D:\a\OpenFairy\OpenFairy\packages\config\src\index.ts%0D%0A    at finalizeResolution (node:internal/modules/esm/resolve:271:11)%0D%0A    at moduleResolve (node:internal/modules/esm/resolve:865:10)%0D%0A    at defaultResolve (node:internal/modules/esm/resolve:992:11)%0D%0A    at #cachedDefaultResolve (node:internal/modules/esm/loader:691:20)%0D%0A    at #resolveAndMaybeBlockOnLoaderThread (node:internal/modules/esm/loader:708:38)%0D%0A    at ModuleLoader.resolveSync (node:internal/modules/esm/loader:740:52)%0D%0A    at #resolve (node:internal/modules/esm/loader:673:17)%0D%0A    at ModuleLoader.getOrCreateModuleJob (node:internal/modules/esm/loader:593:35)%0D%0A    at ModuleJob.syncLink (node:internal/modules/esm/module_job:163:33)%0D%0A    at ModuleJob.link (node:internal/modules/esm/module_job:253:17) {%0D%0A  code: 'ERR_MODULE_NOT_FOUND',%0D%0A  url: 'file:///D:/a/OpenFairy/OpenFairy/packages/config/src/errors.js'%0D%0A}%0D%0A%0D%0ANode.js v24.17.0%0D%0A%0A ❯ ChildProcess.<anonymous> test/gateway.e2e.test.ts:48:14%0A%0A
+packages/testing test: ::error file=D%3A/a/OpenFairy/OpenFairy/packages/testing/test/gateway.e2e.test.ts,title=test/gateway.e2e.test.ts > gateway M1 e2e > cancels an in-flight turn and emits turn.interrupted,line=48,column=14::Error: gateway exited before startup with code 1%0A$ tsc -p tsconfig.build.json%0A$ tsc -p tsconfig.build.json%0A$ tsc -p tsconfig.build.json%0A$ tsc -p tsconfig.build.json%0A$ tsc -p tsconfig.build.json%0Anode:internal/modules/esm/resolve:271%0D%0A    throw new ERR_MODULE_NOT_FOUND(%0D%0A          ^%0D%0A%0D%0AError [ERR_MODULE_NOT_FOUND]: Cannot find module 'D:\a\OpenFairy\OpenFairy\packages\config\src\errors.js' imported from D:\a\OpenFairy\OpenFairy\packages\config\src\index.ts%0D%0A    at finalizeResolution (node:internal/modules/esm/resolve:271:11)%0D%0A    at moduleResolve (node:internal/modules/esm/resolve:865:10)%0D%0A    at defaultResolve (node:internal/modules/esm/resolve:992:11)%0D%0A    at #cachedDefaultResolve (node:internal/modules/esm/loader:691:20)%0D%0A    at #resolveAndMaybeBlockOnLoaderThread (node:internal/modules/esm/loader:708:38)%0D%0A    at ModuleLoader.resolveSync (node:internal/modules/esm/loader:740:52)%0D%0A    at #resolve (node:internal/modules/esm/loader:673:17)%0D%0A    at ModuleLoader.getOrCreateModuleJob (node:internal/modules/esm/loader:593:35)%0D%0A    at ModuleJob.syncLink (node:internal/modules/esm/module_job:163:33)%0D%0A    at ModuleJob.link (node:internal/modules/esm/module_job:253:17) {%0D%0A  code: 'ERR_MODULE_NOT_FOUND',%0D%0A  url: 'file:///D:/a/OpenFairy/OpenFairy/packages/config/src/errors.js'%0D%0A}%0D%0A%0D%0ANode.js v24.17.0%0D%0A%0A ❯ ChildProcess.<anonymous> test/gateway.e2e.test.ts:48:14%0A%0A
+packages/testing test: Failed
+D:\a\OpenFairy\OpenFairy\packages\testing:
+[ERR_PNPM_RECURSIVE_RUN_FIRST_FAIL] @fairy/testing@0.0.0 test: `vitest run`
+Exit status 1
+Error: Process completed with exit code 1.
