@@ -192,7 +192,7 @@ Consequences: any client renders any session live or historical from the same st
 
 ## 7. Client protocol (gateway ⇄ clients)
 
-Single port. `HTTP` for auth, session CRUD, artifact download, health. `WebSocket` for the event stream: client subscribes to sessions, receives envelopes, sends input events. Binary WS frames (with a 4-byte channel prefix) carry audio to avoid base64 overhead. Protocol is versioned (`v` field + `GET /meta`); gateway maintains one minor version of backward compatibility (NFR-9).
+Single port. `HTTP` for auth, session CRUD (`GET /sessions` since M1-01), artifact download, health. `WebSocket` for the event stream: client subscribes to sessions, receives envelopes, sends input events. Session resume (M1-01): on boot the gateway rebuilds session state from logs and appends a synthetic `turn.interrupted(gateway_restart)` to any turn left open — the log never lies about a half-happened turn. Binary WS frames (with a 4-byte channel prefix) carry audio to avoid base64 overhead. Protocol is versioned (`v` field + `GET /meta`); gateway maintains one minor version of backward compatibility (NFR-9).
 
 Channel adapters (Telegram, etc.) are internal clients: they log in with a channel identity and translate between platform messages and protocol events. Channel identity carries a **trust level** consumed by the permission engine (FR-15).
 

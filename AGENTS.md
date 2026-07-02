@@ -30,6 +30,7 @@ Personal AI companion (ZZZ-Fairy-inspired): resident gateway, any OpenAI-compati
 - **Python (workers/speech only): uv** with `pyproject.toml` + `uv.lock` committed. The repo must NOT require conda — owner may use a conda env as their local outer environment, but CI and docs assume plain `uv sync`. Never mix conda-installed packages into the lockfile.
 - Code identifiers and docs in English; UI strings and persona content zh + en first-class (NFR-10, ADR-013).
 - CI enforces the dependency rules in ARCHITECTURE §9 (`protocol` ← everything; kernel never imports channels/apps).
+- **Internal packages resolve source-first:** `exports.import` points at `./src/index.ts` for every workspace package. `build` scripts exist only for future packaging (M5). **Never** point exports at `dist/` and never gate one package's tests on building another (`pnpm --filter X build && …` in a test script is a red flag — it means resolution is broken and CI will fail on fresh checkouts).
 
 ## Platform notes (owner's environment)
 

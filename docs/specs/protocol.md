@@ -87,7 +87,10 @@ Client→gateway messages are small **op frames**, not envelopes; only the gatew
 | `session.create` | `{op}` | Creates session, emits `session.created` |
 | `turn.input` | `{op, sid, content}` | Constructs + logs + streams the canonical `turn.input` envelope, then the response stream |
 | `event` | `{op, event}` | Pass-through for pre-built envelopes; validated; **M0 accepts only `turn.input`** (accepted set will be advertised via `/meta` capabilities as it widens) |
-| `turn.cancel` | `{op, sid}` | Aborts the in-flight turn for the session: model stream aborted, `turn.interrupted` emitted with a cancellation mark; no-op (ack only) if nothing is in flight. Normative since M1-01 |
+| `turn.cancel` | `{op, sid}` | Aborts the in-flight turn for the session: model stream aborted, `turn.interrupted` emitted with a cancellation mark. Nothing in flight → transport-level ack frame (below), no envelope. Normative since M1-01 |
+| `session.attach` | `{op, sid, replay_from?}` | Replays historical envelopes (from `replay_from` event id; default all), then live events. Replay/live boundary: gateway emits a fresh `session.resumed` envelope after the historical batch (**normative from M1-02**; M1-01 streams without a marker). Normative since M1-01 |
+
+**Transport-level frames vs. envelopes:** the gateway→client stream is canonical envelopes, with one exception — op-level acks/rejections that are not session facts (e.g. `turn.cancel` with nothing in flight) are raw ack frames, never logged. Session-scoped errors remain `error` envelopes. **HTTP endpoints** (`/health`, `/meta`, `/sessions`) share the gateway token via `Authorization: Bearer` (`/health` may be exempted by config for probes — default requires auth only for `/sessions`).
 
 Gateway→client is the **raw canonical envelope stream** — no wrapper. Auth at WS connect: `Authorization: Bearer <token>` or `?token=` query; missing/invalid → close `4401` with no stream (details: sandbox-security §7). Unknown ops → `error` event; connection stays open.
 

@@ -2,7 +2,7 @@ import { ProviderError, type ChatMessage, type ModelGateway, type UsageSnapshot 
 import type { Labels } from "@fairy/protocol";
 
 export const defaultSystemPrompt =
-  "You are Fairy, Chidi's helpful bilingual AI companion. Be concise, capable, and honest.";
+  "You are Fairy, a helpful bilingual (中文/English) AI companion. Be concise, capable, and honest.";
 
 export type KernelEventType = "turn.delta" | "reasoning.delta" | "turn.final" | "turn.interrupted" | "error";
 

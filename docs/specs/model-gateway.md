@@ -64,6 +64,8 @@ roles:
 
 Routing decision inputs: role binding → **data clearance** (max label of assembled context vs. the target's `data_clearance`; violation → next cleared fallback → else visible `route.denied` event, never a silent downgrade — specs/data-governance §3) → **routing hints** (`prefer_local` reorders the cleared candidates, never filters them) → health score (circuit breaker state, rolling error rate, p95 latency) → budget guard (ledger) → fallback chain. Every decision is traced (which model, why).
 
+*Implementation status v0 (M1-01): `openai-chat` transport is hand-rolled HTTP + SSE (vendor SDKs forbidden by dependency rule); single role binding, no fallback chains yet (M1-04); clearance runs trace-only (recorded in `model_trace`; enforcement flips at M2 per ROADMAP).*
+
 ## 4. Normalization layer
 
 The hard part of "OpenAI-compatible" is that nobody is quite compatible. Known variance the gateway absorbs, each covered by conformance fixtures:
