@@ -9,11 +9,12 @@ describe("fairy doctor", () => {
   });
 
   it("prints a plain-text report", () => {
-    const report = runDoctor(process.cwd());
-
-    expect(report.lines[0]).toBe("Fairy doctor");
-    expect(report.lines.some((line) => line.startsWith("Node:"))).toBe(true);
-    expect(report.lines.some((line) => line.startsWith("Config:"))).toBe(true);
-    expect(report.lines.some((line) => line.startsWith("Container runtime:"))).toBe(true);
+    return runDoctor(process.cwd()).then((report) => {
+      expect(report.lines[0]).toBe("Fairy doctor");
+      expect(report.lines.some((line) => line.startsWith("Node:"))).toBe(true);
+      expect(report.lines.some((line) => line.startsWith("Config:"))).toBe(true);
+      expect(report.lines.some((line) => line.startsWith("Container runtime:"))).toBe(true);
+      expect(report.lines.some((line) => line.startsWith("Gateway:"))).toBe(true);
+    });
   });
 });

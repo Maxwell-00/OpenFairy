@@ -1,7 +1,7 @@
 import { Ajv2020 } from "ajv/dist/2020.js";
 import { existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
-import { join, resolve } from "node:path";
+import { dirname, join, parse as parsePath, posix, resolve } from "node:path";
 import { parse } from "yaml";
 
 import { ConfigValidationError, formatAjvIssues } from "./errors.js";
@@ -77,15 +77,57 @@ const optionalSource = (name: SourceTrace["name"], path: string): { trace: Sourc
 };
 
 export const defaultUserConfigPath = (env: NodeJS.ProcessEnv = process.env): string =>
-  env.FAIRY_CONFIG ? resolve(env.FAIRY_CONFIG) : join(homedir(), "fairy.yaml");
+  env.FAIRY_CONFIG ? resolve(env.FAIRY_CONFIG) : platformUserConfigPath(env);
 
-export const defaultWorkspaceConfigPath = (cwd = process.cwd()): string => join(cwd, "fairy.workspace.yaml");
+export const platformUserConfigPath = (env: NodeJS.ProcessEnv = process.env, platform = process.platform): string => {
+  if (platform === "win32") {
+    return join(env.APPDATA ?? join(homedir(), "AppData", "Roaming"), "fairy", "fairy.yaml");
+  }
+
+  return posix.join(env.XDG_CONFIG_HOME ?? posix.join(homedir().replace(/\\/g, "/"), ".config"), "fairy", "fairy.yaml");
+};
+
+export const defaultDataDir = (env: NodeJS.ProcessEnv = process.env, platform = process.platform): string => {
+  if (platform === "win32") {
+    return join(env.LOCALAPPDATA ?? join(homedir(), "AppData", "Local"), "fairy");
+  }
+
+  return posix.join(env.XDG_DATA_HOME ?? posix.join(homedir().replace(/\\/g, "/"), ".local", "share"), "fairy");
+};
+
+const isRepoRoot = (dir: string): boolean =>
+  existsSync(join(dir, ".git")) || existsSync(join(dir, "pnpm-workspace.yaml"));
+
+export const findWorkspaceConfigPath = (cwd = process.cwd()): string => {
+  let current = resolve(cwd);
+  const root = parsePath(current).root;
+
+  while (true) {
+    const candidate = join(current, "fairy.workspace.yaml");
+    if (existsSync(candidate)) {
+      return candidate;
+    }
+
+    if (current === root || isRepoRoot(current)) {
+      return candidate;
+    }
+
+    const next = dirname(current);
+    if (next === current) {
+      return candidate;
+    }
+    current = next;
+  }
+};
+
+export const defaultWorkspaceConfigPath = (cwd = process.cwd()): string => findWorkspaceConfigPath(cwd);
 
 export const loadConfig = (options: LoadConfigOptions = {}): LoadedConfig => {
   const cwd = options.cwd ? resolve(options.cwd) : process.cwd();
   const env = options.env ?? process.env;
-  const userPath = options.userConfigPath ? resolve(options.userConfigPath) : defaultUserConfigPath(env);
-  const workspacePath = options.workspaceConfigPath ? resolve(options.workspaceConfigPath) : defaultWorkspaceConfigPath(cwd);
+  const explicitPath = options.configPath ? resolve(options.configPath) : env.FAIRY_CONFIG ? resolve(env.FAIRY_CONFIG) : undefined;
+  const userPath = explicitPath ?? (options.userConfigPath ? resolve(options.userConfigPath) : platformUserConfigPath(env));
+  const workspacePath = options.workspaceConfigPath ? resolve(options.workspaceConfigPath) : findWorkspaceConfigPath(cwd);
 
   const defaults = readYamlFile(defaultsPath);
   const user = optionalSource("user", userPath);

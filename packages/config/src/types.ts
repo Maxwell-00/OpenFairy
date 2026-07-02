@@ -8,6 +8,7 @@ export interface SourceTrace {
 
 export interface LoadConfigOptions {
   readonly cwd?: string;
+  readonly configPath?: string;
   readonly userConfigPath?: string;
   readonly workspaceConfigPath?: string;
   readonly sessionOverrides?: Record<string, unknown>;

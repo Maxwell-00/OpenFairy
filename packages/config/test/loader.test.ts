@@ -1,9 +1,14 @@
-import { mkdtempSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
-import { ConfigValidationError, loadConfig } from "../src/index.js";
+import {
+  ConfigValidationError,
+  defaultDataDir,
+  findWorkspaceConfigPath,
+  loadConfig
+} from "../src/index.js";
 
 const makeTempDir = (): string => mkdtempSync(join(tmpdir(), "fairy-config-"));
 
@@ -15,6 +20,7 @@ describe("loadConfig", () => {
     expect(loaded.config).toMatchObject({
       models: [],
       roles: {},
+      gateway: { port: 8787, auth: { token: "dev-token" } },
       governance: { home_regions: [] },
       sandbox: { default_profile: "safe" }
     });
@@ -68,6 +74,35 @@ describe("loadConfig", () => {
       roles: { main: { model: "session-model" } },
       sandbox: { image: "custom-image:latest" }
     });
+  });
+
+  it("uses an explicit config path as the user layer", () => {
+    const cwd = makeTempDir();
+    const configPath = join(cwd, "explicit.yaml");
+    writeFileSync(configPath, "gateway:\n  port: 9999\n");
+
+    const loaded = loadConfig({ configPath, cwd });
+
+    expect(loaded.config).toMatchObject({ gateway: { port: 9999 } });
+    expect(loaded.sources[1]).toMatchObject({ name: "user", found: true, path: configPath });
+  });
+
+  it("finds workspace config by walking up to the repo root", () => {
+    const root = makeTempDir();
+    const nested = join(root, "a", "b");
+    mkdirSync(nested, { recursive: true });
+    writeFileSync(join(root, "pnpm-workspace.yaml"), "packages: []\n");
+    writeFileSync(join(root, "fairy.workspace.yaml"), "gateway:\n  port: 7777\n");
+
+    expect(findWorkspaceConfigPath(nested)).toBe(join(root, "fairy.workspace.yaml"));
+    expect(loadConfig({ cwd: nested, userConfigPath: join(root, "missing-user.yaml") }).config).toMatchObject({
+      gateway: { port: 7777 }
+    });
+  });
+
+  it("computes platform default data directories", () => {
+    expect(defaultDataDir({ LOCALAPPDATA: "C:\\Data" }, "win32")).toBe("C:\\Data\\fairy");
+    expect(defaultDataDir({ XDG_DATA_HOME: "/tmp/data" }, "linux")).toBe("/tmp/data/fairy");
   });
 
   it("keeps secret refs typed but unresolved", () => {

@@ -61,6 +61,29 @@ export const configSchema = {
         required: ["model"]
       }
     },
+    gateway: {
+      type: "object",
+      additionalProperties: true,
+      properties: {
+        port: { type: "integer", minimum: 0, maximum: 65535 },
+        data_dir: { type: "string", minLength: 1 },
+        auth: {
+          type: "object",
+          additionalProperties: true,
+          properties: {
+            token: {
+              type: "string",
+              anyOf: [
+                { minLength: 1 },
+                { pattern: "^secret://[A-Za-z0-9_.-]+$" }
+              ]
+            }
+          },
+          required: ["token"]
+        }
+      },
+      required: ["port", "auth"]
+    },
     governance: {
       type: "object",
       additionalProperties: true,
@@ -118,5 +141,5 @@ export const configSchema = {
       required: ["image", "default_profile", "profiles"]
     }
   },
-  required: ["models", "roles", "governance", "research", "sandbox"]
+  required: ["models", "roles", "gateway", "governance", "research", "sandbox"]
 } as const;

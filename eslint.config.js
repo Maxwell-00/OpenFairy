@@ -2,9 +2,12 @@ import js from "@eslint/js";
 import tseslint from "typescript-eslint";
 
 const nodeGlobals = {
+  AbortController: "readonly",
   Buffer: "readonly",
   URL: "readonly",
+  clearTimeout: "readonly",
   console: "readonly",
+  fetch: "readonly",
   process: "readonly",
   setTimeout: "readonly"
 };
@@ -18,6 +21,7 @@ export default tseslint.config(
       "dist/**",
       "docs-zh/**",
       "node_modules/**",
+      "apps/*/dist/**",
       "packages/*/dist/**",
       "packages/protocol/fixtures/**",
       "packages/protocol/schemas/**",

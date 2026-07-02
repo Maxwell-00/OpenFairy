@@ -1,5 +1,9 @@
 models: []
 roles: {}
+gateway:
+  port: 8787
+  auth:
+    token: dev-token
 governance:
   home_regions: []
   categories:

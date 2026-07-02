@@ -1,7 +1,9 @@
 export { ConfigValidationError } from "./errors.js";
 export {
+  defaultDataDir,
   defaultUserConfigPath,
   defaultWorkspaceConfigPath,
+  findWorkspaceConfigPath,
   loadConfig
 } from "./loader.js";
 export { configSchema } from "./schema.js";

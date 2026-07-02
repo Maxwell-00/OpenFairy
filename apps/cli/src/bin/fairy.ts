@@ -4,7 +4,7 @@ import { runDoctor } from "../doctor.js";
 const [command] = process.argv.slice(2);
 
 if (command === "doctor") {
-  const report = runDoctor();
+  const report = await runDoctor();
   console.log(report.lines.join("\n"));
   process.exit(report.ok ? 0 : 1);
 }

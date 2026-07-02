@@ -3,9 +3,18 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
-  "exports": { ".": { "types": "./src/index.ts", "import": "./src/index.ts" } },
+  "exports": { ".": { "types": "./src/index.ts", "import": "./dist/index.js" } },
   "scripts": {
-    "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "vitest run"
+    "build": "tsc -p tsconfig.build.json",
+    "start": "node ../../scripts/start-gateway.mjs",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@fairy/config": "workspace:*",
+    "@fairy/protocol": "workspace:*",
+    "ws": "^8.18.3"
+  },
+  "devDependencies": {
+    "@types/ws": "^8.18.1"
   }
 }
