@@ -78,6 +78,18 @@ Used by research, memory evidence, and any sourced claim:
 
 Renderers turn these into footnotes (text), spoken attributions ("据 Reuters…" — voice), or hover cards (desktop). A claim without a resolvable snapshot span fails the citation-precision eval (specs/evals.md).
 
-## 7. Conformance
+## 7. Client operations (WS) — normative since M0-02
 
-`packages/testing` ships a protocol conformance suite: fixture round-trips, unknown-type tolerance, approval state machine, mark accounting, envelope ordering (ULID monotonicity per session). Every client and every channel adapter must pass it in CI before merge.
+Client→gateway messages are small **op frames**, not envelopes; only the gateway authors canonical envelopes (ids, turn numbers, labels — clients never self-assign these):
+
+| Op | Shape | Gateway behavior |
+|---|---|---|
+| `session.create` | `{op}` | Creates session, emits `session.created` |
+| `turn.input` | `{op, sid, content}` | Constructs + logs + streams the canonical `turn.input` envelope, then the response stream |
+| `event` | `{op, event}` | Pass-through for pre-built envelopes; validated; **M0 accepts only `turn.input`** (accepted set will be advertised via `/meta` capabilities as it widens) |
+
+Gateway→client is the **raw canonical envelope stream** — no wrapper. Auth at WS connect: `Authorization: Bearer <token>` or `?token=` query; missing/invalid → close `4401` with no stream (details: sandbox-security §7). Unknown ops → `error` event; connection stays open.
+
+## 8. Conformance
+
+`packages/testing` ships a protocol conformance suite: fixture round-trips, unknown-type tolerance, approval state machine, mark accounting, envelope ordering (ULID monotonicity per session), and the client-op contract of §7. Every client and every channel adapter must pass it in CI before merge.

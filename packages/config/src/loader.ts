@@ -1,7 +1,7 @@
 import { Ajv2020 } from "ajv/dist/2020.js";
 import { existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
-import { dirname, join, parse as parsePath, posix, resolve } from "node:path";
+import { dirname, join, parse as parsePath, posix, resolve, win32 } from "node:path";
 import { parse } from "yaml";
 
 import { ConfigValidationError, formatAjvIssues } from "./errors.js";
@@ -81,7 +81,7 @@ export const defaultUserConfigPath = (env: NodeJS.ProcessEnv = process.env): str
 
 export const platformUserConfigPath = (env: NodeJS.ProcessEnv = process.env, platform = process.platform): string => {
   if (platform === "win32") {
-    return join(env.APPDATA ?? join(homedir(), "AppData", "Roaming"), "fairy", "fairy.yaml");
+    return win32.join(env.APPDATA ?? win32.join(homedir(), "AppData", "Roaming"), "fairy", "fairy.yaml");
   }
 
   return posix.join(env.XDG_CONFIG_HOME ?? posix.join(homedir().replace(/\\/g, "/"), ".config"), "fairy", "fairy.yaml");
@@ -89,7 +89,7 @@ export const platformUserConfigPath = (env: NodeJS.ProcessEnv = process.env, pla
 
 export const defaultDataDir = (env: NodeJS.ProcessEnv = process.env, platform = process.platform): string => {
   if (platform === "win32") {
-    return join(env.LOCALAPPDATA ?? join(homedir(), "AppData", "Local"), "fairy");
+    return win32.join(env.LOCALAPPDATA ?? win32.join(homedir(), "AppData", "Local"), "fairy");
   }
 
   return posix.join(env.XDG_DATA_HOME ?? posix.join(homedir().replace(/\\/g, "/"), ".local", "share"), "fairy");

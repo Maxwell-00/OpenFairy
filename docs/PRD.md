@@ -183,4 +183,3 @@ Two label axes on all content (artifacts, memories, tool results, inputs): sensi
 3. Vector store: sqlite-vec sufficient vs LanceDB for scale — benchmark at M2.
 4. Should Loop mode be allowed to spend money (paid APIs) unsupervised? Default no; revisit with budget maturity.
 5. Computer use: ABI reserved now (specs/computer-use.md); implementation start gated on two consecutive releases of green security suites post-v1.
-    

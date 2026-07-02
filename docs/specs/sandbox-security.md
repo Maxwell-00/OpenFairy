@@ -74,3 +74,5 @@ No layer is sufficient; together they raise cost sharply:
 ## 7. Network posture
 
 Gateway binds localhost by default; LAN/tunnel exposure requires explicit config + token auth (per-client tokens, revocable). TLS via user reverse-proxy/tunnel (Tailscale recommended, ARCHITECTURE §11). No inbound ports beyond the one gateway port. All outbound provider endpoints are explicitly configured — no hidden phone-home, ever (NFR-4).
+
+**Client auth mechanics (normative since M0-02):** WS connects present the gateway token via `Authorization: Bearer <token>` or `?token=` query parameter; missing/invalid tokens → immediate close `4401`, no event stream, no error detail beyond "unauthorized". The M0 default `dev-token` is a **localhost-only development convenience**: config validation must refuse (not warn) any non-loopback bind while the token equals the shipped default — lands with the M1 permission engine.
