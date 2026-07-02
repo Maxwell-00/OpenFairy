@@ -54,3 +54,7 @@ Windows green, Ubuntu failed only the restart test: the crash simulation `SIGKIL
 **Fix:** e2e now spawns the gateway entry **directly** (`node --import tsx apps/gateway/src/bin/gateway.ts`); `SIGKILL` therefore hits the real process. Rule of thumb recorded: *crash tests must kill the process under test, never a wrapper*. Launcher remains a human convenience only.
 
 Noted (not changed): graceful SIGTERM currently drains the in-flight turn before exit (bounded by the provider watchdog). Acceptable v0 semantics; "second signal = abort with `turn.interrupted(gateway_shutdown)`" is a candidate for M1-02+.
+
+## Addendum #4 (Windows-only doctor flake)
+
+With e2e finally green on both OS, Windows tripped on `doctor`: external probes (`docker --version` fallback chain, `pnpm --version`) used `spawnSync` **without timeouts** — an unreachable Docker daemon on a Windows runner can block a probe 10+ s. Fixed: every probe bounded at 2 s (timeout → treated as "not detected"), and the report test given 20 s headroom. Rule: **any probe of the environment must carry a deadline — doctor diagnoses weather, it must never be weather.**

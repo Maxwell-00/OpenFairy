@@ -8,7 +8,9 @@ describe("fairy doctor", () => {
     expect(isNodeVersionOk("21.9.0")).toBe(false);
   });
 
-  it("prints a plain-text report", () => {
+  // Probes are bounded at 2 s each in doctor.ts, but CI runners can still be slow
+  // on first process spawns — give the integration-ish test generous headroom.
+  it("prints a plain-text report", { timeout: 20_000 }, () => {
     return runDoctor(process.cwd()).then((report) => {
       expect(report.lines[0]).toBe("Fairy doctor");
       expect(report.lines.some((line) => line.startsWith("Node:"))).toBe(true);

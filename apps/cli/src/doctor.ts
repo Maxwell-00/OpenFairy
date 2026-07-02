@@ -7,11 +7,13 @@ export interface DoctorReport {
   readonly lines: readonly string[];
 }
 
+// External probes are strictly bounded: an unreachable Docker daemon on Windows can
+// block a probe for 10+ seconds — doctor must never hang on environment weather.
 const commandVersion = (command: string, args: readonly string[]): string | undefined => {
   const result =
     process.platform === "win32"
-      ? spawnSync("cmd.exe", ["/d", "/s", "/c", [command, ...args].join(" ")], { encoding: "utf8" })
-      : spawnSync(command, [...args], { encoding: "utf8" });
+      ? spawnSync("cmd.exe", ["/d", "/s", "/c", [command, ...args].join(" ")], { encoding: "utf8", timeout: 2000, windowsHide: true })
+      : spawnSync(command, [...args], { encoding: "utf8", timeout: 2000 });
 
   if (result.status !== 0) {
     return undefined;
