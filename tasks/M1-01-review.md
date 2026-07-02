@@ -46,3 +46,11 @@ Implementation quality high; the CI failure was a pre-existing latent defect tha
 The source-first exports fix surfaced its runtime counterpart: the e2e spawns the gateway as a **plain `node` child process** via `scripts/start-gateway.mjs`, which built five packages and ran `dist/` — but dist-compiled code now resolved `@fairy/config` to `src/index.ts`, whose TS-style `./errors.js` import specifiers plain Node cannot map to `.ts` files (`ERR_MODULE_NOT_FOUND`, both OS).
 
 **Resolution — one world, enforced:** all execution (dev, tests, e2e children, daemon) runs from source via `tsx` (`node --import tsx <entry>.ts`). `scripts/start-gateway.mjs` rewritten as a thin tsx spawner (no builds — also removes ~5 tsc runs from every e2e test); `scripts/run-cli.mjs` added (generic: `pnpm fairy chat|sessions|doctor`); `run-doctor.mjs` delegates. `tsx` added as root devDependency (owner runs `pnpm add -D -w tsx` to write the lockfile). Convention hardened in CLAUDE.md: spawning plain `node` on `.ts` or on `dist/` is a bug until M5 packaging introduces a deliberate build step.
+
+## Addendum #3 (Ubuntu-only e2e timeout — first true dual-OS e2e run)
+
+Windows green, Ubuntu failed only the restart test: the crash simulation `SIGKILL`ed the **launcher** (`start-gateway.mjs`), whose inner tsx gateway child survives as an orphan on POSIX — it finished the in-flight turn and closed the log, so the restarted gateway found no open turn and never appended the synthetic interruption (10 s waiter timeout). Windows masked it via process-teardown differences.
+
+**Fix:** e2e now spawns the gateway entry **directly** (`node --import tsx apps/gateway/src/bin/gateway.ts`); `SIGKILL` therefore hits the real process. Rule of thumb recorded: *crash tests must kill the process under test, never a wrapper*. Launcher remains a human convenience only.
+
+Noted (not changed): graceful SIGTERM currently drains the in-flight turn before exit (bounded by the provider watchdog). Acceptable v0 semantics; "second signal = abort with `turn.interrupted(gateway_shutdown)`" is a candidate for M1-02+.

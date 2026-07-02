@@ -96,7 +96,10 @@ const writeConfig = (path: string, dataDir: string, token: string, baseUrl: stri
 };
 
 const startGateway = (configPath: string): GatewayProcess =>
-  spawn(process.execPath, ["scripts/start-gateway.mjs", "--config", configPath], {
+  // Spawn the gateway entry DIRECTLY (not via scripts/start-gateway.mjs): the crash test
+  // must SIGKILL the gateway process itself — killing the launcher orphans the inner
+  // child on POSIX, which then finishes the in-flight turn and defeats the test.
+  spawn(process.execPath, ["--import", "tsx", "apps/gateway/src/bin/gateway.ts", "--config", configPath], {
     cwd: repoRoot,
     env: { ...process.env, CI: "true" },
     stdio: ["ignore", "pipe", "pipe"]
