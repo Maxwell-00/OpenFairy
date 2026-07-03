@@ -51,18 +51,22 @@ describe("@fairy/tools-std", () => {
     await expect(registry.get("fs.read")?.execute({ path: "escape-link.txt" }, ctx)).rejects.toBeInstanceOf(PolicyError);
   });
 
-  it.skipIf(!hasDocker() || process.platform === "win32")("runs safe shell profile without network", async () => {
+  // Probe uses a fixed-IP TCP connect with its own deadline: DNS-based probes are
+  // nondeterministic under --network none (glibc resolver waits up to 5 s per
+  // nameserver depending on the runner's resolv.conf — caused a CI flake).
+  // Generous vitest timeout covers container cold-start weather on shared runners.
+  it.skipIf(!hasDocker() || process.platform === "win32")("runs safe shell profile without network", { timeout: 60_000 }, async () => {
     const { artifactsDir, registry, root } = await makeRegistry();
     const ctx = { artifactsDir, env: {}, workspaceRoot: root };
     const shell = registry.get("shell.run");
 
     await expect(shell?.execute({
-      command: "node -e \"require('node:dns').lookup('example.com', err => process.exit(err ? 0 : 1))\"",
+      command: "node -e \"const s=require('node:net').connect({host:'1.1.1.1',port:80,timeout:1500});s.on('error',()=>process.exit(0));s.on('timeout',()=>{s.destroy();process.exit(0)});s.on('connect',()=>process.exit(1))\"",
       profile: "safe"
     }, ctx)).resolves.toMatchObject({ provenance: "tool:shell.run" });
   });
 
-  it.skipIf(!hasDocker() || process.platform === "win32")("keeps writes outside /workspace inside the container", async () => {
+  it.skipIf(!hasDocker() || process.platform === "win32")("keeps writes outside /workspace inside the container", { timeout: 60_000 }, async () => {
     const { artifactsDir, registry, root } = await makeRegistry();
     const ctx = { artifactsDir, env: {}, workspaceRoot: root };
     const marker = `fairy-sandbox-${process.pid}-${Date.now()}`;

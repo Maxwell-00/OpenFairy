@@ -143,3 +143,7 @@ Independent spot-verification against git `08fc692`, focusing on what the primar
 - Carry-in #1 (live conformance strictness) and #3 (CI guard): confirmed present in the M2-01 brief.
 
 Primary review verdict **upheld**. **M1 CLOSED** — the text spine is complete: any OpenAI-compatible brain, tools with permissions and audit, survivable long sessions, offline inspection, and a conformance kit that makes "config-only provider switch" a tested property.
+
+## Post-close CI flake (2026-07-03, fixed)
+
+Ubuntu-only timeout in `tools-std > runs safe shell profile without network` (5004 ms vs 5000 ms default). Two compounding causes: ① the probe used `dns.lookup` — under `--network none`, DNS failure latency depends on the runner's resolv.conf (glibc waits up to 5 s per nameserver): nondeterministic by construction; ② the first Docker test in the file pays container cold-start with no explicit timeout. Fixes: probe replaced with fixed-IP TCP connect carrying its own 1.5 s deadline (no resolver dependence); both Docker tests given explicit 60 s vitest timeouts; CI pre-pulls `node:22-slim` on ubuntu before tests. Rule extended: **in-container probes must carry their own deadline and never depend on resolver/library timeout defaults; docker-dependent tests always declare explicit generous timeouts.**

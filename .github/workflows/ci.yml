@@ -23,6 +23,9 @@ jobs:
           cache: pnpm
       - name: Install
         run: pnpm install --frozen-lockfile
+      - name: Pre-pull sandbox image (moves cold-start out of test timeouts)
+        if: runner.os == 'Linux'
+        run: docker pull node:22-slim
       - name: Lint
         run: pnpm lint
       - name: Typecheck
