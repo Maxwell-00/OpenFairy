@@ -99,4 +99,29 @@ describe("context engine", () => {
     expect(large.manifest.budget).toBe(1000);
     expect(small.manifest.output_reserve).toBe(4096);
   });
+
+  it("derives effective labels across all assembled prompt content", () => {
+    const assembled = assemblePrompt({
+      config: { minRecentTurns: 4, reduceAt: 0.8 },
+      currentInput: "harmless follow-up",
+      currentLabels: { residency: "global-ok", sensitivity: "internal" },
+      history: [
+        {
+          content: "API_KEY=sk_test_1234567890abcdef",
+          labels: { residency: "local-only", sensitivity: "secret" },
+          role: "user",
+          turn: 1
+        }
+      ],
+      model: gateway.modelInfo("main"),
+      modelGateway: gateway,
+      systemPrompt: "system",
+      tools: []
+    });
+
+    expect(assembled.effectiveLabels).toEqual({ residency: "local-only", sensitivity: "secret" });
+    expect(assembled.manifest).toMatchObject({
+      effective_labels: { residency: "local-only", sensitivity: "secret" }
+    });
+  });
 });

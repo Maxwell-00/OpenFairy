@@ -90,6 +90,9 @@ importers:
 
   packages/kernel:
     dependencies:
+      '@fairy/memory':
+        specifier: workspace:*
+        version: link:../memory
       '@fairy/model-gateway':
         specifier: workspace:*
         version: link:../model-gateway

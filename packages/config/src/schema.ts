@@ -161,6 +161,7 @@ export const configSchema = {
       type: "object",
       additionalProperties: true,
       properties: {
+        profile: { type: "string", enum: ["balanced", "sovereign", "cloud-friendly"] },
         home_regions: { type: "array", items: { type: "string", minLength: 1 } },
         categories: {
           type: "object",

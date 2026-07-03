@@ -2,9 +2,12 @@ import {
   ProviderError,
   type ChatMessage,
   type ModelGateway,
+  type RequestLabels,
+  type RoutingHints,
   type ToolDefinition,
   type UsageSnapshot
 } from "@fairy/model-gateway";
+import { MemoryGate, proposeMemoryCandidate } from "@fairy/memory";
 import type { EventEnvelope, Labels } from "@fairy/protocol";
 import {
   PolicyError,
@@ -20,9 +23,12 @@ import { mkdir, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { assemblePrompt, type ContextConfig } from "./context.js";
+import { escalateLabelsForContent } from "./governance.js";
 
 export { assemblePrompt } from "./context.js";
 export type { AssembledPrompt, ContextConfig, ContextManifestPayload, ContextZoneName, ReductionStage } from "./context.js";
+export { escalateLabelsForContent } from "./governance.js";
+export type { EscalationResult, LabelEscalation } from "./governance.js";
 
 export const defaultSystemPrompt =
   "You are Fairy, a helpful bilingual (Chinese/English) AI companion. Be concise, capable, and honest.";
@@ -35,7 +41,10 @@ export type KernelEventType =
   | "approval.resolved"
   | "artifact.created"
   | "context.manifest"
+  | "memory.gate.decision"
+  | "memory.written"
   | "progress.update"
+  | "route.denied"
   | "turn.delta"
   | "reasoning.delta"
   | "tool.call"
@@ -45,6 +54,7 @@ export type KernelEventType =
   | "error";
 
 export interface KernelEvent {
+  readonly labels?: Labels;
   readonly type: KernelEventType;
   readonly payload: Record<string, unknown>;
 }
@@ -97,6 +107,7 @@ export interface TurnRunnerOptions {
   readonly auditLog?: AuditLog;
   readonly contextConfig?: Partial<ContextConfig>;
   readonly maxToolIterations?: number;
+  readonly memoryGate?: MemoryGate;
   readonly modelGateway: ModelGateway;
   readonly permissionEngine?: PermissionEngine;
   readonly permissionAskTimeoutMs?: number;
@@ -111,6 +122,7 @@ export interface RunTurnOptions {
   readonly input: string;
   readonly history: TurnRunnerHistory;
   readonly labels: Labels;
+  readonly routingHints?: RoutingHints;
   readonly emit: (event: KernelEvent) => Promise<EventEnvelope>;
 }
 
@@ -169,6 +181,25 @@ const combineUsage = (left: UsageSnapshot | undefined, right: UsageSnapshot): Us
 
 const resultToContext = (call: ToolCall, payload: Record<string, unknown>): string =>
   JSON.stringify({ call_id: call.call_id, tool: call.name, ...payload });
+
+const labelsFromUnknown = (value: unknown, fallback: Labels): Labels => {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return fallback;
+  }
+  const record = value as Record<string, unknown>;
+  const sensitivity = record.sensitivity;
+  const residency = record.residency;
+  if (
+    (sensitivity === "public" || sensitivity === "internal" || sensitivity === "personal" || sensitivity === "secret") &&
+    (residency === "local-only" || residency === "region-restricted" || residency === "global-ok")
+  ) {
+    return { residency, sensitivity };
+  }
+  return fallback;
+};
+
+const publicSafeRouteDeniedText =
+  "I can't send this turn to the configured model because the prompt labels exceed the provider clearance. Configure a cleared local/fallback model or explicitly declassify the content.";
 
 export class AuditLog {
   readonly #db: DatabaseSync;
@@ -261,6 +292,7 @@ export class TurnRunner {
   readonly #auditLog: AuditLog | undefined;
   readonly #contextConfig: ContextConfig;
   readonly #maxToolIterations: number;
+  readonly #memoryGate: MemoryGate;
   readonly #modelGateway: ModelGateway;
   readonly #pendingApprovals = new Map<string, PendingApproval>();
   readonly #permissionAskTimeoutMs: number;
@@ -278,6 +310,7 @@ export class TurnRunner {
       reduceAt: options.contextConfig?.reduceAt ?? 0.8
     };
     this.#maxToolIterations = options.maxToolIterations ?? 16;
+    this.#memoryGate = options.memoryGate ?? new MemoryGate();
     this.#modelGateway = options.modelGateway;
     this.#permissionAskTimeoutMs = options.permissionAskTimeoutMs ?? 300_000;
     this.#permissionEngine = options.permissionEngine ?? new PermissionEngine({
@@ -350,6 +383,10 @@ export class TurnRunner {
     let interrupted = false;
 
     try {
+      const inputEscalation = escalateLabelsForContent(options.input, options.labels);
+      const currentLabels = inputEscalation.labels;
+      await this.#maybeEvaluateMemoryCandidate(options, currentLabels);
+
       const definitions = toolDefinitions(this.#tools) as ToolDefinition[];
       const turnMessages: ChatMessage[] = [];
 
@@ -358,6 +395,7 @@ export class TurnRunner {
         let sawDone = false;
         const assembled = assemblePrompt({
           config: this.#contextConfig,
+          currentLabels,
           currentInput: options.input,
           currentTurnMessages: turnMessages,
           history: options.history.messages,
@@ -368,19 +406,29 @@ export class TurnRunner {
           tools: definitions
         });
         await options.emit({
-          payload: assembled.manifest,
+          labels: assembled.effectiveLabels,
+          payload: {
+            ...assembled.manifest,
+            ...(inputEscalation.escalations.length > 0 ? { label_escalations: inputEscalation.escalations } : {})
+          },
           type: "context.manifest"
         });
 
         for await (const event of this.#modelGateway.generate(
           "main",
-          { labels: options.labels, messages: assembled.messages, tools: definitions },
+          {
+            labels: assembled.effectiveLabels,
+            messages: assembled.messages,
+            ...(options.routingHints ? { routing_hints: options.routingHints } : {}),
+            tools: definitions
+          },
           { abort: active.controller.signal }
         )) {
           if (event.type === "text") {
             content += event.text;
             active.lastHeardMark = `text:${active.textIndex}`;
             await options.emit({
+              labels: assembled.effectiveLabels,
               payload: { index: active.textIndex, text: event.text },
               type: "turn.delta"
             });
@@ -390,15 +438,41 @@ export class TurnRunner {
 
           if (event.type === "progress") {
             await options.emit({
+              labels: assembled.effectiveLabels,
               payload: event.payload,
               type: "progress.update"
             });
             continue;
           }
 
+          if (event.type === "route_denied") {
+            sawDone = true;
+            finishReason = "error";
+            await options.emit({
+              labels: assembled.effectiveLabels,
+              payload: event.payload,
+              type: "route.denied"
+            });
+            await options.emit({
+              labels: assembled.effectiveLabels,
+              payload: {
+                content: [{ kind: "text", text: publicSafeRouteDeniedText }],
+                finish_reason: "error",
+                model_trace: {
+                  denied_candidates: event.payload.denied_candidates
+                },
+                usage: totalUsage ?? { estimated: true, input_tokens: 0, output_tokens: 0 }
+              },
+              type: "turn.final"
+            });
+            content += content ? `\n\n${publicSafeRouteDeniedText}` : publicSafeRouteDeniedText;
+            break;
+          }
+
           if (event.type === "reasoning") {
             active.lastHeardMark = `reasoning:${active.reasoningIndex}`;
             await options.emit({
+              labels: assembled.effectiveLabels,
               payload: { index: active.reasoningIndex, text: event.text },
               type: "reasoning.delta"
             });
@@ -421,6 +495,7 @@ export class TurnRunner {
           totalUsage = combineUsage(totalUsage, event.usage);
           finishReason = event.finish_reason;
           await options.emit({
+            labels: assembled.effectiveLabels,
             payload: {
               content: [{ kind: "text", text: content || "(empty response)" }],
               finish_reason: event.finish_reason,
@@ -437,6 +512,7 @@ export class TurnRunner {
 
         if (toolCalls.length === 0) {
           await options.emit({
+            labels: assembled.effectiveLabels,
             payload: {
               content: [{ kind: "text", text: content || "(empty response)" }],
               finish_reason: "stop",
@@ -452,6 +528,7 @@ export class TurnRunner {
           const note = `Tool iteration limit (${this.#maxToolIterations}) reached.`;
           content += content ? `\n\n${note}` : note;
           await options.emit({
+            labels: assembled.effectiveLabels,
             payload: {
               content: [{ kind: "text", text: note }],
               finish_reason: "tool-limit",
@@ -464,6 +541,7 @@ export class TurnRunner {
 
         turnMessages.push({
           content: "",
+          labels: assembled.effectiveLabels,
           role: "assistant",
           turn: options.turn,
           tool_calls: toolCalls.map((call) => ({
@@ -474,9 +552,10 @@ export class TurnRunner {
         });
 
         for (const call of toolCalls) {
-          const toolResult = await this.#handleToolCall(call, options, active);
+          const toolResult = await this.#handleToolCall(call, options, active, assembled.effectiveLabels);
           turnMessages.push({
             content: resultToContext(call, toolResult.contextPayload),
+            labels: labelsFromUnknown(toolResult.contextPayload.labels, assembled.effectiveLabels),
             role: "tool",
             turn: options.turn,
             tool_call_id: call.call_id
@@ -521,10 +600,50 @@ export class TurnRunner {
     };
   }
 
+  async #maybeEvaluateMemoryCandidate(options: RunTurnOptions, labels: RequestLabels): Promise<void> {
+    const candidate = proposeMemoryCandidate({
+      labels,
+      sid: options.sid,
+      text: options.input,
+      turn: options.turn
+    });
+    if (!candidate) {
+      return;
+    }
+
+    const decision = this.#memoryGate.evaluate(candidate);
+    await options.emit({
+      labels,
+      payload: {
+        category: candidate.category,
+        decision: decision.decision,
+        memory_id: decision.memory_id,
+        reason: decision.reason,
+        source: candidate.source
+      },
+      type: "memory.gate.decision"
+    });
+
+    if (decision.decision !== "allow") {
+      return;
+    }
+
+    await options.emit({
+      labels,
+      payload: {
+        memory_id: decision.memory_id,
+        summary: candidate.text,
+        tier: "semantic"
+      },
+      type: "memory.written"
+    });
+  }
+
   async #handleToolCall(
     call: ToolCall,
     options: RunTurnOptions,
-    active: ActiveTurn
+    active: ActiveTurn,
+    currentLabels: Labels
   ): Promise<{ contextPayload: Record<string, unknown> }> {
     const tool = this.#tools.get(call.name);
     const permission = this.#permissionEngine.decide(call.name, call.args, {
@@ -559,6 +678,7 @@ export class TurnRunner {
     }
 
     await options.emit({
+      labels: currentLabels,
       payload: {
         args: call.args,
         call_id: call.call_id,
@@ -726,7 +846,7 @@ export class TurnRunner {
       payload.result = result.content ?? result.artifact_ref ?? "";
     }
 
-    await options.emit({ payload, type: "tool.result" });
+    await options.emit({ labels: result.labels, payload, type: "tool.result" });
     return { contextPayload: payload };
   }
 
@@ -736,15 +856,16 @@ export class TurnRunner {
     error: Error,
     deniedByPolicy = false
   ): Promise<{ contextPayload: Record<string, unknown> }> {
+    const labels: Labels = { residency: "global-ok", sensitivity: "internal" };
     const payload = {
       call_id: call.call_id,
       denied_by_policy: deniedByPolicy,
       error: { class: error.name, message: error.message },
-      labels: { residency: "global-ok", sensitivity: "internal" },
+      labels,
       provenance: `tool:${call.name}`,
       status: "error"
     };
-    await options.emit({ payload, type: "tool.result" });
+    await options.emit({ labels, payload, type: "tool.result" });
     return { contextPayload: payload };
   }
 
@@ -762,6 +883,7 @@ export class TurnRunner {
     await mkdir(dirname(path), { recursive: true });
     await writeFile(path, content, "utf8");
     await options.emit({
+      labels,
       payload: {
         hash,
         labels,

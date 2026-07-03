@@ -1,55 +1,36 @@
+import { canRouteToModel, defaultRequestLabels } from "./governance.js";
 import { parseModelGatewayConfig, resolveSecretRef } from "./config.js";
 import { streamOpenAIChat } from "./openai-chat.js";
 import { estimateTextTokens } from "./tokens.js";
 import { ProviderError, type GenerateOptions, type GenerateRequest, type ModelConfig, type ModelGateway, type ModelMetadata, type ModelTrace, type NormalizedModelEvent, type TokenEstimate } from "./types.js";
 
-const sensitivityRank = {
-  public: 0,
-  internal: 1,
-  personal: 2,
-  secret: 3
-} as const;
-
-const clearanceTrace = (model: ModelConfig, request: GenerateRequest): ModelTrace | undefined => {
-  if (!request.labels) {
-    return undefined;
-  }
-
-  if (sensitivityRank[request.labels.sensitivity] > sensitivityRank[model.data_clearance.max_sensitivity]) {
-    return {
-      clearance: {
-        reason: `request sensitivity ${request.labels.sensitivity} exceeds model max ${model.data_clearance.max_sensitivity}`,
-        violation: true
-      }
-    };
-  }
-
-  if (!model.data_clearance.residency.includes(request.labels.residency)) {
-    return {
-      clearance: {
-        reason: `request residency ${request.labels.residency} is not in model residency clearance`,
-        violation: true
-      }
-    };
-  }
-
-  return { clearance: { violation: false } };
-};
-
 const shouldFallback = (error: ProviderError): boolean =>
   error.auth || error.rate_limited || error.retryable;
 
 type FallbackTrace = NonNullable<ModelTrace["fallbacks"]>[number];
+type DeniedCandidateTrace = NonNullable<ModelTrace["denied_candidates"]>[number];
 
 const traceFor = (
   model: ModelConfig,
   request: GenerateRequest,
-  fallbacks: readonly FallbackTrace[]
+  fallbacks: readonly FallbackTrace[],
+  deniedCandidates: readonly DeniedCandidateTrace[]
 ): ModelTrace => ({
-  ...(clearanceTrace(model, request) ?? {}),
+  clearance: { violation: false },
+  ...(deniedCandidates.length > 0 ? { denied_candidates: deniedCandidates } : {}),
   ...(fallbacks.length > 0 ? { fallbacks } : {}),
   model_id: model.id
 });
+
+const hasAllowedLaterCandidate = (
+  candidates: readonly ModelConfig[],
+  startIndex: number,
+  request: GenerateRequest,
+  governance: ReturnType<typeof parseModelGatewayConfig>["governance"]
+): boolean =>
+  candidates.slice(startIndex).some((candidate) =>
+    canRouteToModel(request.labels ?? defaultRequestLabels, candidate, governance, request.routing_hints).ok
+  );
 
 export class ConfiguredModelGateway implements ModelGateway {
   readonly #config;
@@ -77,13 +58,31 @@ export class ConfiguredModelGateway implements ModelGateway {
   async *generate(role: string, request: GenerateRequest, options: GenerateOptions = {}): AsyncIterable<NormalizedModelEvent> {
     const candidates = this.#modelsForRole(role);
     const fallbacks: FallbackTrace[] = [];
+    const deniedCandidates: DeniedCandidateTrace[] = [];
     let lastError: ProviderError | undefined;
 
     for (const [index, model] of candidates.entries()) {
+      const labels = request.labels ?? defaultRequestLabels;
+      const clearance = canRouteToModel(labels, model, this.#config.governance, request.routing_hints);
+      if (!clearance.ok) {
+        const reason = clearance.reason ?? "model clearance does not satisfy request labels";
+        deniedCandidates.push({ model_id: model.id, reason });
+        yield {
+          payload: {
+            detail: `model ${model.id} denied by clearance: ${reason}`,
+            model_id: model.id,
+            reason,
+            stage: "route-denied"
+          },
+          type: "progress"
+        };
+        continue;
+      }
+
       const apiKey = resolveSecretRef(model.api_key_ref, this.#env);
-      const next = candidates[index + 1];
-      if (!next) {
-        const trace = traceFor(model, request, fallbacks);
+      const hasFallbackCandidate = hasAllowedLaterCandidate(candidates, index + 1, request, this.#config.governance);
+      if (!hasFallbackCandidate) {
+        const trace = traceFor(model, request, fallbacks, deniedCandidates);
         for await (const event of streamOpenAIChat({
           ...(options.abort ? { abort: options.abort } : {}),
           ...(apiKey ? { apiKey } : {}),
@@ -123,26 +122,32 @@ export class ConfiguredModelGateway implements ModelGateway {
           throw providerError;
         }
 
+        const nextAllowed = candidates.slice(index + 1).find((candidate) =>
+          canRouteToModel(request.labels ?? defaultRequestLabels, candidate, this.#config.governance, request.routing_hints).ok
+        );
+        if (!nextAllowed) {
+          throw providerError;
+        }
         const reason = providerError.auth
           ? "auth"
           : providerError.rate_limited
             ? "rate_limited"
             : "retryable";
-        fallbacks.push({ from: model.id, reason, to: next.id });
+        fallbacks.push({ from: model.id, reason, to: nextAllowed.id });
         yield {
           payload: {
-            detail: `model fallback from ${model.id} to ${next.id}: ${reason}`,
+            detail: `model fallback from ${model.id} to ${nextAllowed.id}: ${reason}`,
             from: model.id,
             reason,
             stage: "model-fallback",
-            to: next.id
+            to: nextAllowed.id
           },
           type: "progress"
         };
         continue;
       }
 
-      const trace = traceFor(model, request, fallbacks);
+      const trace = traceFor(model, request, fallbacks, deniedCandidates);
       for (const event of buffered) {
         if (event.type === "done") {
           yield { ...event, trace };
@@ -153,7 +158,18 @@ export class ConfiguredModelGateway implements ModelGateway {
       return;
     }
 
-    throw lastError ?? new ProviderError(`all models failed for role ${role}`, { retryable: false });
+    if (lastError) {
+      throw lastError;
+    }
+    yield {
+      payload: {
+        denied_candidates: deniedCandidates,
+        reason: "No configured model satisfies request labels.",
+        required_clearance: request.labels ?? defaultRequestLabels,
+        role
+      },
+      type: "route_denied"
+    };
   }
 
   #modelsForRole(role: string): readonly [ModelConfig, ...ModelConfig[]] {

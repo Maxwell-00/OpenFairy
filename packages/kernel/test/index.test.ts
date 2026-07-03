@@ -1,6 +1,6 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
-import { PermissionEngine, TurnRunner, type KernelEvent } from "../src/index.js";
+import { escalateLabelsForContent, PermissionEngine, TurnRunner, type KernelEvent } from "../src/index.js";
 import { estimateTextTokens, type ModelGateway, type NormalizedModelEvent } from "@fairy/model-gateway";
 import type { EventEnvelope } from "@fairy/protocol";
 
@@ -105,8 +105,7 @@ describe("@fairy/kernel TurnRunner", () => {
       turn: 1
     });
 
-    await Promise.resolve();
-    expect(abortSignal).toBeDefined();
+    await vi.waitFor(() => expect(abortSignal).toBeDefined());
     expect(runner.cancel("ses_01J00000000000000000000001")).toBe(true);
     await run;
 
@@ -173,5 +172,55 @@ describe("@fairy/kernel TurnRunner", () => {
     expect(result).toMatchObject({ finish_reason: "cancelled" });
     expect(emitted.map((event) => event.type)).toEqual(["context.manifest", "tool.call", "turn.interrupted"]);
     expect(emitted.at(-1)?.payload).toMatchObject({ reason: "user_cancelled" });
+  });
+
+  it("raises semantic labels without downgrading existing labels", () => {
+    expect(escalateLabelsForContent(
+      "API_KEY=sk_test_1234567890abcdef",
+      { residency: "global-ok", sensitivity: "internal" }
+    ).labels).toEqual({ residency: "local-only", sensitivity: "secret" });
+
+    expect(escalateLabelsForContent(
+      "my phone is 555-123-4567",
+      { residency: "global-ok", sensitivity: "public" }
+    ).labels).toEqual({ residency: "global-ok", sensitivity: "personal" });
+
+    expect(escalateLabelsForContent(
+      "ordinary public project note",
+      { residency: "local-only", sensitivity: "secret" }
+    ).labels).toEqual({ residency: "local-only", sensitivity: "secret" });
+  });
+
+  it("passes semantically escalated labels to the model gateway before generation", async () => {
+    let seenLabels: unknown;
+    const gateway: ModelGateway = {
+      estimateTokens(input) {
+        return { estimated: true, tokens: estimateTextTokens(input) };
+      },
+      async *generate(_role, request) {
+        seenLabels = request.labels;
+        yield { finish_reason: "stop", type: "done", usage: { estimated: true, input_tokens: 1, output_tokens: 0 } };
+      },
+      modelInfo() {
+        return { context_window: 8000, id: "mock-main", max_output: 1024, model: "mock-model" };
+      }
+    };
+    const emitted: KernelEvent[] = [];
+    const runner = new TurnRunner({ modelGateway: gateway });
+
+    await runner.runTurn({
+      emit: makeEmit(emitted),
+      history: { messages: [] },
+      input: "API_KEY=sk_test_1234567890abcdef",
+      labels,
+      sid: "ses_01J00000000000000000000003",
+      turn: 1
+    });
+
+    expect(seenLabels).toEqual({ residency: "local-only", sensitivity: "secret" });
+    expect(emitted.find((event) => event.type === "context.manifest")?.payload).toMatchObject({
+      effective_labels: { residency: "local-only", sensitivity: "secret" },
+      label_escalations: [expect.objectContaining({ category: "credentials" })]
+    });
   });
 });

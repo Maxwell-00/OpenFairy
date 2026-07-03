@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { runMockConformance } from "../src/conformance.js";
+import { classifyLiveToolCallShape, runMockConformance } from "../src/conformance.js";
 
 describe("conformance kit v1", () => {
   it("passes the mock OpenAI-compatible provider suite", async () => {
@@ -16,5 +16,18 @@ describe("conformance kit v1", () => {
       "function-name charset rejection",
       "wire-name codec round-trip"
     ]));
+  });
+
+  it("does not report live tool capability as pass when only done is observed", () => {
+    const verdict = classifyLiveToolCallShape([
+      { text: "done", type: "text" },
+      { finish_reason: "stop", type: "done", usage: { estimated: true, input_tokens: 1, output_tokens: 1 } }
+    ]);
+
+    expect(verdict).toMatchObject({
+      ok: true,
+      reason: "model_did_not_call_tool",
+      status: "degraded"
+    });
   });
 });

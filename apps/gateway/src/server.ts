@@ -1,5 +1,5 @@
-import { AuditLog, PermissionEngine, TurnRunner, type KernelEventType, type TurnRunnerHistory } from "@fairy/kernel";
-import { createModelGateway, type ChatMessage } from "@fairy/model-gateway";
+import { AuditLog, escalateLabelsForContent, PermissionEngine, TurnRunner, type KernelEventType, type TurnRunnerHistory } from "@fairy/kernel";
+import { createModelGateway, type ChatMessage, type RoutingHints } from "@fairy/model-gateway";
 import {
   createEventId,
   createSessionId,
@@ -21,7 +21,9 @@ import type { GatewayRuntimeConfig } from "./config.js";
 
 export const gatewayVersion = "0.1.0-m1";
 
-const defaultLabels: Labels = { sensitivity: "internal", residency: "global-ok" };
+const balancedDefaultLabels: Labels = { sensitivity: "internal", residency: "global-ok" };
+const sovereignDefaultLabels: Labels = { sensitivity: "personal", residency: "local-only" };
+const cloudFriendlyDefaultLabels: Labels = { sensitivity: "personal", residency: "global-ok" };
 
 interface SessionState {
   readonly sid: `ses_${string}`;
@@ -42,8 +44,10 @@ interface ClientMessage {
   readonly channel?: unknown;
   readonly decision?: unknown;
   readonly event?: unknown;
+  readonly labels?: unknown;
   readonly replay_from?: unknown;
   readonly request_id?: unknown;
+  readonly routing_hints?: unknown;
 }
 
 const json = (response: ServerResponse, status: number, body: unknown): void => {
@@ -77,6 +81,25 @@ const isSessionId = (value: unknown): value is `ses_${string}` =>
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   Boolean(value && typeof value === "object" && !Array.isArray(value));
 
+const isLabels = (value: unknown): value is Labels =>
+  isRecord(value) &&
+  (value.sensitivity === "public" || value.sensitivity === "internal" || value.sensitivity === "personal" || value.sensitivity === "secret") &&
+  (value.residency === "local-only" || value.residency === "region-restricted" || value.residency === "global-ok");
+
+const isRoutingHints = (value: unknown): value is RoutingHints =>
+  isRecord(value) &&
+  (!("prefer_local" in value) || typeof value.prefer_local === "boolean");
+
+const routingHintsFrom = (value: unknown): RoutingHints | undefined => {
+  if (value === undefined) {
+    return undefined;
+  }
+  if (!isRoutingHints(value)) {
+    return undefined;
+  }
+  return typeof value.prefer_local === "boolean" ? { prefer_local: value.prefer_local } : {};
+};
+
 const textFromContent = (content: unknown): string => {
   if (!Array.isArray(content)) {
     return "";
@@ -89,6 +112,22 @@ const textFromContent = (content: unknown): string => {
 
 const payloadText = (payload: unknown): string =>
   isRecord(payload) ? textFromContent(payload.content) : "";
+
+const governanceProfile = (config: Record<string, unknown>): "balanced" | "sovereign" | "cloud-friendly" => {
+  const governance = config.governance;
+  const profile = isRecord(governance) ? governance.profile : undefined;
+  return profile === "sovereign" || profile === "cloud-friendly" ? profile : "balanced";
+};
+
+const defaultLabelsForProfile = (profile: "balanced" | "sovereign" | "cloud-friendly"): Labels => {
+  if (profile === "sovereign") {
+    return sovereignDefaultLabels;
+  }
+  if (profile === "cloud-friendly") {
+    return cloudFriendlyDefaultLabels;
+  }
+  return balancedDefaultLabels;
+};
 
 const stablePayload = (payload: Record<string, unknown>): string =>
   JSON.stringify(Object.fromEntries(Object.entries(payload).sort(([left], [right]) => left.localeCompare(right))));
@@ -147,7 +186,7 @@ const actorForKernelEvent = (type: KernelEventType): Actor => {
   if (type === "tool.call" || type === "tool.result") {
     return "tool";
   }
-  if (type === "approval.request" || type === "approval.resolved" || type === "artifact.created" || type === "context.manifest" || type === "error" || type === "progress.update" || type === "turn.interrupted") {
+  if (type === "approval.request" || type === "approval.resolved" || type === "artifact.created" || type === "context.manifest" || type === "error" || type === "memory.gate.decision" || type === "memory.written" || type === "progress.update" || type === "route.denied" || type === "turn.interrupted") {
     return "system";
   }
   return "agent";
@@ -284,7 +323,7 @@ export class MinimalGateway {
       state.turnCount += 1;
       const text = payloadText(event.payload);
       if (text) {
-        state.history.push({ content: text, role: "user", turn: event.turn });
+        state.history.push({ content: text, labels: event.labels, role: "user", turn: event.turn });
       }
       return;
     }
@@ -296,6 +335,7 @@ export class MinimalGateway {
       if (callId && tool) {
         state.history.push({
           content: "",
+          labels: event.labels,
           role: "assistant",
           tool_calls: [{ arguments: args, id: callId, name: tool }],
           turn: event.turn
@@ -309,6 +349,7 @@ export class MinimalGateway {
       if (callId) {
         state.history.push({
           content: stablePayload(event.payload),
+          labels: event.labels,
           role: "tool",
           tool_call_id: callId,
           turn: event.turn
@@ -320,7 +361,7 @@ export class MinimalGateway {
     if (event.type === "turn.final") {
       const text = payloadText(event.payload);
       if (text) {
-        state.history.push({ content: text, role: "assistant", turn: event.turn });
+        state.history.push({ content: text, labels: event.labels, role: "assistant", turn: event.turn });
       }
     }
   }
@@ -460,7 +501,15 @@ export class MinimalGateway {
         this.#sendOpError(socket, op, error instanceof Error ? error.message : String(error), { sid: message.sid });
         return;
       }
-      await this.#acceptTurnInput(socket, message.sid, payload);
+      if (message.labels !== undefined && !isLabels(message.labels)) {
+        this.#sendOpError(socket, op, "turn.input labels must include valid sensitivity and residency.", { sid: message.sid });
+        return;
+      }
+      if (message.routing_hints !== undefined && !isRoutingHints(message.routing_hints)) {
+        this.#sendOpError(socket, op, "turn.input routing_hints.prefer_local must be boolean when present.", { sid: message.sid });
+        return;
+      }
+      await this.#acceptTurnInput(socket, message.sid, payload, message.labels, routingHintsFrom(message.routing_hints));
       return;
     }
 
@@ -474,7 +523,16 @@ export class MinimalGateway {
         this.#sendOpError(socket, op, `unknown session ${result.event.sid}`, { sid: result.event.sid });
         return;
       }
-      await this.#acceptTurnInput(socket, result.event.sid as `ses_${string}`, result.event.payload);
+      const routingHints = isRecord(result.event.payload)
+        ? routingHintsFrom(result.event.payload.routing_hints)
+        : undefined;
+      await this.#acceptTurnInput(
+        socket,
+        result.event.sid as `ses_${string}`,
+        result.event.payload as Record<string, unknown>,
+        result.event.labels,
+        routingHints
+      );
       return;
     }
 
@@ -562,7 +620,13 @@ export class MinimalGateway {
     });
   }
 
-  async #acceptTurnInput(socket: WebSocket, sid: `ses_${string}`, payload: unknown): Promise<void> {
+  async #acceptTurnInput(
+    socket: WebSocket,
+    sid: `ses_${string}`,
+    payload: Record<string, unknown>,
+    inputLabels?: Labels,
+    routingHints?: RoutingHints
+  ): Promise<void> {
     const state = this.#sessions.get(sid);
     if (!state) {
       throw new Error(`unknown session ${sid}`);
@@ -580,11 +644,17 @@ export class MinimalGateway {
       return;
     }
 
+    const labelEscalation = escalateLabelsForContent(text, inputLabels ?? this.#defaultLabels());
+    const labels = labelEscalation.labels;
     const history: TurnRunnerHistory = { messages: [...state.history] };
     const turn = state.turn + 1;
     await this.#emit({
       actor: "user",
-      payload: payload as Record<string, unknown>,
+      labels,
+      payload: {
+        ...payload,
+        ...(labelEscalation.escalations.length > 0 ? { label_escalations: labelEscalation.escalations } : {})
+      },
       provenance: "user",
       sid,
       turn,
@@ -595,6 +665,7 @@ export class MinimalGateway {
       emit: (event) =>
         this.#emit({
           actor: actorForKernelEvent(event.type),
+          ...(event.labels ? { labels: event.labels } : {}),
           payload: event.payload,
           provenance: "agent",
           sid,
@@ -603,7 +674,8 @@ export class MinimalGateway {
         }),
       history,
       input: text,
-      labels: defaultLabels,
+      labels,
+      ...(routingHints ? { routingHints } : {}),
       sid,
       turn
     });
@@ -617,8 +689,13 @@ export class MinimalGateway {
     this.#subscriptions.set(sid, subscribers);
   }
 
+  #defaultLabels(): Labels {
+    return defaultLabelsForProfile(governanceProfile(this.#config.config));
+  }
+
   #makeEnvelope(event: {
     actor: Actor;
+    labels?: Labels;
     payload: Record<string, unknown>;
     provenance: Provenance;
     sid: `ses_${string}`;
@@ -628,7 +705,7 @@ export class MinimalGateway {
     const envelope: EventEnvelope = {
       actor: event.actor,
       id: createEventId(),
-      labels: defaultLabels,
+      labels: event.labels ?? this.#defaultLabels(),
       payload: event.payload,
       provenance: event.provenance,
       sid: event.sid,
@@ -647,6 +724,7 @@ export class MinimalGateway {
 
   async #emit(event: {
     actor: Actor;
+    labels?: Labels;
     payload: Record<string, unknown>;
     provenance: Provenance;
     sid: `ses_${string}`;

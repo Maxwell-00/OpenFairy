@@ -26,7 +26,8 @@ search:
   engine:
     kind: mock
 governance:
-  home_regions: []
+  profile: balanced
+  home_regions: [cn]
   categories:
     credentials:
       sensitivity: secret

@@ -1,6 +1,8 @@
 export interface ChatMessage {
   readonly role: "system" | "user" | "assistant" | "tool";
   readonly content: string;
+  readonly labels?: RequestLabels;
+  readonly routing_hints?: RoutingHints;
   readonly turn?: number;
   readonly tool_call_id?: string;
   readonly tool_calls?: readonly {
@@ -19,10 +21,8 @@ export interface ToolDefinition {
 export interface GenerateRequest {
   readonly messages: readonly ChatMessage[];
   readonly tools?: readonly ToolDefinition[];
-  readonly labels?: {
-    readonly sensitivity: "public" | "internal" | "personal" | "secret";
-    readonly residency: "local-only" | "region-restricted" | "global-ok";
-  };
+  readonly labels?: RequestLabels;
+  readonly routing_hints?: RoutingHints;
 }
 
 export interface GenerateOptions {
@@ -44,6 +44,10 @@ export interface ModelTrace {
     readonly from: string;
     readonly reason: string;
     readonly to: string;
+  }[];
+  readonly denied_candidates?: readonly {
+    readonly model_id: string;
+    readonly reason: string;
   }[];
   readonly model_id?: string;
 }
@@ -77,6 +81,18 @@ export type NormalizedModelEvent =
       readonly name: string;
       readonly args: Record<string, unknown>;
     }
+  | {
+      readonly type: "route_denied";
+      readonly payload: {
+        readonly role: string;
+        readonly reason: string;
+        readonly required_clearance: RequestLabels;
+        readonly denied_candidates: readonly {
+          readonly model_id: string;
+          readonly reason: string;
+        }[];
+      };
+    }
   | { readonly type: "usage"; readonly usage: UsageSnapshot }
   | {
       readonly type: "done";
@@ -89,6 +105,20 @@ export interface DataClearance {
   readonly max_sensitivity: "public" | "internal" | "personal" | "secret";
   readonly residency: readonly ("local-only" | "region-restricted" | "global-ok")[];
   readonly regions?: readonly string[];
+}
+
+export interface RequestLabels {
+  readonly sensitivity: "public" | "internal" | "personal" | "secret";
+  readonly residency: "local-only" | "region-restricted" | "global-ok";
+}
+
+export interface RoutingHints {
+  readonly prefer_local?: boolean;
+}
+
+export interface GovernanceConfig {
+  readonly profile: "balanced" | "sovereign" | "cloud-friendly";
+  readonly home_regions: readonly string[];
 }
 
 export type ToolCapability = "native" | "prompted" | "none";
@@ -115,6 +145,7 @@ export interface RoleBinding {
 }
 
 export interface ModelGatewayConfig {
+  readonly governance: GovernanceConfig;
   readonly models: readonly ModelConfig[];
   readonly roles: Readonly<Record<string, RoleBinding>>;
   readonly watchdogMs: number;

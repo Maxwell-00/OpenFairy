@@ -1,4 +1,4 @@
-import type { ChatMessage, ModelGateway, ModelMetadata, ToolDefinition } from "@fairy/model-gateway";
+import { defaultRequestLabels, deriveMessageLabels, type ChatMessage, type ModelGateway, type ModelMetadata, type RequestLabels, type ToolDefinition } from "@fairy/model-gateway";
 import { createHash } from "node:crypto";
 
 export type ContextZoneName = "system" | "persona" | "tools" | "memory" | "skills" | "task" | "history" | "input";
@@ -24,6 +24,7 @@ export interface ContextManifestPayload {
 
 export interface AssemblePromptOptions {
   readonly config: ContextConfig;
+  readonly currentLabels?: RequestLabels;
   readonly currentTurnMessages?: readonly ChatMessage[];
   readonly currentInput: string;
   readonly history: readonly ChatMessage[];
@@ -35,6 +36,7 @@ export interface AssemblePromptOptions {
 }
 
 export interface AssembledPrompt {
+  readonly effectiveLabels: RequestLabels;
   readonly manifest: ContextManifestPayload;
   readonly messages: readonly ChatMessage[];
 }
@@ -199,6 +201,7 @@ const totalZoneTokens = (zones: ContextManifestPayload["zones"]): number =>
   zones.reduce((sum, zone) => sum + zone.tokens, 0);
 
 export const assemblePrompt = (options: AssemblePromptOptions): AssembledPrompt => {
+  const currentLabels = options.currentLabels ?? defaultRequestLabels;
   const systemContent = options.toolSafetyPrompt
     ? `${options.systemPrompt}\n\n${options.toolSafetyPrompt}`
     : options.systemPrompt;
@@ -237,6 +240,14 @@ export const assemblePrompt = (options: AssemblePromptOptions): AssembledPrompt 
     projected = totalZoneTokens(zones) + outputReserve;
   }
 
+  const messages = [
+    { content: systemContent, labels: defaultRequestLabels, role: "system" },
+    ...history,
+    { content: options.currentInput, labels: currentLabels, role: "user" },
+    ...currentTurnMessages
+  ] satisfies readonly ChatMessage[];
+  const effectiveLabels = deriveMessageLabels(messages, currentLabels);
+
   const prefixHash = createHash("sha256")
     .update(stableSerialize({ system: systemContent, tools: options.tools }))
     .digest("hex")
@@ -250,14 +261,11 @@ export const assemblePrompt = (options: AssemblePromptOptions): AssembledPrompt 
       prefix_hash: `sha256:${prefixHash}`,
       projected_tokens: projected,
       reduction_stages_applied: [...stages],
+      effective_labels: effectiveLabels,
       window,
       zones
     },
-    messages: [
-      { content: systemContent, role: "system" },
-      ...history,
-      { content: options.currentInput, role: "user" },
-      ...currentTurnMessages
-    ]
+    effectiveLabels,
+    messages
   };
 };

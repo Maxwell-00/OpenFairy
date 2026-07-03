@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from "vitest";
 
-import { createModelGateway, estimateTextTokens, fromWireName, ProviderError, toWireName, type NormalizedModelEvent } from "../src/index.js";
+import { canRouteToModel, createModelGateway, estimateTextTokens, fromWireName, parseModelGatewayConfig, ProviderError, toWireName, type ModelConfig, type NormalizedModelEvent } from "../src/index.js";
 import { MockOpenAIChatServer } from "../../testing/src/mock-openai.js";
 
 let server: MockOpenAIChatServer | undefined;
@@ -31,6 +31,16 @@ const collect = async (iterable: AsyncIterable<NormalizedModelEvent>): Promise<N
   }
   return events;
 };
+
+const governanceModel = (data_clearance: ModelConfig["data_clearance"]): ModelConfig => ({
+  base_url: "http://127.0.0.1:1",
+  capabilities: { tools: "native" },
+  context_window: 8000,
+  data_clearance,
+  id: "model",
+  model: "mock-model",
+  transport: "openai-chat"
+});
 
 afterEach(async () => {
   await server?.stop();
@@ -203,6 +213,83 @@ describe("@fairy/model-gateway", () => {
   it("round-trips dotted internal tool names through OpenAI-safe wire names", () => {
     expect(toWireName("fs.read")).toBe("fs__read");
     expect(fromWireName("fs__read")).toBe("fs.read");
+  });
+
+  it("enforces sensitivity ordering in clearance checks", () => {
+    const internalModel = governanceModel({ max_sensitivity: "internal", residency: ["global-ok"] });
+
+    expect(canRouteToModel({ residency: "global-ok", sensitivity: "public" }, internalModel, { home_regions: [], profile: "balanced" }).ok).toBe(true);
+    expect(canRouteToModel({ residency: "global-ok", sensitivity: "internal" }, internalModel, { home_regions: [], profile: "balanced" }).ok).toBe(true);
+    expect(canRouteToModel({ residency: "global-ok", sensitivity: "personal" }, internalModel, { home_regions: [], profile: "balanced" })).toMatchObject({
+      ok: false,
+      reason: expect.stringContaining("exceeds")
+    });
+  });
+
+  it("enforces residency clearance and resolves region-restricted through home regions", () => {
+    const local = governanceModel({ max_sensitivity: "secret", residency: ["local-only"] });
+    const cnRegion = governanceModel({ max_sensitivity: "secret", regions: ["cn"], residency: ["region-restricted"] });
+    const usRegion = governanceModel({ max_sensitivity: "secret", regions: ["us"], residency: ["region-restricted"] });
+    const global = governanceModel({ max_sensitivity: "secret", residency: ["global-ok"] });
+    const governance = { home_regions: ["cn"], profile: "balanced" } as const;
+
+    expect(canRouteToModel({ residency: "region-restricted", sensitivity: "internal" }, cnRegion, governance).ok).toBe(true);
+    expect(canRouteToModel({ residency: "region-restricted", sensitivity: "internal" }, local, governance).ok).toBe(true);
+    expect(canRouteToModel({ residency: "region-restricted", sensitivity: "internal" }, usRegion, governance)).toMatchObject({
+      ok: false,
+      reason: expect.stringContaining("home_regions")
+    });
+    expect(canRouteToModel({ residency: "local-only", sensitivity: "internal" }, cnRegion, governance).ok).toBe(false);
+    expect(canRouteToModel({ residency: "local-only", sensitivity: "internal" }, global, governance).ok).toBe(false);
+  });
+
+  it("treats routing_hints.prefer_local as advisory rather than gating", () => {
+    const global = governanceModel({ max_sensitivity: "internal", residency: ["global-ok"] });
+    const governance = { home_regions: [], profile: "balanced" } as const;
+
+    expect(canRouteToModel(
+      { residency: "global-ok", sensitivity: "internal" },
+      global,
+      governance,
+      { prefer_local: true }
+    ).ok).toBe(true);
+    expect(canRouteToModel(
+      { residency: "local-only", sensitivity: "internal" },
+      global,
+      governance,
+      { prefer_local: false }
+    ).ok).toBe(false);
+  });
+
+  it("rejects invalid governance and region-restricted provider config", () => {
+    expect(() => parseModelGatewayConfig({
+      governance: { profile: "fast" },
+      gateway: { watchdog_s: 1 },
+      models: [
+        {
+          base_url: "http://127.0.0.1:1",
+          data_clearance: { max_sensitivity: "internal", residency: ["global-ok"] },
+          id: "mock-main",
+          model: "mock-model",
+          transport: "openai-chat"
+        }
+      ],
+      roles: { main: { model: "mock-main" } }
+    })).toThrow(/governance\.profile/);
+
+    expect(() => parseModelGatewayConfig({
+      gateway: { watchdog_s: 1 },
+      models: [
+        {
+          base_url: "http://127.0.0.1:1",
+          data_clearance: { max_sensitivity: "internal", residency: ["region-restricted"] },
+          id: "mock-main",
+          model: "mock-model",
+          transport: "openai-chat"
+        }
+      ],
+      roles: { main: { model: "mock-main" } }
+    })).toThrow(/requires data_clearance\.regions/);
   });
 
   it("falls back after retry exhaustion and reports progress plus trace", async () => {

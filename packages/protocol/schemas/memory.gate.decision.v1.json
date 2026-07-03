@@ -43,8 +43,9 @@
       "properties": {
         "decision": {
           "enum": [
-            "admit",
-            "deny"
+            "allow",
+            "deny",
+            "hold"
           ],
           "type": "string"
         },

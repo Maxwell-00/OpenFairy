@@ -11,7 +11,9 @@ import { MockOpenAIChatServer, type MockOpenAIScript } from "./mock-openai.js";
 export interface ConformanceCaseVerdict {
   readonly name: string;
   readonly ok: boolean;
+  readonly status: "pass" | "fail" | "skip" | "degraded";
   readonly message?: string;
+  readonly reason?: string;
 }
 
 export interface ConformanceVerdict {
@@ -73,14 +75,40 @@ const withMock = async (script: MockOpenAIScript, fn: (server: MockOpenAIChatSer
 const runCase = async (name: string, fn: () => Promise<void> | void): Promise<ConformanceCaseVerdict> => {
   try {
     await fn();
-    return { name, ok: true };
+    return { name, ok: true, status: "pass" };
   } catch (error) {
     return {
       message: error instanceof Error ? error.message : String(error),
       name,
-      ok: false
+      ok: false,
+      status: "fail"
     };
   }
+};
+
+export const classifyLiveToolCallShape = (
+  events: readonly NormalizedModelEvent[],
+  name = "live trivial tool-call shape"
+): ConformanceCaseVerdict => {
+  if (events.some((event) => event.type === "tool_call")) {
+    return { name, ok: true, status: "pass" };
+  }
+  if (events.some((event) => event.type === "done")) {
+    return {
+      message: "Endpoint completed normally but did not emit a normalized tool_call.",
+      name,
+      ok: true,
+      reason: "model_did_not_call_tool",
+      status: "degraded"
+    };
+  }
+  return {
+    message: "Live endpoint produced neither a tool call nor a classified final response.",
+    name,
+    ok: false,
+    reason: "no_tool_call_or_done",
+    status: "fail"
+  };
 };
 
 const providerErrorFrom = async (script: MockOpenAIScript): Promise<ProviderError> => {
@@ -266,7 +294,7 @@ export const runMockConformance = async (): Promise<ConformanceVerdict> => {
   return {
     cases,
     mode: "mock",
-    ok: cases.every((testCase) => testCase.ok)
+    ok: cases.every((testCase) => testCase.status === "pass")
   };
 };
 
@@ -284,32 +312,39 @@ export const runLiveConformance = async (config: Record<string, unknown>, modelI
       assert(events.some((event) => event.type === "text"), "live endpoint produced no text deltas");
       assert(events.at(-1)?.type === "done", "live endpoint did not produce done");
     }),
-    runCase("live trivial tool-call shape", async () => {
-      const events = await collect(gateway.generate("main", {
-        messages: [{ content: "Call the echo tool with {\"text\":\"fairy\"}.", role: "user" }],
-        tools: [{
-          description: "Echo text back to the caller.",
-          name: "echo.run",
-          params: {
-            additionalProperties: false,
-            properties: { text: { type: "string" } },
-            required: ["text"],
-            type: "object"
-          }
-        }]
-      }));
-      assert(
-        events.some((event) => event.type === "tool_call" || event.type === "done"),
-        "live endpoint produced neither a tool call nor a classified final response"
-      );
-    })
+    (async (): Promise<ConformanceCaseVerdict> => {
+      const name = "live trivial tool-call shape";
+      try {
+        const events = await collect(gateway.generate("main", {
+          messages: [{ content: "Call the echo tool with {\"text\":\"fairy\"}.", role: "user" }],
+          tools: [{
+            description: "Echo text back to the caller.",
+            name: "echo.run",
+            params: {
+              additionalProperties: false,
+              properties: { text: { type: "string" } },
+              required: ["text"],
+              type: "object"
+            }
+          }]
+        }));
+        return classifyLiveToolCallShape(events, name);
+      } catch (error) {
+        return {
+          message: error instanceof Error ? error.message : String(error),
+          name,
+          ok: false,
+          status: "fail"
+        };
+      }
+    })()
   ]);
 
   return {
     cases,
     mode: "live",
     model: modelId,
-    ok: cases.every((testCase) => testCase.ok)
+    ok: cases.every((testCase) => testCase.status !== "fail")
   };
 };
 
@@ -319,7 +354,10 @@ export const formatConformanceTable = (verdict: ConformanceVerdict): string => {
     "| Case | Result | Detail |",
     "|---|---:|---|",
     ...verdict.cases.map((testCase) =>
-      `| ${testCase.name} | ${testCase.ok ? "PASS" : "FAIL"} | ${testCase.message ? testCase.message.replace(/\|/g, "\\|") : ""} |`
+      `| ${testCase.name} | ${testCase.status.toUpperCase()} | ${[
+        testCase.reason,
+        testCase.message
+      ].filter(Boolean).join(": ").replace(/\|/g, "\\|")} |`
     )
   ];
   return rows.join("\n");

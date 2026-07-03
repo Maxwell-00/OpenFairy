@@ -1,4 +1,4 @@
-import type { DataClearance, ModelCapabilities, ModelConfig, ModelGatewayConfig, RoleBinding, ToolCapability } from "./types.js";
+import type { DataClearance, GovernanceConfig, ModelCapabilities, ModelConfig, ModelGatewayConfig, RoleBinding, ToolCapability } from "./types.js";
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   Boolean(value && typeof value === "object" && !Array.isArray(value));
@@ -49,12 +49,32 @@ const readClearance = (record: Record<string, unknown>): DataClearance => {
   const regions = Array.isArray(clearance.regions)
     ? clearance.regions.filter((item): item is string => typeof item === "string")
     : undefined;
+  if (residency.includes("region-restricted") && (!regions || regions.length === 0)) {
+    throw new Error(`model ${String(record.id)} with region-restricted residency requires data_clearance.regions`);
+  }
 
   return {
     max_sensitivity: maxSensitivity as DataClearance["max_sensitivity"],
     residency: residency as DataClearance["residency"],
     ...(regions ? { regions } : {})
   };
+};
+
+const readGovernance = (config: Record<string, unknown>): GovernanceConfig => {
+  const governance = isRecord(config.governance) ? config.governance : {};
+  const profile = typeof governance.profile === "string" ? governance.profile : "balanced";
+  if (profile !== "balanced" && profile !== "sovereign" && profile !== "cloud-friendly") {
+    throw new Error("governance.profile must be balanced, sovereign, or cloud-friendly");
+  }
+  const homeRegions = Array.isArray(governance.home_regions)
+    ? governance.home_regions.map((item) => {
+        if (typeof item !== "string" || item.length === 0) {
+          throw new Error("governance.home_regions entries must be non-empty strings");
+        }
+        return item;
+      })
+    : [];
+  return { home_regions: homeRegions, profile };
 };
 
 export const parseModelGatewayConfig = (config: Record<string, unknown>): ModelGatewayConfig => {
@@ -137,7 +157,7 @@ export const parseModelGatewayConfig = (config: Record<string, unknown>): ModelG
   const gateway = isRecord(config.gateway) ? config.gateway : {};
   const watchdogS = typeof gateway.watchdog_s === "number" ? gateway.watchdog_s : 60;
 
-  return { models, roles, watchdogMs: watchdogS * 1000 };
+  return { governance: readGovernance(config), models, roles, watchdogMs: watchdogS * 1000 };
 };
 
 export const resolveSecretRef = (ref: string | undefined, env: NodeJS.ProcessEnv): string | undefined => {

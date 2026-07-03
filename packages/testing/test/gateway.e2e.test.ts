@@ -74,6 +74,7 @@ const writeConfig = (path: string, dataDir: string, token: string, baseUrl: stri
   readonly extraModels?: readonly string[];
   readonly mainRole?: readonly string[];
   readonly model?: readonly string[];
+  readonly modelClearance?: readonly string[];
   readonly permissions?: readonly string[];
   readonly workspaceRoot?: string;
 } = {}): void => {
@@ -86,9 +87,11 @@ const writeConfig = (path: string, dataDir: string, token: string, baseUrl: stri
       `    base_url: ${JSON.stringify(baseUrl)}`,
       "    model: mock-model",
       ...(options.model ?? []),
-      "    data_clearance:",
-      "      max_sensitivity: internal",
-      "      residency: [global-ok]",
+      ...(options.modelClearance ?? [
+        "    data_clearance:",
+        "      max_sensitivity: internal",
+        "      residency: [global-ok]"
+      ]),
       ...(options.extraModels ?? []),
       "roles:",
       "  main:",
@@ -288,6 +291,197 @@ describe("gateway M1 e2e", () => {
     } finally {
       await stopGateway(gateway);
       await fallback.stop();
+    }
+  });
+
+  it("denies a secret turn before provider I/O when no model has clearance", async () => {
+    provider = await MockOpenAIChatServer.start({ text: ["should not be called"] });
+    const temp = await mkdtemp(join(tmpdir(), "fairy-gateway-route-denied-"));
+    const dataDir = join(temp, "data");
+    const configPath = join(temp, "fairy.yaml");
+    const token = "route-denied-token";
+    writeConfig(configPath, dataDir, token, provider.url);
+    const gateway = startGateway(configPath);
+
+    try {
+      const port = await waitForGateway(gateway);
+      const client = await MockFairyClient.connect({ token, url: `ws://127.0.0.1:${port}` });
+      const created = await client.createSession("route denied");
+      const turnEvents = await client.sendTurnInput(created.sid, {
+        content: [{ kind: "text", text: "API_KEY=sk_test_1234567890abcdef" }]
+      });
+      client.close();
+
+      expect(provider.requests).toBe(0);
+      expect(turnEvents.map((event) => event.type)).toContain("route.denied");
+      expect(turnEvents.find((event) => event.type === "route.denied")?.payload).toMatchObject({
+        required_clearance: { residency: "local-only", sensitivity: "secret" },
+        role: "main"
+      });
+      expect(turnEvents.at(-1)).toMatchObject({
+        labels: { residency: "local-only", sensitivity: "secret" },
+        type: "turn.final"
+      });
+      assertSchemaValidStream(client.events());
+    } finally {
+      await stopGateway(gateway);
+    }
+  });
+
+  it("skips a denied primary and routes a secret turn to an allowed local fallback", async () => {
+    provider = await MockOpenAIChatServer.start({ text: ["primary should not be called"] });
+    const fallback = await MockOpenAIChatServer.start({
+      text: ["local ok"],
+      usage: { completion_tokens: 2, prompt_tokens: 3, total_tokens: 5 }
+    });
+    const temp = await mkdtemp(join(tmpdir(), "fairy-gateway-clearance-fallback-"));
+    const dataDir = join(temp, "data");
+    const configPath = join(temp, "fairy.yaml");
+    const token = "clearance-fallback-token";
+    writeConfig(configPath, dataDir, token, provider.url, {
+      extraModels: [
+        "  - id: mock-local",
+        "    transport: openai-chat",
+        `    base_url: ${JSON.stringify(fallback.url)}`,
+        "    model: mock-model",
+        "    data_clearance:",
+        "      max_sensitivity: secret",
+        "      residency: [local-only]"
+      ],
+      mainRole: [
+        "    model: mock-main",
+        "    fallback: [mock-local]"
+      ]
+    });
+    const gateway = startGateway(configPath);
+
+    try {
+      const port = await waitForGateway(gateway);
+      const client = await MockFairyClient.connect({ token, url: `ws://127.0.0.1:${port}` });
+      const created = await client.createSession("clearance fallback");
+      const turnEvents = await client.sendTurnInput(created.sid, {
+        content: [{ kind: "text", text: "API_KEY=sk_test_1234567890abcdef" }]
+      });
+      client.close();
+
+      expect(provider.requests).toBe(0);
+      expect(fallback.requests).toBe(1);
+      expect(turnEvents.find((event) => event.type === "progress.update")?.payload).toMatchObject({
+        model_id: "mock-main",
+        stage: "route-denied"
+      });
+      expect(turnEvents.at(-1)?.payload).toMatchObject({
+        content: [{ kind: "text", text: "local ok" }],
+        model_trace: {
+          denied_candidates: [expect.objectContaining({ model_id: "mock-main" })],
+          model_id: "mock-local"
+        }
+      });
+      assertSchemaValidStream(client.events());
+    } finally {
+      await stopGateway(gateway);
+      await fallback.stop();
+    }
+  });
+
+  it("keeps history contamination gated while secret content remains in the assembled prompt", async () => {
+    provider = await MockOpenAIChatServer.start({ text: ["should not be called"] });
+    const temp = await mkdtemp(join(tmpdir(), "fairy-gateway-history-contamination-"));
+    const dataDir = join(temp, "data");
+    const configPath = join(temp, "fairy.yaml");
+    const token = "history-contamination-token";
+    writeConfig(configPath, dataDir, token, provider.url);
+    const gateway = startGateway(configPath);
+
+    try {
+      const port = await waitForGateway(gateway);
+      const client = await MockFairyClient.connect({ token, url: `ws://127.0.0.1:${port}` });
+      const created = await client.createSession("history contamination");
+      await client.sendTurnInput(created.sid, {
+        content: [{ kind: "text", text: "API_KEY=sk_test_1234567890abcdef" }]
+      });
+      const secondTurn = await client.sendTurnInput(created.sid, {
+        content: [{ kind: "text", text: "hello, harmless follow-up" }]
+      });
+      client.close();
+
+      expect(provider.requests).toBe(0);
+      expect(secondTurn.find((event) => event.type === "context.manifest")?.payload).toMatchObject({
+        effective_labels: { residency: "local-only", sensitivity: "secret" }
+      });
+      expect(secondTurn.find((event) => event.type === "route.denied")?.payload).toMatchObject({
+        required_clearance: { residency: "local-only", sensitivity: "secret" }
+      });
+      assertSchemaValidStream(client.events());
+    } finally {
+      await stopGateway(gateway);
+    }
+  });
+
+  it("emits MemoryGate allow and memory.written for a safe explicit preference", async () => {
+    provider = await MockOpenAIChatServer.start({ text: ["stored preference"] });
+    const temp = await mkdtemp(join(tmpdir(), "fairy-gateway-memory-allow-"));
+    const dataDir = join(temp, "data");
+    const configPath = join(temp, "fairy.yaml");
+    const token = "memory-allow-token";
+    writeConfig(configPath, dataDir, token, provider.url);
+    const gateway = startGateway(configPath);
+
+    try {
+      const port = await waitForGateway(gateway);
+      const client = await MockFairyClient.connect({ token, url: `ws://127.0.0.1:${port}` });
+      const created = await client.createSession("memory allow");
+      const turnEvents = await client.sendTurnInput(created.sid, {
+        content: [{ kind: "text", text: "remember that favorite editor is Helix" }]
+      });
+      client.close();
+
+      const gateIndex = turnEvents.findIndex((event) => event.type === "memory.gate.decision");
+      const writtenIndex = turnEvents.findIndex((event) => event.type === "memory.written");
+      expect(gateIndex).toBeGreaterThan(-1);
+      expect(writtenIndex).toBeGreaterThan(gateIndex);
+      expect(turnEvents[gateIndex]?.payload).toMatchObject({
+        decision: "allow",
+        reason: "explicit_remember"
+      });
+      expect(turnEvents[writtenIndex]?.payload).toMatchObject({
+        summary: "favorite editor is Helix",
+        tier: "semantic"
+      });
+      assertSchemaValidStream(client.events());
+    } finally {
+      await stopGateway(gateway);
+    }
+  });
+
+  it("emits MemoryGate deny and no memory.written for an explicit secret", async () => {
+    provider = await MockOpenAIChatServer.start({ text: ["should not be called"] });
+    const temp = await mkdtemp(join(tmpdir(), "fairy-gateway-memory-deny-"));
+    const dataDir = join(temp, "data");
+    const configPath = join(temp, "fairy.yaml");
+    const token = "memory-deny-token";
+    writeConfig(configPath, dataDir, token, provider.url);
+    const gateway = startGateway(configPath);
+
+    try {
+      const port = await waitForGateway(gateway);
+      const client = await MockFairyClient.connect({ token, url: `ws://127.0.0.1:${port}` });
+      const created = await client.createSession("memory deny");
+      const turnEvents = await client.sendTurnInput(created.sid, {
+        content: [{ kind: "text", text: "remember that API_KEY=sk_test_1234567890abcdef" }]
+      });
+      client.close();
+
+      expect(provider.requests).toBe(0);
+      expect(turnEvents.find((event) => event.type === "memory.gate.decision")?.payload).toMatchObject({
+        decision: "deny",
+        reason: "secret_denied"
+      });
+      expect(turnEvents.some((event) => event.type === "memory.written")).toBe(false);
+      expect(turnEvents.map((event) => event.type)).toContain("route.denied");
+      assertSchemaValidStream(client.events());
+    } finally {
+      await stopGateway(gateway);
     }
   });
 

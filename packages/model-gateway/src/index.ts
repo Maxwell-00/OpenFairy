@@ -1,5 +1,13 @@
 export { parseModelGatewayConfig, resolveSecretRef } from "./config.js";
 export { ConfiguredModelGateway, createModelGateway } from "./gateway.js";
+export {
+  canRouteToModel,
+  defaultRequestLabels,
+  deriveLabels,
+  deriveMessageLabels,
+  sensitivityRank,
+  stricterResidency
+} from "./governance.js";
 export { fromWireName, streamOpenAIChat, toWireName } from "./openai-chat.js";
 export { estimateChatTokens, estimateTextTokens } from "./tokens.js";
 export { ProviderError } from "./types.js";
@@ -8,6 +16,7 @@ export type {
   DataClearance,
   GenerateOptions,
   GenerateRequest,
+  GovernanceConfig,
   ModelCapabilities,
   ModelConfig,
   ModelGateway,
@@ -15,6 +24,8 @@ export type {
   ModelMetadata,
   NormalizedModelEvent,
   RoleBinding,
+  RequestLabels,
+  RoutingHints,
   TokenEstimate,
   ToolCapability,
   ToolDefinition,

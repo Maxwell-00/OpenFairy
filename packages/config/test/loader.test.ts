@@ -21,7 +21,7 @@ describe("loadConfig", () => {
       models: [],
       roles: {},
       gateway: { port: 8787, auth: { token: "dev-token" } },
-      governance: { home_regions: [] },
+      governance: { home_regions: ["cn"] },
       sandbox: { default_profile: "safe" }
     });
     expect(loaded.sources.map((source) => [source.name, source.found])).toEqual([
@@ -163,5 +163,19 @@ describe("loadConfig", () => {
       expect(issue.expected).toContain("secret://");
       expect(issue.got).toBe('"not-a-secret-ref"');
     }
+  });
+
+  it("rejects invalid governance profiles", () => {
+    const cwd = makeTempDir();
+    const userConfigPath = join(cwd, "fairy.yaml");
+    writeFileSync(
+      userConfigPath,
+      [
+        "governance:",
+        "  profile: fastest"
+      ].join("\n")
+    );
+
+    expect(() => loadConfig({ cwd, userConfigPath })).toThrow(ConfigValidationError);
   });
 });

@@ -6,9 +6,9 @@
     "sensitivity": "internal"
   },
   "payload": {
-    "decision": "deny",
+    "decision": "hold",
     "memory_id": "mem-1",
-    "reason": "Channel trust too low"
+    "reason": "personal_default_hold"
   },
   "provenance": "agent",
   "sid": "ses_01J00000000000000000000000",
