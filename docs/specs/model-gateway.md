@@ -64,7 +64,7 @@ roles:
 
 Routing decision inputs: role binding → **data clearance** (max label of assembled context vs. the target's `data_clearance`; violation → next cleared fallback → else visible `route.denied` event, never a silent downgrade — specs/data-governance §3) → **routing hints** (`prefer_local` reorders the cleared candidates, never filters them) → health score (circuit breaker state, rolling error rate, p95 latency) → budget guard (ledger) → fallback chain. Every decision is traced (which model, why).
 
-*Implementation status v0 (M1-01): `openai-chat` transport is hand-rolled HTTP + SSE (vendor SDKs forbidden by dependency rule); single role binding, no fallback chains yet (M1-04); clearance runs trace-only (recorded in `model_trace`; enforcement flips at M2 per ROADMAP).*
+*Implementation status as of M1-04: `openai-chat` transport is hand-rolled HTTP + SSE (vendor SDKs forbidden by dependency rule). **Fallback chains implemented**: switch only at candidate boundaries (candidate output is buffered while a fallback exists — a failed candidate's partial stream is never mixed with its successor's); visible via `progress.update {stage: "model-fallback", from, to, reason}` and `turn.final.payload.model_trace.fallbacks`. `models[].capabilities.tools: native (default) | prompted | none` — `none` refuses tool-requiring roles at config validation. Clearance still trace-only (enforcement flips at M2). Ollama config: `base_url: http://127.0.0.1:11434/v1`, dummy/empty key accepted.*
 
 ## 4. Normalization layer
 
@@ -85,7 +85,7 @@ The hard part of "OpenAI-compatible" is that nobody is quite compatible. Known v
 ## 5. Tool-calling degradation ladder (FR-12)
 
 1. **Native** — model emits structured tool calls; pass through.
-2. **Prompted** — for models without tool tokens: gateway renders tool schemas into the system prompt (compact typed signatures), instructs a fenced `tool_call` JSON output grammar, parses with a tolerant parser (handles trailing prose, CJK punctuation), validates against JSON Schema, and runs a bounded **repair loop** (re-prompt with the validation error, ≤ 2 attempts) before surfacing a `ToolError`.
+2. **Prompted** — for models without tool tokens: gateway renders tool schemas into the system prompt (compact typed signatures), instructs a fenced `tool_call` JSON output grammar, parses with a tolerant parser (handles trailing prose, CJK punctuation, single quotes where unambiguous), validates against JSON Schema, and runs a bounded **repair loop** (re-prompt with the validation error, ≤ 2 attempts). *Implemented M1-04; exhaustion surfaces as a non-retryable `ProviderError` on the canonical `error` envelope (the gateway layer cannot depend on tools-std's `ToolError` — accepted layering deviation). Downstream `tool_call` events are indistinguishable from native ones.*
 3. **None** — role marked tool-incapable; router refuses to bind it to tool-requiring roles at config-validation time, not at runtime.
 
 Same ladder pattern applies to JSON mode: `native json_schema → json_object + validate → prompted + validate + repair`.

@@ -128,3 +128,18 @@ M1-04 is **ACCEPTED WITH NOTES**.
 The note is not a blocker because the only weak point is live conformance strictness, and the owner replay/audit evidence independently verifies a real Ollama prompted-tool call through the normal tool loop.
 
 M1 can close.
+
+---
+
+## Countersignature (second reviewer: Claude, Cowork) — 2026-07-03
+
+Independent spot-verification against git `08fc692`, focusing on what the primary review recommended but did not execute:
+
+- **Kernel provider-string check (carry-in #3's premise): RAN IT — clean.** `git grep -i "ollama|deepseek|openai" packages/kernel/src/` → zero hits.
+- Frame schemas confirmed at `packages/protocol/frames/` (ack, op-error) with fixtures — correctly **outside** the event registry.
+- Prompted parser confirmed transport-only (`openai-chat.ts`); no kernel involvement.
+- Ollama replay JSONL sampled: valid envelopes, real labels, real `turn.input` — corroborates the primary review's parse.
+- **Carry-in #2 (reviewer-owned doc edits): APPLIED** — protocol §7 normative frame shapes; model-gateway status note (fallback buffering semantics, `capabilities.tools`, Ollama config) + §5 rung-2 implemented note incl. the accepted `ProviderError`-instead-of-`ToolError` layering deviation.
+- Carry-in #1 (live conformance strictness) and #3 (CI guard): confirmed present in the M2-01 brief.
+
+Primary review verdict **upheld**. **M1 CLOSED** — the text spine is complete: any OpenAI-compatible brain, tools with permissions and audit, survivable long sessions, offline inspection, and a conformance kit that makes "config-only provider switch" a tested property.

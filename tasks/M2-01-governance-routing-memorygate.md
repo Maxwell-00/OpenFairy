@@ -73,10 +73,10 @@ Extend config parsing with a minimal governance section:
 ```yaml
 governance:
   profile: balanced        # balanced | sovereign | cloud-friendly
-  home_regions: [gb, eu]   # closed list of user home regions; exact enum comes from existing docs/spec
+  home_regions: [cn]       # user-owned list (this owner: cn); region codes are user config, not a fixed enum
 ```
 
-Provider model configs already have `data_clearance`. Make them enforceable:
+Provider model configs already have `data_clearance`. Make them enforceable — **shapes per data-governance §2/§4, do not invent values**:
 
 ```yaml
 models:
@@ -87,7 +87,10 @@ models:
     data_clearance:
       max_sensitivity: internal
       residency: [global-ok]
-      regions: [global]       # optional if spec already models provider regions elsewhere
+      # `regions` is REQUIRED iff residency includes region-restricted
+      # (config validation fails otherwise — spec §4). There is no "global" region
+      # value; a provider serving region-restricted content must declare real
+      # regions and satisfy `regions ⊆ home_regions`. Local models trivially qualify.
 ```
 
 Rules:
@@ -109,7 +112,7 @@ Add a routing gate at the model-selection boundary.
 
 Required behavior:
 
-- Before any HTTP/SSE call, compute effective labels for the model request.
+- Before any HTTP/SSE call, compute effective labels for the model request. **Composition rule (data-governance §1, this is the subtle part):** effective labels = derivation over **all content entering the assembled prompt** — history turns, tool results, and system-zone content included, not just the current input. Max sensitivity wins; residency intersects. A secret pasted three turns ago must still gate today's call, and it keeps gating until the ladder/compaction removes it from the assembled context (what's in the *prompt* matters, not what's in the log).
 - Reject or skip model candidates that do not satisfy clearance.
 - In fallback chains, evaluate each candidate against clearance before trying it.
 - If at least one fallback candidate is allowed, route to it and record the skipped/denied candidate in trace/progress.
@@ -128,6 +131,7 @@ Acceptance:
 - E2E: a secret-labeled turn with only an internal/global provider produces `route.denied` and **zero provider requests**.
 - E2E: a secret-labeled turn with a fallback to an allowed local/secret-capable provider succeeds and records the denied primary.
 - E2E: normal internal/public turn still routes as before.
+- **E2E (history contamination):** secret content in turn 1, harmless input in turn 2 → turn 2 is still gated while the secret remains in the assembled prompt (the composition-rule test).
 - Tests assert disallowed provider request count remains `0`.
 
 ### 3. Semantic escalation v0
@@ -226,6 +230,7 @@ Acceptance:
 - Do not implement persona modeling.
 - Do not implement proactive delivery quotas.
 - Do not implement vector search, embeddings, or a long-term memory database.
+- **Do not implement memory retrieval or inject any memory into prompts** — the memory zone stays a reserved placeholder. M2-01 is admission + events only; retrieval arrives with the real stores in a later M2 slice (retrieval has its own gate policy that isn't specced for v0).
 - Do not add MCP/hooks.
 - Do not add a second TurnRunner.
 - Do not add vendor SDKs.
