@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it } from "vitest";
 
-import { createModelGateway, estimateTextTokens, ProviderError, type NormalizedModelEvent } from "../src/index.js";
-import { MockOpenAIChatServer } from "@fairy/testing";
+import { createModelGateway, estimateTextTokens, fromWireName, ProviderError, toWireName, type NormalizedModelEvent } from "../src/index.js";
+import { MockOpenAIChatServer } from "../../testing/src/mock-openai.js";
 
 let server: MockOpenAIChatServer | undefined;
 
@@ -198,5 +198,164 @@ describe("@fairy/model-gateway", () => {
       messages: [{ content: "read", role: "user" }],
       tools: [{ description: "read file", name: "fs.read", params: { type: "object" } }]
     }))).rejects.toBeInstanceOf(ProviderError);
+  });
+
+  it("round-trips dotted internal tool names through OpenAI-safe wire names", () => {
+    expect(toWireName("fs.read")).toBe("fs__read");
+    expect(fromWireName("fs__read")).toBe("fs.read");
+  });
+
+  it("falls back after retry exhaustion and reports progress plus trace", async () => {
+    const primary = await MockOpenAIChatServer.start({ failStatus: 500 });
+    const fallback = await MockOpenAIChatServer.start({
+      text: ["fallback ok"],
+      usage: { completion_tokens: 2, prompt_tokens: 3, total_tokens: 5 }
+    });
+    server = primary;
+    try {
+      const gateway = createModelGateway({
+        gateway: { watchdog_s: 1 },
+        models: [
+          {
+            base_url: primary.url,
+            data_clearance: { max_sensitivity: "internal", residency: ["global-ok"] },
+            id: "primary",
+            model: "mock-model",
+            transport: "openai-chat"
+          },
+          {
+            base_url: fallback.url,
+            data_clearance: { max_sensitivity: "internal", residency: ["global-ok"] },
+            id: "fallback",
+            model: "mock-model",
+            transport: "openai-chat"
+          }
+        ],
+        roles: { main: { fallback: ["fallback"], model: "primary" } }
+      });
+
+      const events = await collect(gateway.generate("main", {
+        messages: [{ content: "fallback", role: "user" }]
+      }));
+
+      expect(primary.requests).toBe(3);
+      expect(fallback.requests).toBe(1);
+      expect(events.find((event) => event.type === "progress")).toMatchObject({
+        payload: { from: "primary", reason: "retryable", stage: "model-fallback", to: "fallback" }
+      });
+      expect(events.at(-1)).toMatchObject({
+        trace: {
+          fallbacks: [{ from: "primary", reason: "retryable", to: "fallback" }],
+          model_id: "fallback"
+        },
+        type: "done"
+      });
+    } finally {
+      await fallback.stop();
+    }
+  });
+
+  it("rejects tool-requiring main roles bound to tools=none models", async () => {
+    const mock = await startServer();
+
+    expect(() => createModelGateway({
+      gateway: { watchdog_s: 1 },
+      models: [
+        {
+          base_url: mock.url,
+          capabilities: { tools: "none" },
+          data_clearance: { max_sensitivity: "internal", residency: ["global-ok"] },
+          id: "no-tools",
+          model: "mock-model",
+          transport: "openai-chat"
+        }
+      ],
+      roles: { main: { model: "no-tools" } }
+    })).toThrow(/tools=none/);
+  });
+
+  it("parses prompted tool calls as normalized tool_call events", async () => {
+    const mock = await startServer();
+    mock.setDefaultScript({
+      text: ["```tool_call\n{\"name\":\"fs.read\",\"arguments\":{\"path\":\"README.md\"}}\n```"]
+    });
+    const gateway = createModelGateway({
+      ...configFor(mock.url),
+      models: [
+        {
+          base_url: mock.url,
+          capabilities: { tools: "prompted" },
+          data_clearance: { max_sensitivity: "internal", residency: ["global-ok"] },
+          id: "mock-main",
+          model: "mock-model",
+          transport: "openai-chat"
+        }
+      ]
+    });
+
+    const events = await collect(gateway.generate("main", {
+      messages: [{ content: "read", role: "user" }],
+      tools: [{ description: "read file", name: "fs.read", params: { additionalProperties: false, properties: { path: { type: "string" } }, required: ["path"], type: "object" } }]
+    }));
+
+    expect(events.find((event) => event.type === "tool_call")).toMatchObject({
+      args: { path: "README.md" },
+      name: "fs.read"
+    });
+  });
+
+  it("repairs malformed prompted tool calls", async () => {
+    const mock = await startServer();
+    mock.enqueueScript({ text: ["```tool_call\n{'name':'fs.read','arguments':{}}\n```"] });
+    mock.enqueueScript({ text: ["好的：```tool_call\n｛\"name\"：\"fs.read\"，\"arguments\"：｛\"path\"：\"README.md\"｝｝\n```"] });
+    const gateway = createModelGateway({
+      ...configFor(mock.url),
+      models: [
+        {
+          base_url: mock.url,
+          capabilities: { tools: "prompted" },
+          data_clearance: { max_sensitivity: "internal", residency: ["global-ok"] },
+          id: "mock-main",
+          model: "mock-model",
+          transport: "openai-chat"
+        }
+      ]
+    });
+
+    const events = await collect(gateway.generate("main", {
+      messages: [{ content: "read", role: "user" }],
+      tools: [{ description: "read file", name: "fs.read", params: { additionalProperties: false, properties: { path: { type: "string" } }, required: ["path"], type: "object" } }]
+    }));
+
+    expect(mock.requests).toBe(2);
+    expect(events.find((event) => event.type === "tool_call")).toMatchObject({
+      args: { path: "README.md" },
+      name: "fs.read"
+    });
+    expect(JSON.stringify(mock.requestBodies.at(-1))).toContain("Validation error");
+  });
+
+  it("surfaces prompted tool repair exhaustion", async () => {
+    const mock = await startServer();
+    mock.setDefaultScript({ text: ["```tool_call\n{\"name\":\"fs.read\",\"arguments\":{}}\n```"] });
+    const gateway = createModelGateway({
+      ...configFor(mock.url),
+      models: [
+        {
+          base_url: mock.url,
+          capabilities: { tools: "prompted" },
+          data_clearance: { max_sensitivity: "internal", residency: ["global-ok"] },
+          id: "mock-main",
+          model: "mock-model",
+          transport: "openai-chat"
+        }
+      ]
+    });
+
+    await expect(collect(gateway.generate("main", {
+      messages: [{ content: "read", role: "user" }],
+      tools: [{ description: "read file", name: "fs.read", params: { additionalProperties: false, properties: { path: { type: "string" } }, required: ["path"], type: "object" } }]
+    }))).rejects.toBeInstanceOf(ProviderError);
+    expect(mock.requests).toBe(3);
   });
 });

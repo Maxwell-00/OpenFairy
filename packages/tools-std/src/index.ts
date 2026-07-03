@@ -1,7 +1,7 @@
 import { Readability } from "@mozilla/readability";
 import { parseHTML } from "linkedom";
 import { spawn, spawnSync } from "node:child_process";
-import { mkdir, readFile, readdir, stat, writeFile } from "node:fs/promises";
+import { mkdir, readFile, readdir, realpath, stat, writeFile } from "node:fs/promises";
 import { basename, dirname, isAbsolute, relative, resolve } from "node:path";
 
 export interface ToolLabels {
@@ -82,6 +82,55 @@ const canonicalWorkspacePath = (root: string, path: string): string => {
     return target;
   }
   throw new PolicyError(`path escapes workspace: ${path}`);
+};
+
+const assertInsideWorkspace = (root: string, target: string, originalPath: string): void => {
+  const rel = relative(root, target);
+  if (rel === "" || (!rel.startsWith("..") && !isAbsolute(rel))) {
+    return;
+  }
+  throw new PolicyError(`path escapes workspace: ${originalPath}`);
+};
+
+const canonicalExistingWorkspacePath = async (root: string, path: string): Promise<string> => {
+  const lexical = canonicalWorkspacePath(root, path);
+  const [realRoot, realTarget] = await Promise.all([realpath(root), realpath(lexical)]);
+  assertInsideWorkspace(realRoot, realTarget, path);
+  return realTarget;
+};
+
+const canonicalWritableWorkspacePath = async (root: string, path: string): Promise<string> => {
+  const lexical = canonicalWorkspacePath(root, path);
+  const realRoot = await realpath(root);
+  try {
+    const realTarget = await realpath(lexical);
+    assertInsideWorkspace(realRoot, realTarget, path);
+    return realTarget;
+  } catch (error) {
+    const maybeNodeError = error as NodeJS.ErrnoException;
+    if (maybeNodeError.code !== "ENOENT") {
+      throw error;
+    }
+  }
+
+  let parent = dirname(lexical);
+  while (true) {
+    try {
+      const realParent = await realpath(parent);
+      assertInsideWorkspace(realRoot, realParent, path);
+      return lexical;
+    } catch (error) {
+      const maybeNodeError = error as NodeJS.ErrnoException;
+      if (maybeNodeError.code !== "ENOENT") {
+        throw error;
+      }
+      const next = dirname(parent);
+      if (next === parent) {
+        throw error;
+      }
+      parent = next;
+    }
+  }
 };
 
 const jsonSchemaObject = (properties: Record<string, unknown>, required: string[] = []): Record<string, unknown> => ({
@@ -171,7 +220,7 @@ const fsReadTool: RegisteredTool = {
   name: "fs.read",
   params: jsonSchemaObject({ path: { type: "string" } }, ["path"]),
   async execute(args, ctx) {
-    const path = canonicalWorkspacePath(ctx.workspaceRoot, stringArg(args, "path"));
+    const path = await canonicalExistingWorkspacePath(ctx.workspaceRoot, stringArg(args, "path"));
     const content = await readFile(path, "utf8");
     return {
       content,
@@ -188,7 +237,7 @@ const fsWriteTool: RegisteredTool = {
   name: "fs.write",
   params: jsonSchemaObject({ content: { type: "string" }, path: { type: "string" } }, ["path", "content"]),
   async execute(args, ctx) {
-    const path = canonicalWorkspacePath(ctx.workspaceRoot, stringArg(args, "path"));
+    const path = await canonicalWritableWorkspacePath(ctx.workspaceRoot, stringArg(args, "path"));
     const content = stringArg(args, "content");
     await mkdir(dirname(path), { recursive: true });
     await writeFile(path, content, "utf8");
@@ -207,7 +256,7 @@ const fsListTool: RegisteredTool = {
   name: "fs.list",
   params: jsonSchemaObject({ path: { type: "string" } }),
   async execute(args, ctx) {
-    const path = canonicalWorkspacePath(ctx.workspaceRoot, typeof args.path === "string" ? args.path : ".");
+    const path = await canonicalExistingWorkspacePath(ctx.workspaceRoot, typeof args.path === "string" ? args.path : ".");
     const entries = await readdir(path, { withFileTypes: true });
     const listed = await Promise.all(entries.map(async (entry) => {
       const full = resolve(path, entry.name);

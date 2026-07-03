@@ -1,0 +1,6 @@
+{
+  "kind": "ack",
+  "op": "turn.cancel",
+  "sid": "ses_01J00000000000000000000000",
+  "cancelled": false
+}

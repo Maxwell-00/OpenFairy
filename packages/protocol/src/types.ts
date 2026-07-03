@@ -51,6 +51,25 @@ export interface ValidationIssue {
   readonly message: string;
 }
 
+export interface AckFrame {
+  readonly kind: "ack";
+  readonly op: string;
+  readonly [key: string]: unknown;
+}
+
+export interface OpErrorFrame {
+  readonly kind: "op-error";
+  readonly op: string;
+  readonly message: string;
+  readonly [key: string]: unknown;
+}
+
+export type TransportFrame = AckFrame | OpErrorFrame;
+
 export type ValidationResult =
   | { readonly ok: true; readonly event: EventEnvelope; readonly known: boolean }
+  | { readonly ok: false; readonly issues: readonly ValidationIssue[] };
+
+export type FrameValidationResult =
+  | { readonly ok: true; readonly frame: TransportFrame }
   | { readonly ok: false; readonly issues: readonly ValidationIssue[] };

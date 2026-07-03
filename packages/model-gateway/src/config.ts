@@ -1,4 +1,4 @@
-import type { DataClearance, ModelConfig, ModelGatewayConfig, RoleBinding } from "./types.js";
+import type { DataClearance, ModelCapabilities, ModelConfig, ModelGatewayConfig, RoleBinding, ToolCapability } from "./types.js";
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   Boolean(value && typeof value === "object" && !Array.isArray(value));
@@ -15,6 +15,20 @@ const readCapabilitiesNumber = (record: Record<string, unknown>, key: string): n
     return undefined;
   }
   return readPositiveInteger(capabilities, key);
+};
+
+const readCapabilities = (record: Record<string, unknown>): ModelCapabilities => {
+  const capabilities = record.capabilities;
+  if (!isRecord(capabilities)) {
+    return { tools: "native" };
+  }
+
+  const tools = typeof capabilities.tools === "string" ? capabilities.tools : "native";
+  if (tools !== "native" && tools !== "prompted" && tools !== "none") {
+    throw new Error(`model ${String(record.id)} has invalid capabilities.tools`);
+  }
+
+  return { tools: tools as ToolCapability };
 };
 
 const readClearance = (record: Record<string, unknown>): DataClearance => {
@@ -68,6 +82,7 @@ export const parseModelGatewayConfig = (config: Record<string, unknown>): ModelG
     }
     return {
       base_url: baseUrl,
+      capabilities: readCapabilities(item),
       context_window: readPositiveInteger(item, "context_window") ?? readCapabilitiesNumber(item, "context_window") ?? 128_000,
       data_clearance: readClearance(item),
       id,
@@ -83,7 +98,15 @@ export const parseModelGatewayConfig = (config: Record<string, unknown>): ModelG
       if (!isRecord(binding) || typeof binding.model !== "string") {
         throw new Error(`roles.${role}.model is required`);
       }
-      return [role, { model: binding.model }];
+      const fallback = Array.isArray(binding.fallback)
+        ? binding.fallback.map((item) => {
+            if (typeof item !== "string" || item.length === 0) {
+              throw new Error(`roles.${role}.fallback entries must be model ids`);
+            }
+            return item;
+          })
+        : [];
+      return [role, { fallback, model: binding.model }];
     })
   );
 
@@ -91,9 +114,23 @@ export const parseModelGatewayConfig = (config: Record<string, unknown>): ModelG
     throw new Error("roles.main is required for M1-01");
   }
   const modelIds = new Set(models.map((model) => model.id));
+  const modelById = new Map(models.map((model) => [model.id, model]));
   for (const [role, binding] of Object.entries(roles)) {
     if (!modelIds.has(binding.model)) {
       throw new Error(`roles.${role} binds unknown model ${binding.model}`);
+    }
+    for (const fallback of binding.fallback) {
+      if (!modelIds.has(fallback)) {
+        throw new Error(`roles.${role}.fallback binds unknown model ${fallback}`);
+      }
+    }
+    if (role === "main") {
+      const incapable = [binding.model, ...binding.fallback]
+        .map((modelId) => modelById.get(modelId))
+        .find((model) => model?.capabilities.tools === "none");
+      if (incapable) {
+        throw new Error(`roles.${role} requires tools but model ${incapable.id} declares capabilities.tools=none`);
+      }
     }
   }
 

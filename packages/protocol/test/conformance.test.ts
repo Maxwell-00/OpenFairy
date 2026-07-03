@@ -7,10 +7,12 @@ import {
   eventRegistry,
   eventTypes,
   fixturesDir,
+  framesDir,
   parseEvent,
   schemasDir,
   serializeEvent,
-  validateEvent
+  validateEvent,
+  validateFrame
 } from "../src/index.js";
 
 const readFixture = (name: string): string => readFileSync(join(fixturesDir, name), "utf8");
@@ -74,6 +76,12 @@ describe("protocol registry", () => {
 
     expect(schemaFiles).toEqual(eventRegistry.map((entry) => entry.schemaFile).sort());
   });
+
+  it("keeps transport frame schemas outside the event registry", () => {
+    expect(readdirSync(framesDir).sort()).toEqual(["ack.v1.json", "op-error.v1.json"]);
+    expect(eventTypes).not.toContain("ack");
+    expect(eventTypes).not.toContain("op-error");
+  });
 });
 
 describe("fixture conformance", () => {
@@ -112,6 +120,16 @@ describe("fixture conformance", () => {
       }
     }
   );
+});
+
+describe("transport frame conformance", () => {
+  it.each(["ack", "op-error"])("%s frame fixture validates", (kind) => {
+    expect(validateFrame(parseFixture(`${kind}.valid.json`))).toMatchObject({ ok: true });
+  });
+
+  it.each(["ack", "op-error"])("%s invalid frame fixture is rejected", (kind) => {
+    expect(validateFrame(parseFixture(`${kind}.invalid.json`))).toMatchObject({ ok: false });
+  });
 });
 
 describe("reader tolerance", () => {

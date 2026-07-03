@@ -7,7 +7,7 @@ import type { Readable } from "node:stream";
 import { afterEach, describe, expect, it } from "vitest";
 import WebSocket from "ws";
 
-import { validateEvent, type EventEnvelope } from "@fairy/protocol";
+import { validateEvent, validateFrame, type EventEnvelope } from "@fairy/protocol";
 import {
   acceptIncomingEvent,
   assertM1TurnCompletes,
@@ -71,6 +71,8 @@ const hasDocker = (): boolean => spawnSync("docker", ["--version"], { timeout: 2
 
 const writeConfig = (path: string, dataDir: string, token: string, baseUrl: string, options: {
   readonly context?: readonly string[];
+  readonly extraModels?: readonly string[];
+  readonly mainRole?: readonly string[];
   readonly model?: readonly string[];
   readonly permissions?: readonly string[];
   readonly workspaceRoot?: string;
@@ -87,9 +89,10 @@ const writeConfig = (path: string, dataDir: string, token: string, baseUrl: stri
       "    data_clearance:",
       "      max_sensitivity: internal",
       "      residency: [global-ok]",
+      ...(options.extraModels ?? []),
       "roles:",
       "  main:",
-      "    model: mock-main",
+      ...(options.mainRole ?? ["    model: mock-main"]),
       "gateway:",
       "  port: 0",
       "  watchdog_s: 2",
@@ -231,6 +234,63 @@ describe("gateway M1 e2e", () => {
     }
   });
 
+  it("falls back to a configured secondary model with visible progress and trace", async () => {
+    provider = await MockOpenAIChatServer.start({ failStatus: 500 });
+    const fallback = await MockOpenAIChatServer.start({
+      text: ["fallback response"],
+      usage: { completion_tokens: 2, prompt_tokens: 3, total_tokens: 5 }
+    });
+    const temp = await mkdtemp(join(tmpdir(), "fairy-gateway-fallback-"));
+    const dataDir = join(temp, "data");
+    const configPath = join(temp, "fairy.yaml");
+    const token = "fallback-token";
+    writeConfig(configPath, dataDir, token, provider.url, {
+      extraModels: [
+        "  - id: mock-fallback",
+        "    transport: openai-chat",
+        `    base_url: ${JSON.stringify(fallback.url)}`,
+        "    model: mock-model",
+        "    data_clearance:",
+        "      max_sensitivity: internal",
+        "      residency: [global-ok]"
+      ],
+      mainRole: [
+        "    model: mock-main",
+        "    fallback: [mock-fallback]"
+      ]
+    });
+    const gateway = startGateway(configPath);
+
+    try {
+      const port = await waitForGateway(gateway);
+      const client = await MockFairyClient.connect({ token, url: `ws://127.0.0.1:${port}` });
+      const created = await client.createSession("fallback");
+      const turnEvents = await client.sendTurnInput(created.sid, {
+        content: [{ kind: "text", text: "use fallback" }]
+      });
+      client.close();
+
+      expect(provider.requests).toBe(3);
+      expect(fallback.requests).toBe(1);
+      expect(turnEvents.find((event) => event.type === "progress.update")?.payload).toMatchObject({
+        from: "mock-main",
+        reason: "retryable",
+        stage: "model-fallback",
+        to: "mock-fallback"
+      });
+      expect(turnEvents.at(-1)?.payload).toMatchObject({
+        model_trace: {
+          fallbacks: [{ from: "mock-main", reason: "retryable", to: "mock-fallback" }],
+          model_id: "mock-fallback"
+        }
+      });
+      assertSchemaValidStream(client.events());
+    } finally {
+      await stopGateway(gateway);
+      await fallback.stop();
+    }
+  });
+
   it("appends a synthetic interruption after restart and continues with the next turn number", async () => {
     provider = await MockOpenAIChatServer.start({
       delayMs: 80,
@@ -329,6 +389,44 @@ describe("gateway M1 e2e", () => {
     }
   });
 
+  it("uses deterministic ack and op-error transport frames for non-fact ops", async () => {
+    provider = await MockOpenAIChatServer.start({ text: ["hello"] });
+    const temp = await mkdtemp(join(tmpdir(), "fairy-gateway-ops-"));
+    const dataDir = join(temp, "data");
+    const configPath = join(temp, "fairy.yaml");
+    const token = "ops-token";
+    writeConfig(configPath, dataDir, token, provider.url);
+    const gateway = startGateway(configPath);
+
+    try {
+      const port = await waitForGateway(gateway);
+      const client = await MockFairyClient.connect({ token, url: `ws://127.0.0.1:${port}` });
+      const created = await client.createSession("ops");
+
+      await client.cancelTurn(created.sid);
+      const cancelAck = await client.waitForFrame((frame) => frame.kind === "ack" && frame.op === "turn.cancel");
+      expect(validateFrame(cancelAck)).toMatchObject({ ok: true });
+      expect(cancelAck).toMatchObject({ cancelled: false, kind: "ack", op: "turn.cancel", sid: created.sid });
+
+      client.resolveApproval(created.sid, "evt_01J00000000000000000000000", "once");
+      const badApproval = await client.waitForFrame((frame) => frame.kind === "op-error" && frame.op === "approval.resolve");
+      expect(validateFrame(badApproval)).toMatchObject({ ok: true });
+      expect(badApproval).toMatchObject({ message: "approval.resolve request_id not found" });
+
+      client.sendRaw({ op: "unknown.op", sid: created.sid });
+      const unknown = await client.waitForFrame((frame) => frame.kind === "op-error" && frame.op === "unknown.op");
+      expect(unknown).toMatchObject({ kind: "op-error", message: "unknown op unknown.op" });
+
+      client.sendRaw({ content: [], op: "turn.input", sid: created.sid });
+      const malformedTurn = await client.waitForFrame((frame) => frame.kind === "op-error" && frame.op === "turn.input");
+      expect(malformedTurn).toMatchObject({ kind: "op-error" });
+      expect(client.events().filter((event) => event.type === "error")).toHaveLength(0);
+      client.close();
+    } finally {
+      await stopGateway(gateway);
+    }
+  });
+
   it("runs an auto-allowed fs.read tool call, spills oversized results, and completes", async () => {
     provider = await MockOpenAIChatServer.start();
     provider.enqueueScript({
@@ -377,6 +475,144 @@ describe("gateway M1 e2e", () => {
       expect(turnEvents.at(-1)?.payload).toMatchObject({
         content: [{ kind: "text", text: "I read the file and saw MAGIC_CONTENT." }]
       });
+      assertSchemaValidStream(client.events());
+    } finally {
+      await stopGateway(gateway);
+    }
+  });
+
+  it("runs prompted tool calls through the normal tool loop", async () => {
+    provider = await MockOpenAIChatServer.start();
+    provider.enqueueScript({
+      text: ["```tool_call\n{\"name\":\"fs.read\",\"arguments\":{\"path\":\"prompted.txt\"}}\n```"]
+    });
+    provider.enqueueScript({ text: ["prompted tool complete"] });
+
+    const temp = await mkdtemp(join(tmpdir(), "fairy-gateway-prompted-"));
+    const dataDir = join(temp, "data");
+    const workspaceRoot = join(temp, "workspace");
+    const configPath = join(temp, "fairy.yaml");
+    const token = "prompted-token";
+    await mkdir(workspaceRoot, { recursive: true });
+    await writeFile(join(workspaceRoot, "prompted.txt"), "PROMPTED_MAGIC", "utf8");
+    writeConfig(configPath, dataDir, token, provider.url, {
+      model: [
+        "    capabilities:",
+        "      tools: prompted"
+      ],
+      workspaceRoot
+    });
+    const gateway = startGateway(configPath);
+
+    try {
+      const port = await waitForGateway(gateway);
+      const client = await MockFairyClient.connect({ token, url: `ws://127.0.0.1:${port}` });
+      const created = await client.createSession("prompted");
+      const turnEvents = await client.sendTurnInput(created.sid, {
+        content: [{ kind: "text", text: "read prompted.txt" }]
+      });
+      client.close();
+
+      expect(turnEvents.map((event) => event.type)).toEqual([
+        "turn.input",
+        "context.manifest",
+        "tool.call",
+        "tool.result",
+        "context.manifest",
+        "turn.delta",
+        "turn.final"
+      ]);
+      expect(turnEvents.find((event) => event.type === "tool.result")?.payload).toMatchObject({
+        result: "PROMPTED_MAGIC",
+        status: "ok"
+      });
+      expect(provider.requestBodies[0]).not.toHaveProperty("tools");
+      expect(JSON.stringify(provider.requestBodies[0])).toContain("tool_call");
+      assertSchemaValidStream(client.events());
+    } finally {
+      await stopGateway(gateway);
+    }
+  });
+
+  it("repairs prompted tool calls before executing them", async () => {
+    provider = await MockOpenAIChatServer.start();
+    provider.enqueueScript({ text: ["```tool_call\n{\"name\":\"fs.read\",\"arguments\":{}}\n```"] });
+    provider.enqueueScript({ text: ["```tool_call\n{'name':'fs.read','arguments':{'path':'repair.txt'}}\n```"] });
+    provider.enqueueScript({ text: ["repair complete"] });
+
+    const temp = await mkdtemp(join(tmpdir(), "fairy-gateway-prompted-repair-"));
+    const dataDir = join(temp, "data");
+    const workspaceRoot = join(temp, "workspace");
+    const configPath = join(temp, "fairy.yaml");
+    const token = "prompted-repair-token";
+    await mkdir(workspaceRoot, { recursive: true });
+    await writeFile(join(workspaceRoot, "repair.txt"), "REPAIR_MAGIC", "utf8");
+    writeConfig(configPath, dataDir, token, provider.url, {
+      model: [
+        "    capabilities:",
+        "      tools: prompted"
+      ],
+      workspaceRoot
+    });
+    const gateway = startGateway(configPath);
+
+    try {
+      const port = await waitForGateway(gateway);
+      const client = await MockFairyClient.connect({ token, url: `ws://127.0.0.1:${port}` });
+      const created = await client.createSession("prompted repair");
+      const turnEvents = await client.sendTurnInput(created.sid, {
+        content: [{ kind: "text", text: "read repair.txt" }]
+      });
+      client.close();
+
+      expect(provider.requests).toBe(3);
+      expect(JSON.stringify(provider.requestBodies[1])).toContain("Validation error");
+      expect(turnEvents.find((event) => event.type === "tool.result")?.payload).toMatchObject({
+        result: "REPAIR_MAGIC",
+        status: "ok"
+      });
+      assertSchemaValidStream(client.events());
+    } finally {
+      await stopGateway(gateway);
+    }
+  });
+
+  it("surfaces prompted tool repair exhaustion as an error envelope", async () => {
+    provider = await MockOpenAIChatServer.start({
+      text: ["```tool_call\n{\"name\":\"fs.read\",\"arguments\":{}}\n```"]
+    });
+
+    const temp = await mkdtemp(join(tmpdir(), "fairy-gateway-prompted-exhaust-"));
+    const dataDir = join(temp, "data");
+    const workspaceRoot = join(temp, "workspace");
+    const configPath = join(temp, "fairy.yaml");
+    const token = "prompted-exhaust-token";
+    await mkdir(workspaceRoot, { recursive: true });
+    writeConfig(configPath, dataDir, token, provider.url, {
+      model: [
+        "    capabilities:",
+        "      tools: prompted"
+      ],
+      workspaceRoot
+    });
+    const gateway = startGateway(configPath);
+
+    try {
+      const port = await waitForGateway(gateway);
+      const client = await MockFairyClient.connect({ token, url: `ws://127.0.0.1:${port}` });
+      const created = await client.createSession("prompted exhaustion");
+      client.sendTurnInputNoWait(created.sid, {
+        content: [{ kind: "text", text: "read missing args" }]
+      });
+      const error = await client.waitFor((event) => event.type === "error", 30000);
+      client.close();
+
+      expect(provider.requests).toBe(3);
+      expect(error.payload).toMatchObject({
+        class: "ProviderError",
+        retryable: false
+      });
+      expect(JSON.stringify(error.payload)).toContain("prompted tool call failed validation");
       assertSchemaValidStream(client.events());
     } finally {
       await stopGateway(gateway);

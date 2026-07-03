@@ -3,8 +3,8 @@ import { join } from "node:path";
 
 import { readJsonFile } from "./json.js";
 import { eventRegistry, isRegisteredEventType } from "./registry.js";
-import { schemasDir } from "./paths.js";
-import type { EventEnvelope, ValidationIssue, ValidationResult } from "./types.js";
+import { framesDir, schemasDir } from "./paths.js";
+import type { EventEnvelope, FrameValidationResult, TransportFrame, ValidationIssue, ValidationResult } from "./types.js";
 
 const ajv = new Ajv2020({
   allErrors: true,
@@ -48,6 +48,11 @@ const validators = new Map<string, ValidateFunction>(
   ])
 );
 
+const frameValidators = new Map<string, ValidateFunction>([
+  ["ack", ajv.compile(readJsonFile(join(framesDir, "ack.v1.json")) as AnySchema)],
+  ["op-error", ajv.compile(readJsonFile(join(framesDir, "op-error.v1.json")) as AnySchema)]
+]);
+
 const formatErrors = (errors: ErrorObject[] | null | undefined): ValidationIssue[] =>
   (errors ?? []).map((error) => ({
     path: error.instancePath || "/",
@@ -88,4 +93,22 @@ export const assertValidEvent = (value: unknown): EventEnvelope => {
   }
 
   return result.event;
+};
+
+export const validateFrame = (value: unknown): FrameValidationResult => {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return { ok: false, issues: [{ path: "/", message: "must be object" }] };
+  }
+
+  const kind = (value as { kind?: unknown }).kind;
+  if (kind !== "ack" && kind !== "op-error") {
+    return { ok: false, issues: [{ path: "/kind", message: "must be ack or op-error" }] };
+  }
+
+  const validator = frameValidators.get(kind);
+  if (!validator || !validator(value)) {
+    return { ok: false, issues: formatErrors(validator?.errors) };
+  }
+
+  return { frame: value as TransportFrame, ok: true };
 };

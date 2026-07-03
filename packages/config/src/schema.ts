@@ -16,7 +16,13 @@ export const configSchema = {
           model: { type: "string", minLength: 1 },
           context_window: { type: "integer", minimum: 1 },
           max_output: { type: "integer", minimum: 1 },
-          capabilities: { type: "object", additionalProperties: true },
+          capabilities: {
+            type: "object",
+            additionalProperties: true,
+            properties: {
+              tools: { type: "string", enum: ["native", "prompted", "none"] }
+            }
+          },
           pricing: { type: "object", additionalProperties: true },
           data_clearance: {
             type: "object",

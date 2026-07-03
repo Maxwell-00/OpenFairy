@@ -1,6 +1,8 @@
 import {
   validateEvent,
+  validateFrame,
   type EventEnvelope,
+  type TransportFrame,
   type ValidationResult
 } from "@fairy/protocol";
 import WebSocket from "ws";
@@ -18,6 +20,8 @@ export interface TurnInputPayload {
 export class MockFairyClient {
   readonly #socket: WebSocket;
   readonly #events: EventEnvelope[] = [];
+  readonly #frames: TransportFrame[] = [];
+  readonly #frameWaiters: ((frame: TransportFrame) => void)[] = [];
   readonly #waiters: ((event: EventEnvelope) => void)[] = [];
 
   private constructor(socket: WebSocket) {
@@ -29,6 +33,14 @@ export class MockFairyClient {
         this.#events.push(accepted.event);
         for (const waiter of this.#waiters.splice(0)) {
           waiter(accepted.event);
+        }
+        return;
+      }
+      const frame = validateFrame(parsed);
+      if (frame.ok) {
+        this.#frames.push(frame.frame);
+        for (const waiter of this.#frameWaiters.splice(0)) {
+          waiter(frame.frame);
         }
       }
     });
@@ -52,6 +64,10 @@ export class MockFairyClient {
 
   events(): readonly EventEnvelope[] {
     return this.#events;
+  }
+
+  frames(): readonly TransportFrame[] {
+    return this.#frames;
   }
 
   close(): void {
@@ -93,6 +109,10 @@ export class MockFairyClient {
     this.#socket.send(JSON.stringify({ decision, op: "approval.resolve", request_id: requestId, sid }));
   }
 
+  sendRaw(value: unknown): void {
+    this.#socket.send(JSON.stringify(value));
+  }
+
   waitFor(predicate: (event: EventEnvelope) => boolean, timeoutMs = 5000): Promise<EventEnvelope> {
     const existing = this.#events.find(predicate);
     if (existing) {
@@ -118,6 +138,34 @@ export class MockFairyClient {
       };
 
       this.#waiters.push(onEvent);
+    });
+  }
+
+  waitForFrame(predicate: (frame: TransportFrame) => boolean, timeoutMs = 5000): Promise<TransportFrame> {
+    const existing = this.#frames.find(predicate);
+    if (existing) {
+      return Promise.resolve(existing);
+    }
+
+    return new Promise((resolve, reject) => {
+      const timer = setTimeout(() => {
+        const index = this.#frameWaiters.indexOf(onFrame);
+        if (index >= 0) {
+          this.#frameWaiters.splice(index, 1);
+        }
+        reject(new Error(`timed out waiting for frame after ${timeoutMs} ms`));
+      }, timeoutMs);
+
+      const onFrame = (frame: TransportFrame): void => {
+        if (!predicate(frame)) {
+          this.#frameWaiters.push(onFrame);
+          return;
+        }
+        clearTimeout(timer);
+        resolve(frame);
+      };
+
+      this.#frameWaiters.push(onFrame);
     });
   }
 

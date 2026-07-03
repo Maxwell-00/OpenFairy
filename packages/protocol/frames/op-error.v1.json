@@ -1,0 +1,26 @@
+{
+  "$id": "https://openfairy.local/schemas/protocol/v1/frames/op-error.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": true,
+  "properties": {
+    "kind": {
+      "const": "op-error",
+      "type": "string"
+    },
+    "message": {
+      "minLength": 1,
+      "type": "string"
+    },
+    "op": {
+      "minLength": 1,
+      "type": "string"
+    }
+  },
+  "required": [
+    "kind",
+    "op",
+    "message"
+  ],
+  "title": "Fairy transport op-error frame v1",
+  "type": "object"
+}

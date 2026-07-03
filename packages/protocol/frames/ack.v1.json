@@ -1,0 +1,21 @@
+{
+  "$id": "https://openfairy.local/schemas/protocol/v1/frames/ack.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": true,
+  "properties": {
+    "kind": {
+      "const": "ack",
+      "type": "string"
+    },
+    "op": {
+      "minLength": 1,
+      "type": "string"
+    }
+  },
+  "required": [
+    "kind",
+    "op"
+  ],
+  "title": "Fairy transport ack frame v1",
+  "type": "object"
+}

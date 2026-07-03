@@ -35,6 +35,7 @@ export type KernelEventType =
   | "approval.resolved"
   | "artifact.created"
   | "context.manifest"
+  | "progress.update"
   | "turn.delta"
   | "reasoning.delta"
   | "tool.call"
@@ -384,6 +385,14 @@ export class TurnRunner {
               type: "turn.delta"
             });
             active.textIndex += 1;
+            continue;
+          }
+
+          if (event.type === "progress") {
+            await options.emit({
+              payload: event.payload,
+              type: "progress.update"
+            });
             continue;
           }
 

@@ -40,6 +40,12 @@ export interface ModelTrace {
     readonly violation: boolean;
     readonly reason?: string;
   };
+  readonly fallbacks?: readonly {
+    readonly from: string;
+    readonly reason: string;
+    readonly to: string;
+  }[];
+  readonly model_id?: string;
 }
 
 export interface TokenEstimate {
@@ -57,6 +63,14 @@ export interface ModelMetadata {
 export type NormalizedModelEvent =
   | { readonly type: "text"; readonly text: string }
   | { readonly type: "reasoning"; readonly text: string }
+  | {
+      readonly type: "progress";
+      readonly payload: {
+        readonly stage: string;
+        readonly detail: string;
+        readonly [key: string]: unknown;
+      };
+    }
   | {
       readonly type: "tool_call";
       readonly call_id: string;
@@ -77,18 +91,26 @@ export interface DataClearance {
   readonly regions?: readonly string[];
 }
 
+export type ToolCapability = "native" | "prompted" | "none";
+
+export interface ModelCapabilities {
+  readonly tools: ToolCapability;
+}
+
 export interface ModelConfig {
   readonly id: string;
   readonly transport: "openai-chat";
   readonly base_url: string;
   readonly api_key_ref?: string;
   readonly model: string;
+  readonly capabilities: ModelCapabilities;
   readonly context_window: number;
   readonly max_output?: number;
   readonly data_clearance: DataClearance;
 }
 
 export interface RoleBinding {
+  readonly fallback: readonly string[];
   readonly model: string;
 }
 

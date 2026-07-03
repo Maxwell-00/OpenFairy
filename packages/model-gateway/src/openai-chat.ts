@@ -70,8 +70,8 @@ const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout
 // tool namespace uses dots (fs.read, shell.run) — load-bearing for permission globs,
 // `tool:<name>` provenance, and audit. Map names bijectively at the wire boundary ONLY.
 // "__" is the reserved dot-encoding sentinel (internal tool names never contain "__").
-const toWireName = (name: string): string => name.replaceAll(".", "__");
-const fromWireName = (name: string): string => name.replaceAll("__", ".");
+export const toWireName = (name: string): string => name.replaceAll(".", "__");
+export const fromWireName = (name: string): string => name.replaceAll("__", ".");
 
 const buildTools = (tools: readonly ToolDefinition[] | undefined): unknown[] | undefined =>
   tools?.map((tool) => ({
@@ -227,14 +227,291 @@ class ThinkExtractor {
   }
 }
 
-export async function* streamOpenAIChat(options: {
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  Boolean(value && typeof value === "object" && !Array.isArray(value));
+
+const combineUsage = (left: UsageSnapshot | undefined, right: UsageSnapshot): UsageSnapshot => ({
+  estimated: (left?.estimated ?? false) || right.estimated,
+  input_tokens: (left?.input_tokens ?? 0) + right.input_tokens,
+  output_tokens: (left?.output_tokens ?? 0) + right.output_tokens
+});
+
+const renderPromptedToolInstruction = (tools: readonly ToolDefinition[], repairError?: string): string =>
+  [
+    "Tool calling is available through a textual fallback grammar.",
+    "When you need a tool, return exactly one fenced block and no user-visible prose:",
+    "```tool_call",
+    "{\"name\":\"fs.read\",\"arguments\":{\"path\":\"example.txt\"}}",
+    "```",
+    "Use the internal tool name exactly as listed. If no tool is needed, answer normally.",
+    "Available tools:",
+    ...tools.map((tool) => `- ${tool.name}: ${tool.description}; schema=${JSON.stringify(tool.params)}`),
+    ...(repairError
+      ? [
+          "The previous tool_call was invalid.",
+          `Validation error: ${repairError}`,
+          "Return a corrected fenced tool_call only."
+        ]
+      : [])
+  ].join("\n");
+
+const withPromptedToolInstruction = (
+  messages: readonly ChatMessage[],
+  tools: readonly ToolDefinition[],
+  repairError?: string
+): readonly ChatMessage[] => [
+  {
+    content: renderPromptedToolInstruction(tools, repairError),
+    role: "system"
+  },
+  ...messages
+];
+
+const normalizeJsonish = (input: string): string =>
+  input
+    .trim()
+    .replace(/[“”]/g, "\"")
+    .replace(/[‘’]/g, "'")
+    .replace(/：/g, ":")
+    .replace(/，/g, ",")
+    .replace(/｛/g, "{")
+    .replace(/｝/g, "}")
+    .replace(/［/g, "[")
+    .replace(/］/g, "]");
+
+const singleQuotedToJson = (input: string): string =>
+  input.replace(/'([^'\\]*(?:\\.[^'\\]*)*)'/g, (_match, value: string) => JSON.stringify(value.replace(/\\'/g, "'")));
+
+const parseJsonishObject = (input: string): Record<string, unknown> | undefined => {
+  const normalized = normalizeJsonish(input);
+  for (const candidate of [normalized, singleQuotedToJson(normalized)]) {
+    try {
+      const parsed = JSON.parse(candidate) as unknown;
+      if (isRecord(parsed)) {
+        return parsed;
+      }
+    } catch {
+      // Try the next tolerant form.
+    }
+  }
+  return undefined;
+};
+
+const extractPromptedCandidate = (text: string): { candidate?: string; explicit: boolean } => {
+  const fenced = /```(?:\s*tool_call)?\s*([\s\S]*?)```/i.exec(text);
+  if (fenced?.[1]) {
+    return { candidate: fenced[1], explicit: true };
+  }
+
+  const start = text.indexOf("{");
+  const end = text.lastIndexOf("}");
+  if (start >= 0 && end > start) {
+    return { candidate: text.slice(start, end + 1), explicit: /tool[_ -]?call|arguments|args|name/i.test(text) };
+  }
+
+  return { explicit: /tool[_ -]?call/i.test(text) };
+};
+
+const schemaTypeMatches = (type: string, value: unknown): boolean => {
+  if (type === "array") {
+    return Array.isArray(value);
+  }
+  if (type === "integer") {
+    return typeof value === "number" && Number.isInteger(value);
+  }
+  if (type === "object") {
+    return isRecord(value);
+  }
+  return typeof value === type;
+};
+
+const validateJsonSchema = (schema: unknown, value: unknown, path = "$"): string[] => {
+  if (!isRecord(schema)) {
+    return [];
+  }
+
+  const errors: string[] = [];
+  const enumValues = Array.isArray(schema.enum) ? schema.enum : undefined;
+  if (enumValues && !enumValues.some((item) => item === value)) {
+    errors.push(`${path} must be one of ${enumValues.map((item) => JSON.stringify(item)).join(", ")}`);
+  }
+
+  const type = typeof schema.type === "string" ? schema.type : undefined;
+  if (type && !schemaTypeMatches(type, value)) {
+    errors.push(`${path} must be ${type}`);
+    return errors;
+  }
+
+  if (type === "string" && typeof value === "string" && typeof schema.minLength === "number" && value.length < schema.minLength) {
+    errors.push(`${path} must be at least ${schema.minLength} characters`);
+  }
+
+  if (type === "object" && isRecord(value)) {
+    const properties = isRecord(schema.properties) ? schema.properties : {};
+    const required = Array.isArray(schema.required)
+      ? schema.required.filter((item): item is string => typeof item === "string")
+      : [];
+    for (const key of required) {
+      if (!(key in value)) {
+        errors.push(`${path}.${key} is required`);
+      }
+    }
+    if (schema.additionalProperties === false) {
+      for (const key of Object.keys(value)) {
+        if (!(key in properties)) {
+          errors.push(`${path}.${key} is not allowed`);
+        }
+      }
+    }
+    for (const [key, childSchema] of Object.entries(properties)) {
+      if (key in value) {
+        errors.push(...validateJsonSchema(childSchema, value[key], `${path}.${key}`));
+      }
+    }
+  }
+
+  return errors;
+};
+
+type PromptedToolParseResult =
+  | { readonly kind: "none" }
+  | { readonly kind: "invalid"; readonly error: string }
+  | { readonly kind: "ok"; readonly event: Extract<NormalizedModelEvent, { type: "tool_call" }> };
+
+const parsePromptedToolCall = (text: string, tools: readonly ToolDefinition[]): PromptedToolParseResult => {
+  const extracted = extractPromptedCandidate(text);
+  if (!extracted.candidate) {
+    return extracted.explicit ? { error: "tool_call block did not contain JSON", kind: "invalid" } : { kind: "none" };
+  }
+
+  let parsed = parseJsonishObject(extracted.candidate);
+  if (parsed && isRecord(parsed.tool_call)) {
+    parsed = parsed.tool_call;
+  }
+  if (!parsed) {
+    return extracted.explicit ? { error: "tool_call JSON could not be parsed", kind: "invalid" } : { kind: "none" };
+  }
+
+  const name = typeof parsed.name === "string"
+    ? parsed.name
+    : typeof parsed.tool === "string"
+      ? parsed.tool
+      : undefined;
+  if (!name) {
+    return { error: "tool_call.name is required", kind: "invalid" };
+  }
+
+  const tool = tools.find((candidate) => candidate.name === name);
+  if (!tool) {
+    return { error: `unknown tool ${name}`, kind: "invalid" };
+  }
+
+  const rawArgs = parsed.arguments ?? parsed.args ?? {};
+  const args = typeof rawArgs === "string" ? parseJsonishObject(rawArgs) : rawArgs;
+  if (!isRecord(args)) {
+    return { error: "tool_call.arguments must be an object", kind: "invalid" };
+  }
+
+  const errors = validateJsonSchema(tool.params, args);
+  if (errors.length > 0) {
+    return { error: errors.join("; "), kind: "invalid" };
+  }
+
+  return {
+    event: {
+      args,
+      call_id: `call_prompted_${Date.now().toString(36)}`,
+      name,
+      type: "tool_call"
+    },
+    kind: "ok"
+  };
+};
+
+async function* streamPromptedToolsChat(options: StreamOpenAIChatOptions): AsyncIterable<NormalizedModelEvent> {
+  if (!options.tools || options.tools.length === 0) {
+    yield* streamNativeOpenAIChat(options);
+    return;
+  }
+
+  let repairError: string | undefined;
+  let accumulatedUsage: UsageSnapshot | undefined;
+
+  for (let repair = 0; repair <= 2; repair += 1) {
+    const textEvents: Extract<NormalizedModelEvent, { type: "text" }>[] = [];
+    const reasoningEvents: Extract<NormalizedModelEvent, { type: "reasoning" }>[] = [];
+    let attemptUsage: UsageSnapshot | undefined;
+    let doneEvent: Extract<NormalizedModelEvent, { type: "done" }> | undefined;
+    for await (const event of streamNativeOpenAIChat({
+      ...(options.abort ? { abort: options.abort } : {}),
+      ...(options.apiKey ? { apiKey: options.apiKey } : {}),
+      messages: withPromptedToolInstruction(options.messages, options.tools, repairError),
+      model: options.model,
+      watchdogMs: options.watchdogMs
+    })) {
+      if (event.type === "text") {
+        textEvents.push(event);
+      } else if (event.type === "reasoning") {
+        reasoningEvents.push(event);
+      } else if (event.type === "usage") {
+        attemptUsage = event.usage;
+      } else if (event.type === "done") {
+        doneEvent = event;
+      }
+    }
+
+    const finalAttemptUsage = attemptUsage ?? doneEvent?.usage;
+    if (finalAttemptUsage) {
+      accumulatedUsage = combineUsage(accumulatedUsage, finalAttemptUsage);
+    }
+
+    const text = textEvents.map((event) => event.text).join("");
+    const parsed = parsePromptedToolCall(text, options.tools);
+    if (parsed.kind === "ok") {
+      for (const event of reasoningEvents) {
+        yield event;
+      }
+      yield parsed.event;
+      if (accumulatedUsage) {
+        yield { type: "usage", usage: accumulatedUsage };
+      }
+      return;
+    }
+
+    if (parsed.kind === "none") {
+      for (const event of reasoningEvents) {
+        yield event;
+      }
+      for (const event of textEvents) {
+        yield event;
+      }
+      if (attemptUsage) {
+        yield { type: "usage", usage: accumulatedUsage ?? attemptUsage };
+      }
+      if (doneEvent) {
+        yield { ...doneEvent, usage: accumulatedUsage ?? doneEvent.usage };
+      }
+      return;
+    }
+
+    repairError = parsed.error;
+  }
+
+  throw new ProviderError(`prompted tool call failed validation after repair: ${repairError ?? "unknown error"}`, {
+    retryable: false
+  });
+}
+
+interface StreamOpenAIChatOptions {
   readonly abort?: AbortSignal;
   readonly apiKey?: string;
   readonly messages: readonly ChatMessage[];
   readonly model: ModelConfig;
   readonly tools?: readonly ToolDefinition[];
   readonly watchdogMs: number;
-}): AsyncIterable<NormalizedModelEvent> {
+}
+
+async function* streamNativeOpenAIChat(options: StreamOpenAIChatOptions): AsyncIterable<NormalizedModelEvent> {
   let attempt = 0;
   let lastError: ProviderError | undefined;
 
@@ -383,4 +660,18 @@ export async function* streamOpenAIChat(options: {
   }
 
   throw lastError ?? new ProviderError("provider failed", { retryable: false });
+}
+
+export async function* streamOpenAIChat(options: StreamOpenAIChatOptions): AsyncIterable<NormalizedModelEvent> {
+  const hasTools = (options.tools?.length ?? 0) > 0;
+  if (hasTools && options.model.capabilities.tools === "none") {
+    throw new ProviderError(`model ${options.model.id} declares capabilities.tools=none`, { retryable: false });
+  }
+
+  if (hasTools && options.model.capabilities.tools === "prompted") {
+    yield* streamPromptedToolsChat(options);
+    return;
+  }
+
+  yield* streamNativeOpenAIChat(options);
 }

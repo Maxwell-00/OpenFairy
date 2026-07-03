@@ -1,0 +1,6 @@
+{
+  "kind": "op-error",
+  "op": "approval.resolve",
+  "message": "approval.resolve request_id not found",
+  "sid": "ses_01J00000000000000000000000"
+}

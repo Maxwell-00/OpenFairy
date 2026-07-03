@@ -6,6 +6,7 @@ import {
   eventRegistry,
   protocolVersion,
   validateEvent,
+  validateFrame,
   type Actor,
   type EventEnvelope,
   type Labels,
@@ -146,7 +147,7 @@ const actorForKernelEvent = (type: KernelEventType): Actor => {
   if (type === "tool.call" || type === "tool.result") {
     return "tool";
   }
-  if (type === "approval.request" || type === "approval.resolved" || type === "artifact.created" || type === "context.manifest" || type === "error" || type === "turn.interrupted") {
+  if (type === "approval.request" || type === "approval.resolved" || type === "artifact.created" || type === "context.manifest" || type === "error" || type === "progress.update" || type === "turn.interrupted") {
     return "system";
   }
   return "agent";
@@ -410,13 +411,20 @@ export class MinimalGateway {
     });
     socket.on("message", (data) => {
       void this.#handleMessage(socket, data.toString()).catch((error: unknown) => {
-        void this.#emitError(socket, undefined, String((error as Error).message ?? error));
+        this.#sendOpError(socket, "unknown", String((error as Error).message ?? error));
       });
     });
   }
 
   async #handleMessage(socket: WebSocket, raw: string): Promise<void> {
-    const message = JSON.parse(raw) as ClientMessage;
+    let message: ClientMessage;
+    try {
+      message = JSON.parse(raw) as ClientMessage;
+    } catch {
+      this.#sendOpError(socket, "unknown", "malformed JSON op frame");
+      return;
+    }
+    const op = typeof message.op === "string" && message.op.length > 0 ? message.op : "unknown";
 
     if (message.op === "session.create") {
       await this.#createSession(socket, typeof message.title === "string" ? message.title : undefined);
@@ -425,7 +433,12 @@ export class MinimalGateway {
 
     if (message.op === "session.attach") {
       if (!isSessionId(message.sid)) {
-        throw new Error("session.attach requires sid");
+        this.#sendOpError(socket, op, "session.attach requires sid");
+        return;
+      }
+      if (!this.#sessions.has(message.sid)) {
+        this.#sendOpError(socket, op, `unknown session ${message.sid}`, { sid: message.sid });
+        return;
       }
       await this.#attachSession(socket, message.sid, typeof message.replay_from === "string" ? message.replay_from : undefined);
       return;
@@ -433,16 +446,33 @@ export class MinimalGateway {
 
     if (message.op === "turn.input") {
       if (!isSessionId(message.sid)) {
-        throw new Error("turn.input requires sid");
+        this.#sendOpError(socket, op, "turn.input requires sid");
+        return;
       }
-      await this.#acceptTurnInput(socket, message.sid, turnPayload(message));
+      if (!this.#sessions.has(message.sid)) {
+        this.#sendOpError(socket, op, `unknown session ${message.sid}`, { sid: message.sid });
+        return;
+      }
+      let payload: Record<string, unknown>;
+      try {
+        payload = turnPayload(message);
+      } catch (error) {
+        this.#sendOpError(socket, op, error instanceof Error ? error.message : String(error), { sid: message.sid });
+        return;
+      }
+      await this.#acceptTurnInput(socket, message.sid, payload);
       return;
     }
 
     if (message.op === "event") {
       const result = validateEvent(message.event);
       if (!result.ok || result.event.type !== "turn.input") {
-        throw new Error("event op requires a valid turn.input envelope");
+        this.#sendOpError(socket, op, "event op requires a valid turn.input envelope");
+        return;
+      }
+      if (!this.#sessions.has(result.event.sid)) {
+        this.#sendOpError(socket, op, `unknown session ${result.event.sid}`, { sid: result.event.sid });
+        return;
       }
       await this.#acceptTurnInput(socket, result.event.sid as `ses_${string}`, result.event.payload);
       return;
@@ -450,32 +480,44 @@ export class MinimalGateway {
 
     if (message.op === "turn.cancel") {
       if (!isSessionId(message.sid)) {
-        throw new Error("turn.cancel requires sid");
+        this.#sendOpError(socket, op, "turn.cancel requires sid");
+        return;
+      }
+      if (!this.#sessions.has(message.sid)) {
+        this.#sendOpError(socket, op, `unknown session ${message.sid}`, { sid: message.sid });
+        return;
       }
       const cancelled = this.#runner.cancel(message.sid);
-      if (!cancelled) {
-        this.#sendRaw(socket, { cancelled, ok: true, op: "turn.cancel", sid: message.sid });
-      }
+      this.#sendAck(socket, op, { cancelled, sid: message.sid });
       return;
     }
 
     if (message.op === "approval.resolve") {
       if (!isSessionId(message.sid) || typeof message.request_id !== "string") {
-        throw new Error("approval.resolve requires sid and request_id");
+        this.#sendOpError(socket, op, "approval.resolve requires sid and request_id");
+        return;
       }
       if (message.decision !== "once" && message.decision !== "session" && message.decision !== "deny") {
-        throw new Error("approval.resolve decision must be once, session, or deny");
+        this.#sendOpError(socket, op, "approval.resolve decision must be once, session, or deny", { sid: message.sid });
+        return;
+      }
+      if (!this.#sessions.has(message.sid)) {
+        this.#sendOpError(socket, op, `unknown session ${message.sid}`, { sid: message.sid });
+        return;
       }
       const resolved = this.#runner.resolveApproval(message.sid, message.request_id, message.decision, "cli");
-      this.#sendRaw(socket, { ok: resolved, op: "approval.resolve", request_id: message.request_id, sid: message.sid });
+      if (!resolved) {
+        this.#sendOpError(socket, op, "approval.resolve request_id not found", {
+          request_id: message.request_id,
+          sid: message.sid
+        });
+        return;
+      }
+      this.#sendAck(socket, op, { request_id: message.request_id, resolved, sid: message.sid });
       return;
     }
 
-    if (isSessionId(message.sid)) {
-      await this.#emitError(socket, message.sid, `unknown op ${String(message.op)}`);
-      return;
-    }
-    throw new Error(`unknown op ${String(message.op)}`);
+    this.#sendOpError(socket, op, `unknown op ${String(message.op)}`);
   }
 
   async #createSession(socket: WebSocket, title?: string): Promise<EventEnvelope> {
@@ -534,7 +576,7 @@ export class MinimalGateway {
 
     const text = payloadText(payload);
     if (!text) {
-      await this.#emitError(socket, sid, "turn.input content must include at least one text part.");
+      this.#sendOpError(socket, "turn.input", "turn.input content must include at least one text part.", { sid });
       return;
     }
 
@@ -637,12 +679,23 @@ export class MinimalGateway {
     }
   }
 
-  async #emitError(socket: WebSocket, sid: `ses_${string}` | undefined, message: string): Promise<void> {
-    if (!sid) {
-      this.#sendRaw(socket, { error: message });
-      return;
-    }
+  #sendAck(socket: WebSocket, op: string, fields: Record<string, unknown> = {}): void {
+    this.#sendFrame(socket, { kind: "ack", op, ...fields });
+  }
 
+  #sendOpError(socket: WebSocket, op: string, message: string, fields: Record<string, unknown> = {}): void {
+    this.#sendFrame(socket, { kind: "op-error", op, message, ...fields });
+  }
+
+  #sendFrame(socket: WebSocket, value: unknown): void {
+    const result = validateFrame(value);
+    if (!result.ok) {
+      throw new Error(`invalid transport frame: ${result.issues.map((issue) => `${issue.path}: ${issue.message}`).join("; ")}`);
+    }
+    this.#sendRaw(socket, result.frame);
+  }
+
+  async #emitError(socket: WebSocket, sid: `ses_${string}`, message: string): Promise<void> {
     await this.#emit({
       actor: "system",
       payload: { class: "UserError", message, retryable: false },

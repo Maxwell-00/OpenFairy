@@ -102,11 +102,7 @@ importers:
 
   packages/memory: {}
 
-  packages/model-gateway:
-    devDependencies:
-      '@fairy/testing':
-        specifier: workspace:*
-        version: link:../testing
+  packages/model-gateway: {}
 
   packages/orchestrator: {}
 
@@ -123,6 +119,12 @@ importers:
 
   packages/testing:
     dependencies:
+      '@fairy/config':
+        specifier: workspace:*
+        version: link:../config
+      '@fairy/model-gateway':
+        specifier: workspace:*
+        version: link:../model-gateway
       '@fairy/protocol':
         specifier: workspace:*
         version: link:../protocol

@@ -11,8 +11,11 @@ export interface MockOpenAIScript {
   readonly reasoning?: readonly string[];
   readonly toolCalls?: readonly MockToolCall[];
   readonly delayMs?: number;
+  readonly failStatus?: number;
   readonly failStatusOnce?: number;
   readonly failBody?: unknown;
+  readonly finishReason?: string;
+  readonly omitUsage?: boolean;
   readonly stallAfterChunks?: number;
   readonly stallMs?: number;
   readonly usage?: MockOpenAIUsage;
@@ -31,9 +34,12 @@ interface MutableScript {
   reasoning: readonly string[];
   toolCalls: readonly MockToolCall[];
   delayMs: number;
+  failStatus?: number;
   failStatusOnce?: number;
   failBody?: unknown;
   failServed: boolean;
+  finishReason: string;
+  omitUsage: boolean;
   stallAfterChunks?: number;
   stallMs?: number;
   usage?: MockOpenAIUsage;
@@ -42,10 +48,13 @@ interface MutableScript {
 const toMutableScript = (script: MockOpenAIScript): MutableScript => ({
   delayMs: script.delayMs ?? 0,
   failServed: false,
+  finishReason: script.finishReason ?? "stop",
+  omitUsage: script.omitUsage ?? false,
   reasoning: script.reasoning ?? [],
   text: script.text ?? ["mock response"],
   toolCalls: script.toolCalls ?? [],
   ...(script.failBody !== undefined ? { failBody: script.failBody } : {}),
+  ...(script.failStatus !== undefined ? { failStatus: script.failStatus } : {}),
   ...(script.failStatusOnce !== undefined ? { failStatusOnce: script.failStatusOnce } : {}),
   ...(script.stallAfterChunks !== undefined ? { stallAfterChunks: script.stallAfterChunks } : {}),
   ...(script.stallMs !== undefined ? { stallMs: script.stallMs } : {}),
@@ -157,6 +166,10 @@ export class MockOpenAIChatServer {
     }
 
     const script = this.#queue[0] ?? this.#defaultScript;
+    if (script.failStatus) {
+      writeJson(response, script.failStatus, script.failBody ?? { error: { message: "provider failure" } });
+      return;
+    }
     if (script.failStatusOnce && !script.failServed) {
       script.failServed = true;
       writeJson(response, script.failStatusOnce, script.failBody ?? { error: { message: "temporary failure" } });
@@ -229,7 +242,7 @@ export class MockOpenAIChatServer {
 
       await writeData({
         choices: [{ delta: {}, finish_reason: "tool_calls" }],
-        usage: script.usage ?? { completion_tokens: 0, prompt_tokens: 4, total_tokens: 4 }
+        ...(script.omitUsage ? {} : { usage: script.usage ?? { completion_tokens: 0, prompt_tokens: 4, total_tokens: 4 } })
       });
       response.write("data: [DONE]\n\n");
       response.end();
@@ -249,12 +262,16 @@ export class MockOpenAIChatServer {
     }
 
     await writeData({
-      choices: [{ delta: {}, finish_reason: "stop" }],
-      usage: script.usage ?? {
-        completion_tokens: script.text.join("").length,
-        prompt_tokens: 4,
-        total_tokens: script.text.join("").length + 4
-      }
+      choices: [{ delta: {}, finish_reason: script.finishReason }],
+      ...(script.omitUsage
+        ? {}
+        : {
+            usage: script.usage ?? {
+              completion_tokens: script.text.join("").length,
+              prompt_tokens: 4,
+              total_tokens: script.text.join("").length + 4
+            }
+          })
     });
     response.write("data: [DONE]\n\n");
     response.end();

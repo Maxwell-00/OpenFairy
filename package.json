@@ -12,6 +12,7 @@
     "typecheck": "pnpm -r typecheck",
     "test": "pnpm -r test",
     "dep-check": "dependency-cruiser --config .dependency-cruiser.cjs packages apps",
+    "conformance": "node --import tsx packages/testing/src/bin/conformance.ts",
     "doctor": "node scripts/run-doctor.mjs",
     "fairy": "node scripts/run-cli.mjs"
   },
