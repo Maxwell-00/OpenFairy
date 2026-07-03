@@ -41,3 +41,7 @@ Owner's first real DeepSeek turn failed: `Invalid 'tools[0].function.name' ... p
 - doc: model-gateway §4 normalization table row added.
 
 Rule recorded: **the mock provider must reject what real providers reject** — wire-format constraints (name charset, param support, etc.) belong in the mock, or e2e green means nothing for them.
+
+## Addendum #2 (manual test point 5 — `fairy audit` 404)
+
+Test points ①–④ passed on the real provider. ⑤ failed: `runAudit` passed `"/audit?limit=20"` whole into `httpUrl`, which did `url.pathname = path` — the `?` got percent-encoded into the pathname (`/audit%3Flimit=20`) → gateway 404. `fairy sessions` never tripped it (no query string). Fixed in `httpUrl`: split path/query, merge query params properly. Coverage gap noted: **no test ever called `/audit` end-to-end** — M1-03 must add an audit-endpoint e2e assertion (with `--limit`).

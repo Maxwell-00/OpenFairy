@@ -74,14 +74,23 @@ const websocketUrl = (gateway: string, token: string): string => {
   return url.toString();
 };
 
-const httpUrl = (gateway: string, token: string, path: string): string => {
+const httpUrl = (gateway: string, token: string, pathWithQuery: string): string => {
   const url = new URL(gateway);
   if (url.protocol === "ws:") {
     url.protocol = "http:";
   } else if (url.protocol === "wss:") {
     url.protocol = "https:";
   }
+  // pathWithQuery may carry a query string; assigning it whole to url.pathname would
+  // URL-encode the "?" into the path (/audit%3Flimit=20 → 404). Split and merge properly.
+  const [path = "/", query] = pathWithQuery.split("?", 2);
   url.pathname = path;
+  url.search = "";
+  if (query) {
+    for (const [key, value] of new URLSearchParams(query)) {
+      url.searchParams.set(key, value);
+    }
+  }
   url.searchParams.set("token", token);
   return url.toString();
 };
