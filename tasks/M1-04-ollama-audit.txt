@@ -1,0 +1,14 @@
+$ node scripts/run-cli.mjs "audit" "--limit" "20"
+13 2026-07-03T11:27:29.934Z tool.execute fs.read ok ses_01KWKVQ63YTJ5SFG7Y64QPYWV0#1 
+12 2026-07-03T11:27:29.904Z permission.decide fs.read allow ses_01KWKVQ63YTJ5SFG7Y64QPYWV0#1 
+11 2026-07-03T02:53:47.328Z approval.resolved shell.run deny ses_01KWJYAPJ0W6DKPWWRA0YTYD3H#1 cli
+10 2026-07-03T02:53:45.163Z approval.request shell.run ask ses_01KWJYAPJ0W6DKPWWRA0YTYD3H#1 
+9 2026-07-03T02:53:45.131Z permission.decide shell.run ask ses_01KWJYAPJ0W6DKPWWRA0YTYD3H#1 
+8 2026-07-03T02:53:14.174Z tool.execute shell.run ok ses_01KWJY7HSG5TT7B5PWDT3HCQTJ#3 
+7 2026-07-03T02:53:13.362Z permission.decide shell.run allow ses_01KWJY7HSG5TT7B5PWDT3HCQTJ#3 
+6 2026-07-03T02:52:33.257Z tool.execute shell.run ok ses_01KWJY7HSG5TT7B5PWDT3HCQTJ#2 
+5 2026-07-03T02:52:32.449Z approval.resolved shell.run session ses_01KWJY7HSG5TT7B5PWDT3HCQTJ#2 cli
+4 2026-07-03T02:52:24.725Z approval.request shell.run ask ses_01KWJY7HSG5TT7B5PWDT3HCQTJ#2 
+3 2026-07-03T02:52:24.696Z permission.decide shell.run ask ses_01KWJY7HSG5TT7B5PWDT3HCQTJ#2 
+2 2026-07-03T02:52:08.761Z tool.execute fs.read ok ses_01KWJY7HSG5TT7B5PWDT3HCQTJ#1 
+1 2026-07-03T02:52:08.724Z permission.decide fs.read allow ses_01KWJY7HSG5TT7B5PWDT3HCQTJ#1 

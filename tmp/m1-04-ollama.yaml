@@ -1,0 +1,19 @@
+﻿models:
+  - id: ollama-live
+    transport: openai-chat
+    base_url: http://127.0.0.1:11434/v1
+    model: qwen3.5:4b
+    capabilities:
+      tools: prompted
+    data_clearance:
+      max_sensitivity: internal
+      residency: [global-ok]
+
+roles:
+  main:
+    model: ollama-live
+
+gateway:
+  port: 8787
+  auth:
+    token: dev-token
