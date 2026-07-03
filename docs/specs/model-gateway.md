@@ -72,7 +72,7 @@ The hard part of "OpenAI-compatible" is that nobody is quite compatible. Known v
 
 | Variance | Normalization |
 |---|---|
-| Streaming tool-call deltas (arguments chunked differently; some omit `type`/`index`; some emit whole calls at once) | Stateful reassembler per choice; emits a single normalized `tool_call` event when arguments parse as complete JSON |
+| Streaming tool-call deltas (arguments chunked differently; some omit `type`/`index`; some emit whole calls at once) | Stateful reassembler per choice; emits a single normalized `tool_call` event when arguments parse as complete JSON. Name-first deltas with empty arguments are **held open** (empty ≠ `{}`) until fragments complete or the stream ends |
 | `tool_choice` support (absent/partial on vLLM & others) | Feature-detect; emulate `required`/named-tool via prompted-tools path |
 | Reasoning channels (`reasoning_content` field vs `<think>` tags vs OpenAI reasoning items) | Extracted into a separate `reasoning` delta stream; never enters history sent back to models that would choke on it |
 | Parameter support (some reject `frequency_penalty`, `logprobs`, etc.) | Per-model param allowlist; unknown params stripped, warned once |

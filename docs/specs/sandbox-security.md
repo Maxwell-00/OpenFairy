@@ -37,6 +37,7 @@ Out of scope v1: multi-user isolation (single-owner system), side-channel attack
 | `trusted` | full | declared host paths | explicit per-session opt-in, audited |
 
 - Fallback when no container runtime exists: `safe`-profile approximation via OS process isolation (Landlock/seccomp on Linux, Seatbelt on macOS — Codex-style); on bare Windows, execution tools are **disabled rather than weakened** and the user is pointed at the WSL2 setup doc.
+- *Implemented v1 (M1-02):* Docker CLI probed at boot (bounded, 2 s); absent → `shell.run` is **not registered** at all (the model never sees the tool). Driven via `docker run` CLI spawn with hard wall-clock deadline — no Docker SDK dependency. CI note: `windows-latest` runners cannot run Linux containers; container tests skip there with a visible reason and run on `ubuntu-latest`.
 - Sandbox escape = critical severity; the security test suite ships escape attempts as regression tests.
 
 ## 3. Permission engine (FR-15)
