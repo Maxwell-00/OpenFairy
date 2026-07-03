@@ -173,6 +173,10 @@
       "type": "session.resumed"
     },
     {
+      "family": "context",
+      "type": "context.manifest"
+    },
+    {
       "family": "error",
       "type": "error"
     }

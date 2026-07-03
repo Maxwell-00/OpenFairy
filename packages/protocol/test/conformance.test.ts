@@ -62,6 +62,7 @@ describe("protocol registry", () => {
       "session.created",
       "session.compacted",
       "session.resumed",
+      "context.manifest",
       "error"
     ]);
   });

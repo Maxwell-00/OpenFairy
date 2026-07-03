@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from "vitest";
 
-import { createModelGateway, ProviderError, type NormalizedModelEvent } from "../src/index.js";
+import { createModelGateway, estimateTextTokens, ProviderError, type NormalizedModelEvent } from "../src/index.js";
 import { MockOpenAIChatServer } from "@fairy/testing";
 
 let server: MockOpenAIChatServer | undefined;
@@ -38,6 +38,16 @@ afterEach(async () => {
 });
 
 describe("@fairy/model-gateway", () => {
+  it("estimates English, Chinese, and mixed text with CJK-aware weighting", () => {
+    const english = "This is a simple English sentence with about forty characters.";
+    const chinese = "\u8fd9\u662f\u4e00\u4e2a\u7528\u4e8e\u4f30\u7b97\u4e2d\u6587\u4e0a\u4e0b\u6587\u957f\u5ea6\u7684\u53e5\u5b50\uff0c\u5e94\u8be5\u6bd4\u82f1\u6587\u6309\u5b57\u7b26\u56db\u5206\u4e4b\u4e00\u66f4\u91cd\u3002";
+    const mixed = `${english} ${chinese}`;
+
+    expect(estimateTextTokens(chinese)).toBeGreaterThan(estimateTextTokens(english) * 0.6);
+    expect(estimateTextTokens(mixed)).toBeGreaterThan(estimateTextTokens(english));
+    expect(estimateTextTokens(chinese)).toBeGreaterThan(Math.ceil(chinese.length / 4));
+  });
+
   it("streams OpenAI-compatible text deltas and usage", async () => {
     const mock = await startServer();
     mock.setDefaultScript({

@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import { runDoctor } from "../doctor.js";
 import { runAudit, runChat, runSessions } from "../chat.js";
+import { runReplay } from "../replay.js";
 
 const [command, ...args] = process.argv.slice(2);
 
@@ -25,5 +26,10 @@ if (command === "audit") {
   process.exit(0);
 }
 
-console.error("Usage: fairy <doctor|chat|sessions|audit>");
+if (command === "replay") {
+  await runReplay(args);
+  process.exit(0);
+}
+
+console.error("Usage: fairy <doctor|chat|sessions|audit|replay>");
 process.exit(1);

@@ -1,17 +1,23 @@
 import { describe, expect, it } from "vitest";
 
 import { PermissionEngine, TurnRunner, type KernelEvent } from "../src/index.js";
-import type { ModelGateway, NormalizedModelEvent } from "@fairy/model-gateway";
+import { estimateTextTokens, type ModelGateway, type NormalizedModelEvent } from "@fairy/model-gateway";
 import type { EventEnvelope } from "@fairy/protocol";
 
 const labels = { residency: "global-ok", sensitivity: "internal" } as const;
 
 const fakeGateway = (events: readonly NormalizedModelEvent[], onRequest?: (messages: readonly unknown[]) => void): ModelGateway => ({
+  estimateTokens(input) {
+    return { estimated: true, tokens: estimateTextTokens(input) };
+  },
   async *generate(_role, request) {
     onRequest?.(request.messages);
     for (const event of events) {
       yield event;
     }
+  },
+  modelInfo() {
+    return { context_window: 8000, id: "mock-main", max_output: 1024, model: "mock-model" };
   }
 });
 
@@ -59,7 +65,8 @@ describe("@fairy/kernel TurnRunner", () => {
     });
 
     expect(result).toMatchObject({ content: "hi", finish_reason: "stop" });
-    expect(emitted.map((event) => event.type)).toEqual(["reasoning.delta", "turn.delta", "turn.final"]);
+    expect(emitted.map((event) => event.type)).toEqual(["context.manifest", "reasoning.delta", "turn.delta", "turn.final"]);
+    expect(emitted[0]?.payload).toMatchObject({ model: "mock-model", reduction_stages_applied: [] });
     expect(emitted.at(-1)?.payload).toMatchObject({
       content: [{ kind: "text", text: "hi" }],
       usage: { estimated: false, input_tokens: 1, output_tokens: 1 }
@@ -69,6 +76,9 @@ describe("@fairy/kernel TurnRunner", () => {
   it("emits turn.interrupted when cancelled", async () => {
     let abortSignal: AbortSignal | undefined;
     const gateway: ModelGateway = {
+      estimateTokens(input) {
+        return { estimated: true, tokens: estimateTextTokens(input) };
+      },
       async *generate(_role, _request, options) {
         abortSignal = options?.abort;
         yield { text: "partial", type: "text" };
@@ -79,6 +89,9 @@ describe("@fairy/kernel TurnRunner", () => {
           }
           options?.abort?.addEventListener("abort", () => reject(new Error("aborted")), { once: true });
         });
+      },
+      modelInfo() {
+        return { context_window: 8000, id: "mock-main", max_output: 1024, model: "mock-model" };
       }
     };
     const emitted: KernelEvent[] = [];
@@ -97,7 +110,7 @@ describe("@fairy/kernel TurnRunner", () => {
     expect(runner.cancel("ses_01J00000000000000000000001")).toBe(true);
     await run;
 
-    expect(emitted.map((event) => event.type)).toEqual(["turn.delta", "turn.interrupted"]);
+    expect(emitted.map((event) => event.type)).toEqual(["context.manifest", "turn.delta", "turn.interrupted"]);
     expect(emitted.at(-1)?.payload).toMatchObject({ reason: "user_cancelled" });
   });
 
@@ -107,8 +120,14 @@ describe("@fairy/kernel TurnRunner", () => {
       started = resolve;
     });
     const gateway: ModelGateway = {
+      estimateTokens(input) {
+        return { estimated: true, tokens: estimateTextTokens(input) };
+      },
       async *generate() {
         yield { args: {}, call_id: "call_slow", name: "test.slow", type: "tool_call" };
+      },
+      modelInfo() {
+        return { context_window: 8000, id: "mock-main", max_output: 1024, model: "mock-model" };
       }
     };
     const tools = new Map([[
@@ -152,7 +171,7 @@ describe("@fairy/kernel TurnRunner", () => {
     const result = await run;
 
     expect(result).toMatchObject({ finish_reason: "cancelled" });
-    expect(emitted.map((event) => event.type)).toEqual(["tool.call", "turn.interrupted"]);
+    expect(emitted.map((event) => event.type)).toEqual(["context.manifest", "tool.call", "turn.interrupted"]);
     expect(emitted.at(-1)?.payload).toMatchObject({ reason: "user_cancelled" });
   });
 });

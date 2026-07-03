@@ -70,6 +70,8 @@ const killGateway = async (process: GatewayProcess): Promise<void> => {
 const hasDocker = (): boolean => spawnSync("docker", ["--version"], { timeout: 2000, windowsHide: true }).status === 0;
 
 const writeConfig = (path: string, dataDir: string, token: string, baseUrl: string, options: {
+  readonly context?: readonly string[];
+  readonly model?: readonly string[];
   readonly permissions?: readonly string[];
   readonly workspaceRoot?: string;
 } = {}): void => {
@@ -81,6 +83,7 @@ const writeConfig = (path: string, dataDir: string, token: string, baseUrl: stri
       "    transport: openai-chat",
       `    base_url: ${JSON.stringify(baseUrl)}`,
       "    model: mock-model",
+      ...(options.model ?? []),
       "    data_clearance:",
       "      max_sensitivity: internal",
       "      residency: [global-ok]",
@@ -96,6 +99,12 @@ const writeConfig = (path: string, dataDir: string, token: string, baseUrl: stri
       "kernel:",
       "  system_prompt: M1 e2e test prompt",
       "  max_tool_iterations: 16",
+      ...(options.context
+        ? [
+            "context:",
+            ...options.context
+          ]
+        : []),
       ...(options.workspaceRoot
         ? ["workspace:", `  root: ${JSON.stringify(options.workspaceRoot.replace(/\\/g, "/"))}`]
         : []),
@@ -181,6 +190,7 @@ describe("gateway M1 e2e", () => {
 
       expect(turnEvents.map((event) => event.type)).toEqual([
         "turn.input",
+        "context.manifest",
         "reasoning.delta",
         "turn.delta",
         "turn.delta",
@@ -197,7 +207,7 @@ describe("gateway M1 e2e", () => {
       assertM1TurnCompletes(turnEvents);
 
       const logged = await readLoggedEvents(dataDir, created.sid);
-      expect(logged).toHaveLength(6);
+      expect(logged).toHaveLength(7);
       for (const event of logged) {
         expect(validateEvent(event)).toMatchObject({ ok: true });
       }
@@ -350,9 +360,11 @@ describe("gateway M1 e2e", () => {
 
       expect(turnEvents.map((event) => event.type)).toEqual([
         "turn.input",
+        "context.manifest",
         "tool.call",
         "artifact.created",
         "tool.result",
+        "context.manifest",
         "turn.delta",
         "turn.final"
       ]);
@@ -414,6 +426,132 @@ describe("gateway M1 e2e", () => {
       });
       expect(turnEvents.at(-1)?.type).toBe("turn.final");
       assertSchemaValidStream(client.events());
+    } finally {
+      await stopGateway(gateway);
+    }
+  });
+
+  it("returns audit rows through /audit?limit=N after an auto-allowed tool turn", async () => {
+    provider = await MockOpenAIChatServer.start();
+    provider.enqueueScript({
+      toolCalls: [{ id: "call_audit_read", name: "fs.read", args: { path: "audit.txt" } }]
+    });
+    provider.enqueueScript({ text: ["audit complete"] });
+
+    const temp = await mkdtemp(join(tmpdir(), "fairy-gateway-audit-"));
+    const dataDir = join(temp, "data");
+    const workspaceRoot = join(temp, "workspace");
+    const configPath = join(temp, "fairy.yaml");
+    const token = "audit-token";
+    await mkdir(workspaceRoot, { recursive: true });
+    await writeFile(join(workspaceRoot, "audit.txt"), "audit target", "utf8");
+    writeConfig(configPath, dataDir, token, provider.url, { workspaceRoot });
+    const gateway = startGateway(configPath);
+
+    try {
+      const port = await waitForGateway(gateway);
+      const client = await MockFairyClient.connect({ token, url: `ws://127.0.0.1:${port}` });
+      const created = await client.createSession("audit");
+      await client.sendTurnInput(created.sid, {
+        content: [{ kind: "text", text: "read audit.txt" }]
+      });
+      client.close();
+
+      const audit = await fetch(`http://127.0.0.1:${port}/audit?limit=5&token=${token}`).then((response) => response.json()) as {
+        entries: { op: string; tool: string | null; decision: string | null }[];
+      };
+      expect(audit.entries.length).toBeGreaterThan(0);
+      expect(audit.entries.length).toBeLessThanOrEqual(5);
+      expect(audit.entries.some((entry) => entry.op === "permission.decide" && entry.tool === "fs.read")).toBe(true);
+      expect(audit.entries.some((entry) => entry.op === "tool.execute" && entry.tool === "fs.read")).toBe(true);
+    } finally {
+      await stopGateway(gateway);
+    }
+  });
+
+  it("drives context reduction manifests through L1-L3 and renders fairy replay manifests offline", async () => {
+    provider = await MockOpenAIChatServer.start();
+    provider.enqueueScript({
+      toolCalls: [{ id: "call_long_read", name: "fs.read", args: { path: "big.txt" } }]
+    });
+    provider.enqueueScript({ text: ["turn one ", "A ".repeat(1400)] });
+    provider.enqueueScript({ text: ["turn two ", "B ".repeat(1400)] });
+    provider.enqueueScript({ text: ["turn three complete"] });
+
+    const temp = await mkdtemp(join(tmpdir(), "fairy-gateway-context-"));
+    const dataDir = join(temp, "data");
+    const workspaceRoot = join(temp, "workspace");
+    const configPath = join(temp, "fairy.yaml");
+    const token = "context-token";
+    await mkdir(workspaceRoot, { recursive: true });
+    await writeFile(join(workspaceRoot, "big.txt"), `${"x".repeat(40 * 1024)}\nCONTEXT_MAGIC\n`, "utf8");
+    writeConfig(configPath, dataDir, token, provider.url, {
+      context: [
+        "  reduce_at: 0.5",
+        "  output_reserve: 120",
+        "  min_recent_turns: 1"
+      ],
+      model: [
+        "    context_window: 700",
+        "    max_output: 120"
+      ],
+      workspaceRoot
+    });
+    const gateway = startGateway(configPath);
+
+    try {
+      const port = await waitForGateway(gateway);
+      const client = await MockFairyClient.connect({ token, url: `ws://127.0.0.1:${port}` });
+      const created = await client.createSession("context");
+      await client.sendTurnInput(created.sid, {
+        content: [{ kind: "text", text: "read the big file and remember alpha" }]
+      });
+      await client.sendTurnInput(created.sid, {
+        content: [{ kind: "text", text: "second pinned user beta" }]
+      });
+      await client.sendTurnInput(created.sid, {
+        content: [{ kind: "text", text: "third user gamma" }]
+      });
+      client.close();
+
+      const logged = await readLoggedEvents(dataDir, created.sid);
+      const manifests = logged.filter((event) => event.type === "context.manifest");
+      const stages = manifests.flatMap((event) =>
+        typeof event.payload === "object" && event.payload !== null && Array.isArray((event.payload as { reduction_stages_applied?: unknown }).reduction_stages_applied)
+          ? (event.payload as { reduction_stages_applied: string[] }).reduction_stages_applied
+          : []
+      );
+      expect(stages).toContain("L1");
+      expect(stages).toContain("L2");
+      expect(stages).toContain("L3");
+
+      const lastRequest = provider.requestBodies.at(-1) as { messages?: { content?: string }[] } | undefined;
+      const prompt = (lastRequest?.messages ?? []).map((message) => message.content ?? "").join("\n");
+      expect(prompt).toContain("read the big file and remember alpha");
+      expect(prompt).toContain("[turn 1 elided:");
+      expect(prompt).not.toContain("context.manifest");
+
+      const replay = spawnSync(process.execPath, [
+        "--import",
+        "tsx",
+        "apps/cli/src/bin/fairy.ts",
+        "replay",
+        created.sid,
+        "--manifests",
+        "--data-dir",
+        dataDir
+      ], {
+        cwd: repoRoot,
+        encoding: "utf8",
+        env: { ...process.env, CI: "true" },
+        timeout: 30000,
+        windowsHide: true
+      });
+      expect(replay.status).toBe(0);
+      expect(replay.stdout).toContain("turn model projected/budget/window stages");
+      expect(replay.stdout).toContain("L1");
+      expect(replay.stdout).toContain("L2");
+      expect(replay.stdout).toContain("L3");
     } finally {
       await stopGateway(gateway);
     }

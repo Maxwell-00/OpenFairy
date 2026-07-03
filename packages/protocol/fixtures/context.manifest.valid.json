@@ -1,0 +1,68 @@
+{
+  "actor": "system",
+  "id": "evt_01J00000000000000000000001",
+  "labels": {
+    "residency": "global-ok",
+    "sensitivity": "internal"
+  },
+  "payload": {
+    "budget": 6400,
+    "model": "mock-model",
+    "output_reserve": 1024,
+    "prefix_hash": "sha256:6d99c9559f2ac812",
+    "projected_tokens": 4100,
+    "reduction_stages_applied": [
+      "L1",
+      "L2"
+    ],
+    "window": 8000,
+    "zones": [
+      {
+        "estimated": true,
+        "name": "system",
+        "tokens": 32
+      },
+      {
+        "estimated": true,
+        "name": "persona",
+        "tokens": 0
+      },
+      {
+        "estimated": true,
+        "name": "tools",
+        "tokens": 120
+      },
+      {
+        "estimated": true,
+        "name": "memory",
+        "tokens": 0
+      },
+      {
+        "estimated": true,
+        "name": "skills",
+        "tokens": 0
+      },
+      {
+        "estimated": true,
+        "name": "task",
+        "tokens": 0
+      },
+      {
+        "estimated": true,
+        "name": "history",
+        "tokens": 2800
+      },
+      {
+        "estimated": true,
+        "name": "input",
+        "tokens": 24
+      }
+    ]
+  },
+  "provenance": "agent",
+  "sid": "ses_01J00000000000000000000000",
+  "ts": "2026-07-02T10:00:00.000Z",
+  "turn": 1,
+  "type": "context.manifest",
+  "v": 1
+}

@@ -1,6 +1,7 @@
 export interface ChatMessage {
   readonly role: "system" | "user" | "assistant" | "tool";
   readonly content: string;
+  readonly turn?: number;
   readonly tool_call_id?: string;
   readonly tool_calls?: readonly {
     readonly id: string;
@@ -41,6 +42,18 @@ export interface ModelTrace {
   };
 }
 
+export interface TokenEstimate {
+  readonly estimated: true;
+  readonly tokens: number;
+}
+
+export interface ModelMetadata {
+  readonly context_window: number;
+  readonly id: string;
+  readonly max_output?: number;
+  readonly model: string;
+}
+
 export type NormalizedModelEvent =
   | { readonly type: "text"; readonly text: string }
   | { readonly type: "reasoning"; readonly text: string }
@@ -70,6 +83,8 @@ export interface ModelConfig {
   readonly base_url: string;
   readonly api_key_ref?: string;
   readonly model: string;
+  readonly context_window: number;
+  readonly max_output?: number;
   readonly data_clearance: DataClearance;
 }
 
@@ -100,5 +115,7 @@ export class ProviderError extends Error {
 }
 
 export interface ModelGateway {
+  estimateTokens(input: string): TokenEstimate;
   generate(role: string, request: GenerateRequest, options?: GenerateOptions): AsyncIterable<NormalizedModelEvent>;
+  modelInfo(role: string): ModelMetadata;
 }

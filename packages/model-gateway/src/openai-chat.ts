@@ -7,6 +7,7 @@ import {
   type UsageSnapshot
 } from "./types.js";
 import { parseSseDataBlocks } from "./sse.js";
+import { estimateTextTokens } from "./tokens.js";
 
 interface OpenAIChunk {
   readonly choices?: readonly {
@@ -41,8 +42,6 @@ interface OpenAIToolCallDelta {
 }
 
 const endpoint = (baseUrl: string): string => `${baseUrl.replace(/\/$/, "")}/chat/completions`;
-
-const estimateTokens = (text: string): number => Math.max(1, Math.ceil(text.length / 4));
 
 const mapFinishReason = (finish: string | null | undefined): "stop" | "cancelled" | "error" | "tool-limit" => {
   if (finish === "stop" || finish === "length") {
@@ -305,8 +304,8 @@ export async function* streamOpenAIChat(options: {
           if (chunk.usage) {
             usage = {
               estimated: false,
-              input_tokens: chunk.usage.prompt_tokens ?? estimateTokens(options.messages.map((message) => message.content).join("")),
-              output_tokens: chunk.usage.completion_tokens ?? estimateTokens(outputText)
+              input_tokens: chunk.usage.prompt_tokens ?? estimateTextTokens(options.messages.map((message) => message.content).join("")),
+              output_tokens: chunk.usage.completion_tokens ?? estimateTextTokens(outputText)
             };
             yield { type: "usage", usage };
           }
@@ -345,8 +344,8 @@ export async function* streamOpenAIChat(options: {
 
       const finalUsage = usage ?? {
         estimated: true,
-        input_tokens: estimateTokens(options.messages.map((message) => message.content).join("")),
-        output_tokens: estimateTokens(outputText)
+        input_tokens: estimateTextTokens(options.messages.map((message) => message.content).join("")),
+        output_tokens: estimateTextTokens(outputText)
       };
       for (const toolCall of toolCalls.flushCompleted()) {
         emittedToolCalls = true;

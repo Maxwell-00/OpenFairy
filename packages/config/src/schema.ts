@@ -14,6 +14,8 @@ export const configSchema = {
           base_url: { type: "string", minLength: 1 },
           api_key_ref: { type: "string", pattern: "^secret://[A-Za-z0-9_.-]+$" },
           model: { type: "string", minLength: 1 },
+          context_window: { type: "integer", minimum: 1 },
+          max_output: { type: "integer", minimum: 1 },
           capabilities: { type: "object", additionalProperties: true },
           pricing: { type: "object", additionalProperties: true },
           data_clearance: {
@@ -115,6 +117,16 @@ export const configSchema = {
       },
       required: ["ask_timeout_s", "rules"]
     },
+    context: {
+      type: "object",
+      additionalProperties: true,
+      properties: {
+        reduce_at: { type: "number", exclusiveMinimum: 0, maximum: 1 },
+        output_reserve: { type: "integer", minimum: 1 },
+        min_recent_turns: { type: "integer", minimum: 0 }
+      },
+      required: ["reduce_at", "min_recent_turns"]
+    },
     workspace: {
       type: "object",
       additionalProperties: true,
@@ -197,5 +209,5 @@ export const configSchema = {
       required: ["image", "default_profile", "profiles", "timeout_s"]
     }
   },
-  required: ["models", "roles", "gateway", "kernel", "permissions", "search", "governance", "research", "sandbox"]
+  required: ["models", "roles", "gateway", "kernel", "permissions", "context", "search", "governance", "research", "sandbox"]
 } as const;

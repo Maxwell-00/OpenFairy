@@ -1,6 +1,7 @@
 import { parseModelGatewayConfig, resolveSecretRef } from "./config.js";
 import { streamOpenAIChat } from "./openai-chat.js";
-import type { GenerateOptions, GenerateRequest, ModelConfig, ModelGateway, ModelTrace, NormalizedModelEvent } from "./types.js";
+import { estimateTextTokens } from "./tokens.js";
+import type { GenerateOptions, GenerateRequest, ModelConfig, ModelGateway, ModelMetadata, ModelTrace, NormalizedModelEvent, TokenEstimate } from "./types.js";
 
 const sensitivityRank = {
   public: 0,
@@ -44,15 +45,22 @@ export class ConfiguredModelGateway implements ModelGateway {
     this.#env = env;
   }
 
+  estimateTokens(input: string): TokenEstimate {
+    return { estimated: true, tokens: estimateTextTokens(input) };
+  }
+
+  modelInfo(role: string): ModelMetadata {
+    const model = this.#modelForRole(role);
+    return {
+      context_window: model.context_window,
+      id: model.id,
+      ...(model.max_output ? { max_output: model.max_output } : {}),
+      model: model.model
+    };
+  }
+
   async *generate(role: string, request: GenerateRequest, options: GenerateOptions = {}): AsyncIterable<NormalizedModelEvent> {
-    const binding = this.#config.roles[role];
-    if (!binding) {
-      throw new Error(`unknown model role ${role}`);
-    }
-    const model = this.#config.models.find((candidate) => candidate.id === binding.model);
-    if (!model) {
-      throw new Error(`role ${role} binds missing model ${binding.model}`);
-    }
+    const model = this.#modelForRole(role);
 
     const apiKey = resolveSecretRef(model.api_key_ref, this.#env);
     const trace = clearanceTrace(model, request);
@@ -70,6 +78,18 @@ export class ConfiguredModelGateway implements ModelGateway {
       }
       yield event;
     }
+  }
+
+  #modelForRole(role: string): ModelConfig {
+    const binding = this.#config.roles[role];
+    if (!binding) {
+      throw new Error(`unknown model role ${role}`);
+    }
+    const model = this.#config.models.find((candidate) => candidate.id === binding.model);
+    if (!model) {
+      throw new Error(`role ${role} binds missing model ${binding.model}`);
+    }
+    return model;
   }
 }
 

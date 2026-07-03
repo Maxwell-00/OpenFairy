@@ -89,6 +89,9 @@ const textFromContent = (content: unknown): string => {
 const payloadText = (payload: unknown): string =>
   isRecord(payload) ? textFromContent(payload.content) : "";
 
+const stablePayload = (payload: Record<string, unknown>): string =>
+  JSON.stringify(Object.fromEntries(Object.entries(payload).sort(([left], [right]) => left.localeCompare(right))));
+
 const turnPayload = (message: ClientMessage): Record<string, unknown> => {
   if (isRecord(message.payload)) {
     return message.payload;
@@ -143,7 +146,7 @@ const actorForKernelEvent = (type: KernelEventType): Actor => {
   if (type === "tool.call" || type === "tool.result") {
     return "tool";
   }
-  if (type === "approval.request" || type === "approval.resolved" || type === "artifact.created" || type === "error" || type === "turn.interrupted") {
+  if (type === "approval.request" || type === "approval.resolved" || type === "artifact.created" || type === "context.manifest" || type === "error" || type === "turn.interrupted") {
     return "system";
   }
   return "agent";
@@ -175,11 +178,13 @@ export class MinimalGateway {
       auditLog: this.#auditLog,
       rules: config.permissionRules
     });
+    const modelGateway = createModelGateway(config.config);
     this.#runner = new TurnRunner({
       artifactsDir: config.artifactsDir,
       auditLog: this.#auditLog,
+      contextConfig: config.contextConfig,
       maxToolIterations: config.maxToolIterations,
-      modelGateway: createModelGateway(config.config),
+      modelGateway,
       permissionAskTimeoutMs: config.askTimeoutMs,
       permissionEngine,
       toolContext: {
@@ -278,7 +283,35 @@ export class MinimalGateway {
       state.turnCount += 1;
       const text = payloadText(event.payload);
       if (text) {
-        state.history.push({ content: text, role: "user" });
+        state.history.push({ content: text, role: "user", turn: event.turn });
+      }
+      return;
+    }
+
+    if (event.type === "tool.call" && isRecord(event.payload)) {
+      const callId = typeof event.payload.call_id === "string" ? event.payload.call_id : undefined;
+      const tool = typeof event.payload.tool === "string" ? event.payload.tool : undefined;
+      const args = isRecord(event.payload.args) ? event.payload.args : {};
+      if (callId && tool) {
+        state.history.push({
+          content: "",
+          role: "assistant",
+          tool_calls: [{ arguments: args, id: callId, name: tool }],
+          turn: event.turn
+        });
+      }
+      return;
+    }
+
+    if (event.type === "tool.result" && isRecord(event.payload)) {
+      const callId = typeof event.payload.call_id === "string" ? event.payload.call_id : undefined;
+      if (callId) {
+        state.history.push({
+          content: stablePayload(event.payload),
+          role: "tool",
+          tool_call_id: callId,
+          turn: event.turn
+        });
       }
       return;
     }
@@ -286,7 +319,7 @@ export class MinimalGateway {
     if (event.type === "turn.final") {
       const text = payloadText(event.payload);
       if (text) {
-        state.history.push({ content: text, role: "assistant" });
+        state.history.push({ content: text, role: "assistant", turn: event.turn });
       }
     }
   }

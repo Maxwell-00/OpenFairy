@@ -19,6 +19,9 @@ permissions:
       decision: allow
     - tool: "*"
       decision: ask
+context:
+  reduce_at: 0.8
+  min_recent_turns: 4
 search:
   engine:
     kind: mock

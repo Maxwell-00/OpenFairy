@@ -6,6 +6,17 @@ const isRecord = (value: unknown): value is Record<string, unknown> =>
 const readString = (record: Record<string, unknown>, key: string): string | undefined =>
   typeof record[key] === "string" ? record[key] : undefined;
 
+const readPositiveInteger = (record: Record<string, unknown>, key: string): number | undefined =>
+  typeof record[key] === "number" && Number.isInteger(record[key]) && record[key] > 0 ? record[key] : undefined;
+
+const readCapabilitiesNumber = (record: Record<string, unknown>, key: string): number | undefined => {
+  const capabilities = record.capabilities;
+  if (!isRecord(capabilities)) {
+    return undefined;
+  }
+  return readPositiveInteger(capabilities, key);
+};
+
 const readClearance = (record: Record<string, unknown>): DataClearance => {
   const clearance = record.data_clearance;
   if (!isRecord(clearance)) {
@@ -51,13 +62,16 @@ export const parseModelGatewayConfig = (config: Record<string, unknown>): ModelG
     const baseUrl = readString(item, "base_url");
     const model = readString(item, "model");
     const apiKeyRef = readString(item, "api_key_ref");
+    const maxOutput = readPositiveInteger(item, "max_output") ?? readCapabilitiesNumber(item, "max_output");
     if (!id || transport !== "openai-chat" || !baseUrl || !model) {
       throw new Error("model entries require id, transport=openai-chat, base_url, and model");
     }
     return {
       base_url: baseUrl,
+      context_window: readPositiveInteger(item, "context_window") ?? readCapabilitiesNumber(item, "context_window") ?? 128_000,
       data_clearance: readClearance(item),
       id,
+      ...(maxOutput !== undefined ? { max_output: maxOutput } : {}),
       model,
       ...(apiKeyRef ? { api_key_ref: apiKeyRef } : {}),
       transport

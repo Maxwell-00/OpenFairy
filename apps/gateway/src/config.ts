@@ -1,5 +1,5 @@
 import { defaultDataDir, loadConfig } from "@fairy/config";
-import type { PermissionRule } from "@fairy/kernel";
+import type { ContextConfig, PermissionRule } from "@fairy/kernel";
 import { join, resolve } from "node:path";
 
 export interface GatewayCliOptions {
@@ -13,6 +13,7 @@ export interface GatewayRuntimeConfig {
   readonly askTimeoutMs: number;
   readonly authToken: string;
   readonly config: Record<string, unknown>;
+  readonly contextConfig: ContextConfig;
   readonly dataDir: string;
   readonly host: "127.0.0.1";
   readonly maxToolIterations: number;
@@ -54,6 +55,15 @@ const readSystemPrompt = (config: Record<string, unknown>): string => {
 const readMaxToolIterations = (config: Record<string, unknown>): number => {
   const kernel = readBlock(config, "kernel");
   return typeof kernel.max_tool_iterations === "number" ? kernel.max_tool_iterations : 16;
+};
+
+const readContextConfig = (config: Record<string, unknown>): ContextConfig => {
+  const context = readBlock(config, "context");
+  return {
+    minRecentTurns: typeof context.min_recent_turns === "number" ? context.min_recent_turns : 4,
+    ...(typeof context.output_reserve === "number" ? { outputReserve: context.output_reserve } : {}),
+    reduceAt: typeof context.reduce_at === "number" ? context.reduce_at : 0.8
+  };
 };
 
 const readAskTimeoutMs = (config: Record<string, unknown>): number => {
@@ -159,6 +169,7 @@ export const loadGatewayConfig = (
       ? resolveSecretRefForDevGateway(configuredToken, env)
       : configuredToken,
     config: loaded.config,
+    contextConfig: readContextConfig(loaded.config),
     dataDir,
     host: "127.0.0.1",
     maxToolIterations: readMaxToolIterations(loaded.config),

@@ -19,6 +19,10 @@ import { mkdirSync } from "node:fs";
 import { mkdir, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
+import { assemblePrompt, type ContextConfig } from "./context.js";
+
+export { assemblePrompt } from "./context.js";
+export type { AssembledPrompt, ContextConfig, ContextManifestPayload, ContextZoneName, ReductionStage } from "./context.js";
 
 export const defaultSystemPrompt =
   "You are Fairy, a helpful bilingual (Chinese/English) AI companion. Be concise, capable, and honest.";
@@ -30,6 +34,7 @@ export type KernelEventType =
   | "approval.request"
   | "approval.resolved"
   | "artifact.created"
+  | "context.manifest"
   | "turn.delta"
   | "reasoning.delta"
   | "tool.call"
@@ -89,6 +94,7 @@ export interface AuditRow {
 export interface TurnRunnerOptions {
   readonly artifactsDir?: string;
   readonly auditLog?: AuditLog;
+  readonly contextConfig?: Partial<ContextConfig>;
   readonly maxToolIterations?: number;
   readonly modelGateway: ModelGateway;
   readonly permissionEngine?: PermissionEngine;
@@ -252,6 +258,7 @@ export class TurnRunner {
   readonly #active = new Map<string, ActiveTurn>();
   readonly #artifactsDir: string | undefined;
   readonly #auditLog: AuditLog | undefined;
+  readonly #contextConfig: ContextConfig;
   readonly #maxToolIterations: number;
   readonly #modelGateway: ModelGateway;
   readonly #pendingApprovals = new Map<string, PendingApproval>();
@@ -264,6 +271,11 @@ export class TurnRunner {
   constructor(options: TurnRunnerOptions) {
     this.#artifactsDir = options.artifactsDir;
     this.#auditLog = options.auditLog;
+    this.#contextConfig = {
+      minRecentTurns: options.contextConfig?.minRecentTurns ?? 4,
+      ...(options.contextConfig?.outputReserve !== undefined ? { outputReserve: options.contextConfig.outputReserve } : {}),
+      reduceAt: options.contextConfig?.reduceAt ?? 0.8
+    };
     this.#maxToolIterations = options.maxToolIterations ?? 16;
     this.#modelGateway = options.modelGateway;
     this.#permissionAskTimeoutMs = options.permissionAskTimeoutMs ?? 300_000;
@@ -338,22 +350,30 @@ export class TurnRunner {
 
     try {
       const definitions = toolDefinitions(this.#tools) as ToolDefinition[];
-      const messages: ChatMessage[] = [
-        {
-          content: definitions.length > 0 ? `${this.#systemPrompt}\n\n${toolSafetySystemPrompt}` : this.#systemPrompt,
-          role: "system"
-        },
-        ...options.history.messages,
-        { content: options.input, role: "user" }
-      ];
+      const turnMessages: ChatMessage[] = [];
 
       for (let iteration = 0; iteration <= this.#maxToolIterations; iteration += 1) {
         const toolCalls: ToolCall[] = [];
         let sawDone = false;
+        const assembled = assemblePrompt({
+          config: this.#contextConfig,
+          currentInput: options.input,
+          currentTurnMessages: turnMessages,
+          history: options.history.messages,
+          model: this.#modelGateway.modelInfo("main"),
+          modelGateway: this.#modelGateway,
+          systemPrompt: this.#systemPrompt,
+          ...(definitions.length > 0 ? { toolSafetyPrompt: toolSafetySystemPrompt } : {}),
+          tools: definitions
+        });
+        await options.emit({
+          payload: assembled.manifest,
+          type: "context.manifest"
+        });
 
         for await (const event of this.#modelGateway.generate(
           "main",
-          { labels: options.labels, messages, tools: definitions },
+          { labels: options.labels, messages: assembled.messages, tools: definitions },
           { abort: active.controller.signal }
         )) {
           if (event.type === "text") {
@@ -433,9 +453,10 @@ export class TurnRunner {
           break;
         }
 
-        messages.push({
+        turnMessages.push({
           content: "",
           role: "assistant",
+          turn: options.turn,
           tool_calls: toolCalls.map((call) => ({
             arguments: call.args,
             id: call.call_id,
@@ -445,9 +466,10 @@ export class TurnRunner {
 
         for (const call of toolCalls) {
           const toolResult = await this.#handleToolCall(call, options, active);
-          messages.push({
+          turnMessages.push({
             content: resultToContext(call, toolResult.contextPayload),
             role: "tool",
+            turn: options.turn,
             tool_call_id: call.call_id
           });
         }

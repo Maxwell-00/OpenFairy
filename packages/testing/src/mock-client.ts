@@ -75,7 +75,7 @@ export class MockFairyClient {
   async sendTurnInput(sid: string, payload: TurnInputPayload): Promise<readonly EventEnvelope[]> {
     const before = this.#events.length;
     this.#socket.send(JSON.stringify({ content: payload.content, op: "turn.input", sid, ...(payload.channel ? { channel: payload.channel } : {}) }));
-    await this.waitFor((event) => event.sid === sid && event.type === "turn.final");
+    await this.#waitForAfter(before, (event) => event.sid === sid && event.type === "turn.final");
     return this.#events.slice(before);
   }
 
@@ -106,6 +106,34 @@ export class MockFairyClient {
           this.#waiters.splice(index, 1);
         }
         reject(new Error(`timed out waiting for event after ${timeoutMs} ms`));
+      }, timeoutMs);
+
+      const onEvent = (event: EventEnvelope): void => {
+        if (!predicate(event)) {
+          this.#waiters.push(onEvent);
+          return;
+        }
+        clearTimeout(timer);
+        resolve(event);
+      };
+
+      this.#waiters.push(onEvent);
+    });
+  }
+
+  #waitForAfter(index: number, predicate: (event: EventEnvelope) => boolean, timeoutMs = 5000): Promise<EventEnvelope> {
+    const existing = this.#events.slice(index).find(predicate);
+    if (existing) {
+      return Promise.resolve(existing);
+    }
+
+    return new Promise((resolve, reject) => {
+      const timer = setTimeout(() => {
+        const waiterIndex = this.#waiters.indexOf(onEvent);
+        if (waiterIndex >= 0) {
+          this.#waiters.splice(waiterIndex, 1);
+        }
+        reject(new Error(`timed out waiting for new event after ${timeoutMs} ms`));
       }, timeoutMs);
 
       const onEvent = (event: EventEnvelope): void => {

@@ -1,0 +1,164 @@
+{
+  "$id": "https://openfairy.local/schemas/protocol/v1/context.manifest.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": true,
+  "properties": {
+    "actor": {
+      "pattern": "^(user|agent|tool|system|subagent:[A-Za-z0-9_.-]+|workflow:[A-Za-z0-9_.-]+)$",
+      "type": "string"
+    },
+    "id": {
+      "pattern": "^evt_[0-9A-HJKMNP-TV-Z]{26}$",
+      "type": "string"
+    },
+    "labels": {
+      "additionalProperties": true,
+      "properties": {
+        "residency": {
+          "enum": [
+            "local-only",
+            "region-restricted",
+            "global-ok"
+          ],
+          "type": "string"
+        },
+        "sensitivity": {
+          "enum": [
+            "public",
+            "internal",
+            "personal",
+            "secret"
+          ],
+          "type": "string"
+        }
+      },
+      "required": [
+        "sensitivity",
+        "residency"
+      ],
+      "type": "object"
+    },
+    "payload": {
+      "additionalProperties": true,
+      "properties": {
+        "budget": {
+          "minimum": 1,
+          "type": "integer"
+        },
+        "model": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "output_reserve": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "prefix_hash": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "projected_tokens": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "reduction_stages_applied": {
+          "items": {
+            "enum": [
+              "L1",
+              "L2",
+              "L3",
+              "L4",
+              "L5"
+            ],
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "window": {
+          "minimum": 1,
+          "type": "integer"
+        },
+        "zones": {
+          "items": {
+            "additionalProperties": true,
+            "properties": {
+              "estimated": {
+                "type": "boolean"
+              },
+              "name": {
+                "enum": [
+                  "system",
+                  "persona",
+                  "tools",
+                  "memory",
+                  "skills",
+                  "task",
+                  "history",
+                  "input"
+                ],
+                "type": "string"
+              },
+              "tokens": {
+                "minimum": 0,
+                "type": "integer"
+              }
+            },
+            "required": [
+              "name",
+              "tokens",
+              "estimated"
+            ],
+            "type": "object"
+          },
+          "minItems": 1,
+          "type": "array"
+        }
+      },
+      "required": [
+        "zones",
+        "budget",
+        "window",
+        "reduction_stages_applied",
+        "prefix_hash",
+        "model"
+      ],
+      "type": "object"
+    },
+    "provenance": {
+      "pattern": "^(user|agent|tool:[^\\s]+|web:[^\\s]+|mcp:[^\\s]+)$",
+      "type": "string"
+    },
+    "sid": {
+      "pattern": "^ses_[0-9A-HJKMNP-TV-Z]{26}$",
+      "type": "string"
+    },
+    "ts": {
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$",
+      "type": "string"
+    },
+    "turn": {
+      "minimum": 0,
+      "type": "integer"
+    },
+    "type": {
+      "const": "context.manifest"
+    },
+    "v": {
+      "const": 1
+    }
+  },
+  "required": [
+    "v",
+    "id",
+    "sid",
+    "turn",
+    "ts",
+    "actor",
+    "type",
+    "provenance",
+    "labels",
+    "payload"
+  ],
+  "title": "Fairy protocol event context.manifest v1",
+  "type": "object"
+}
