@@ -40,6 +40,7 @@ All events use the envelope of ARCHITECTURE §6 (`v, id, sid, turn, ts, actor, t
 | Governance | `label.declassified` · `route.denied` · `budget.updated` · `audit.appended` | Router/egress refusals are visible events (specs/data-governance) |
 | Delivery | `delivery.sent` · `delivery.digested` · `delivery.collapsed` · `delivery.expired` | Payload: `{class, channel, reason, source_workflow, storm_key?, created_at, expires_at?}`; `storm_key` **required** when `class: critical`. Makes quotas, digest TTL, and storm collapse assertable (COMPANION-CONTRACT §1) |
 | Session | `session.created` · `session.compacted` · `session.resumed` | Compaction is an event; pre-state stays inspectable |
+| Context | `context.manifest` | Per assembled prompt: zone sizes (tokens, estimated flag), budgets, reduction stages applied (L1–L5), stable-prefix hash. The replay debugger's primary food. Normative since M1-03 |
 | Error | `error` | Normalized taxonomy (ARCHITECTURE §10) |
 
 **Extension events:** namespaced `x.<vendor>.<name>`, tolerated by all readers, never load-bearing for core behavior.
