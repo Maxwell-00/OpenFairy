@@ -76,6 +76,7 @@ The hard part of "OpenAI-compatible" is that nobody is quite compatible. Known v
 | `tool_choice` support (absent/partial on vLLM & others) | Feature-detect; emulate `required`/named-tool via prompted-tools path |
 | Reasoning channels (`reasoning_content` field vs `<think>` tags vs OpenAI reasoning items) | Extracted into a separate `reasoning` delta stream; never enters history sent back to models that would choke on it |
 | Parameter support (some reject `frequency_penalty`, `logprobs`, etc.) | Per-model param allowlist; unknown params stripped, warned once |
+| Tool/function name charset (`^[a-zA-Z0-9_-]+$` on OpenAI/DeepSeek) vs. Fairy's dotted internal names (`fs.read`) | Bijective wire-name codec at the transport boundary (`.` ⇄ `__`); internal dotted names preserved everywhere they're load-bearing (permission globs, `tool:<name>` provenance, audit). Mock provider enforces the same charset so it can't regress silently |
 | Finish reasons & error bodies | Mapped to internal enums / error taxonomy (`ProviderError{retryable, rate_limited, auth, context_overflow}`) |
 | Usage reporting (missing, partial, or non-standard) | Fallback to local tokenizer estimate; ledger marks `estimated: true` |
 | Multi-modal message shapes | Internal content-part model; downconverted per transport |

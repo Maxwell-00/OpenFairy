@@ -28,3 +28,16 @@ Real-provider chat: ① "读一下 workspace 里的 <某文件> 并总结" → f
 ## Verdict
 
 Accepted. **M1-02 closes on owner manual verification.** Next: M1-03 (context ladder L1–L3 + `fairy replay` inspector) — the 32 KiB spillover built here is L1's seed.
+
+---
+
+## Addendum (real-provider bug — mock parity gap)
+
+Owner's first real DeepSeek turn failed: `Invalid 'tools[0].function.name' ... pattern '^[a-zA-Z0-9_-]+$'`. Our internal tool names are dotted (`fs.read`, `shell.run`); OpenAI/DeepSeek forbid dots in function names. The mock provider never validated the charset, so every green e2e hid it — a classic mock-parity gap.
+
+**Fix (transport-boundary codec, names stay dotted internally):**
+- `packages/model-gateway/src/openai-chat.ts`: bijective `toWireName`/`fromWireName` (`.` ⇄ `__`); applied when building `tools`, when replaying assistant `tool_calls` history, and reversed when emitting normalized `tool_call` events. Internal dotted names (load-bearing for permission globs, `tool:<name>` provenance, audit) are untouched.
+- `packages/testing/src/mock-openai.ts`: now rejects non-matching function names with the same 400 shape a real provider returns — the mock reaches provider parity, so this class of bug fails CI instead of prod.
+- doc: model-gateway §4 normalization table row added.
+
+Rule recorded: **the mock provider must reject what real providers reject** — wire-format constraints (name charset, param support, etc.) belong in the mock, or e2e green means nothing for them.

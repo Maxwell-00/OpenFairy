@@ -134,8 +134,27 @@ export class MockOpenAIChatServer {
       return;
     }
     const rawBody = await readBody(request);
-    this.requestBodies.push(JSON.parse(rawBody) as unknown);
+    const parsedBody = JSON.parse(rawBody) as unknown;
+    this.requestBodies.push(parsedBody);
     this.#requests += 1;
+
+    // Parity with real providers (DeepSeek/OpenAI): function names must match
+    // ^[a-zA-Z0-9_-]+$. Enforcing it here means the mock rejects dotted tool names
+    // exactly as a real provider would — the gap that let a wire-name bug reach prod.
+    const toolNames = ((parsedBody as { tools?: readonly { function?: { name?: unknown } }[] }).tools ?? [])
+      .map((tool) => tool.function?.name)
+      .filter((name): name is string => typeof name === "string");
+    const badName = toolNames.find((name) => !/^[a-zA-Z0-9_-]+$/.test(name));
+    if (badName !== undefined) {
+      writeJson(response, 400, {
+        error: {
+          code: "invalid_request_error",
+          message: `Invalid 'tools[].function.name': '${badName}' does not match pattern '^[a-zA-Z0-9_-]+$'.`,
+          type: "invalid_request_error"
+        }
+      });
+      return;
+    }
 
     const script = this.#queue[0] ?? this.#defaultScript;
     if (script.failStatusOnce && !script.failServed) {

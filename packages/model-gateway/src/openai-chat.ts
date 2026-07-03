@@ -67,11 +67,18 @@ const responseError = async (response: Response): Promise<ProviderError> => {
 
 const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
 
+// OpenAI/DeepSeek require function names to match ^[a-zA-Z0-9_-]+$, but Fairy's internal
+// tool namespace uses dots (fs.read, shell.run) — load-bearing for permission globs,
+// `tool:<name>` provenance, and audit. Map names bijectively at the wire boundary ONLY.
+// "__" is the reserved dot-encoding sentinel (internal tool names never contain "__").
+const toWireName = (name: string): string => name.replaceAll(".", "__");
+const fromWireName = (name: string): string => name.replaceAll("__", ".");
+
 const buildTools = (tools: readonly ToolDefinition[] | undefined): unknown[] | undefined =>
   tools?.map((tool) => ({
     function: {
       description: tool.description,
-      name: tool.name,
+      name: toWireName(tool.name),
       parameters: tool.params
     },
     type: "function"
@@ -87,7 +94,7 @@ const buildMessages = (messages: readonly ChatMessage[]): unknown[] =>
           tool_calls: message.tool_calls.map((call) => ({
             function: {
               arguments: JSON.stringify(call.arguments),
-              name: call.name
+              name: toWireName(call.name)
             },
             id: call.id,
             type: "function"
@@ -134,7 +141,7 @@ class ToolCallReassembler {
     return {
       args,
       call_id: pending.callId ?? `call_${pending.order}`,
-      name: pending.name,
+      name: fromWireName(pending.name),
       type: "tool_call"
     };
   }
