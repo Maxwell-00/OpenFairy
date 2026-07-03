@@ -9,6 +9,7 @@ export interface MockOpenAIUsage {
 export interface MockOpenAIScript {
   readonly text?: readonly string[];
   readonly reasoning?: readonly string[];
+  readonly toolCalls?: readonly MockToolCall[];
   readonly delayMs?: number;
   readonly failStatusOnce?: number;
   readonly failBody?: unknown;
@@ -17,9 +18,18 @@ export interface MockOpenAIScript {
   readonly usage?: MockOpenAIUsage;
 }
 
+export interface MockToolCall {
+  readonly id?: string;
+  readonly name: string;
+  readonly args?: Record<string, unknown>;
+  readonly fragments?: readonly string[];
+  readonly malformedArguments?: string;
+}
+
 interface MutableScript {
   text: readonly string[];
   reasoning: readonly string[];
+  toolCalls: readonly MockToolCall[];
   delayMs: number;
   failStatusOnce?: number;
   failBody?: unknown;
@@ -34,6 +44,7 @@ const toMutableScript = (script: MockOpenAIScript): MutableScript => ({
   failServed: false,
   reasoning: script.reasoning ?? [],
   text: script.text ?? ["mock response"],
+  toolCalls: script.toolCalls ?? [],
   ...(script.failBody !== undefined ? { failBody: script.failBody } : {}),
   ...(script.failStatusOnce !== undefined ? { failStatusOnce: script.failStatusOnce } : {}),
   ...(script.stallAfterChunks !== undefined ? { stallAfterChunks: script.stallAfterChunks } : {}),
@@ -66,6 +77,7 @@ export class MockOpenAIChatServer {
   #defaultScript = toMutableScript({});
   #url: string | undefined;
   #requests = 0;
+  readonly requestBodies: unknown[] = [];
 
   private constructor() {
     this.#server = createServer((request, response) => {
@@ -121,7 +133,8 @@ export class MockOpenAIChatServer {
       writeJson(response, 404, { error: { message: "not found" } });
       return;
     }
-    await readBody(request);
+    const rawBody = await readBody(request);
+    this.requestBodies.push(JSON.parse(rawBody) as unknown);
     this.#requests += 1;
 
     const script = this.#queue[0] ?? this.#defaultScript;
@@ -150,6 +163,59 @@ export class MockOpenAIChatServer {
       response.write(`data: ${JSON.stringify(value)}\n\n`);
       sentChunks += 1;
     };
+
+    if (script.toolCalls.length > 0) {
+      const wholeCalls = script.toolCalls.filter((call) => !call.fragments);
+      if (wholeCalls.length > 0) {
+        await writeData({
+          choices: [{
+            delta: {
+              tool_calls: wholeCalls.map((call, index) => ({
+                function: {
+                  arguments: call.malformedArguments ?? JSON.stringify(call.args ?? {}),
+                  name: call.name
+                },
+                id: call.id ?? `call_${index}`,
+                index,
+                type: "function"
+              }))
+            },
+            finish_reason: null
+          }]
+        });
+      }
+
+      for (const [index, call] of script.toolCalls.entries()) {
+        if (!call.fragments) {
+          continue;
+        }
+        for (const [fragmentIndex, fragment] of call.fragments.entries()) {
+          await writeData({
+            choices: [{
+              delta: {
+                tool_calls: [{
+                  function: {
+                    arguments: fragment,
+                    ...(fragmentIndex === 0 ? { name: call.name } : {})
+                  },
+                  ...(fragmentIndex === 0 ? { id: call.id ?? `call_${index}`, type: "function" } : {}),
+                  index
+                }]
+              },
+              finish_reason: null
+            }]
+          });
+        }
+      }
+
+      await writeData({
+        choices: [{ delta: {}, finish_reason: "tool_calls" }],
+        usage: script.usage ?? { completion_tokens: 0, prompt_tokens: 4, total_tokens: 4 }
+      });
+      response.write("data: [DONE]\n\n");
+      response.end();
+      return;
+    }
 
     const max = Math.max(script.reasoning.length, script.text.length);
     for (let index = 0; index < max; index += 1) {

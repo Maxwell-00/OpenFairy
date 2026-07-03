@@ -10,7 +10,13 @@ const main = async (): Promise<void> => {
   console.log(`Fairy gateway listening on http://${address.host}:${address.port}`);
   console.log(`gateway.started ${JSON.stringify({ host: address.host, port: address.port })}`);
 
+  let stopping = false;
   const shutdown = (signal: NodeJS.Signals): void => {
+    if (stopping) {
+      gateway.abortActiveTurns("gateway_shutdown");
+      return;
+    }
+    stopping = true;
     void gateway
       .stop()
       .then(() => process.exit(0))
@@ -18,7 +24,7 @@ const main = async (): Promise<void> => {
         console.error(`Gateway shutdown failed: ${(error as Error).message}`);
         process.exit(1);
       });
-    process.once(signal, () => process.exit(1));
+    process.once(signal, shutdown);
   };
 
   process.once("SIGINT", shutdown);

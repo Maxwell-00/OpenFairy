@@ -1,10 +1,23 @@
 export interface ChatMessage {
-  readonly role: "system" | "user" | "assistant";
+  readonly role: "system" | "user" | "assistant" | "tool";
   readonly content: string;
+  readonly tool_call_id?: string;
+  readonly tool_calls?: readonly {
+    readonly id: string;
+    readonly name: string;
+    readonly arguments: Record<string, unknown>;
+  }[];
+}
+
+export interface ToolDefinition {
+  readonly name: string;
+  readonly description: string;
+  readonly params: Record<string, unknown>;
 }
 
 export interface GenerateRequest {
   readonly messages: readonly ChatMessage[];
+  readonly tools?: readonly ToolDefinition[];
   readonly labels?: {
     readonly sensitivity: "public" | "internal" | "personal" | "secret";
     readonly residency: "local-only" | "region-restricted" | "global-ok";
@@ -31,6 +44,12 @@ export interface ModelTrace {
 export type NormalizedModelEvent =
   | { readonly type: "text"; readonly text: string }
   | { readonly type: "reasoning"; readonly text: string }
+  | {
+      readonly type: "tool_call";
+      readonly call_id: string;
+      readonly name: string;
+      readonly args: Record<string, unknown>;
+    }
   | { readonly type: "usage"; readonly usage: UsageSnapshot }
   | {
       readonly type: "done";

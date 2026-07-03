@@ -69,7 +69,7 @@ export class MockFairyClient {
       ...(replayFrom ? { replay_from: replayFrom } : {}),
       sid
     }));
-    await this.waitFor((event) => event.sid === sid && event.type === "session.created");
+    await this.waitFor((event) => event.sid === sid && event.type === "session.resumed");
   }
 
   async sendTurnInput(sid: string, payload: TurnInputPayload): Promise<readonly EventEnvelope[]> {
@@ -87,6 +87,10 @@ export class MockFairyClient {
 
   async cancelTurn(sid: string): Promise<void> {
     this.#socket.send(JSON.stringify({ op: "turn.cancel", sid }));
+  }
+
+  resolveApproval(sid: string, requestId: string, decision: "once" | "session" | "deny"): void {
+    this.#socket.send(JSON.stringify({ decision, op: "approval.resolve", request_id: requestId, sid }));
   }
 
   waitFor(predicate: (event: EventEnvelope) => boolean, timeoutMs = 5000): Promise<EventEnvelope> {

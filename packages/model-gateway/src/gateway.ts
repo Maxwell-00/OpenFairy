@@ -61,6 +61,7 @@ export class ConfiguredModelGateway implements ModelGateway {
       ...(apiKey ? { apiKey } : {}),
       messages: request.messages,
       model,
+      ...(request.tools ? { tools: request.tools } : {}),
       watchdogMs: this.#config.watchdogMs
     })) {
       if (event.type === "done" && trace) {

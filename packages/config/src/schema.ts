@@ -89,9 +89,55 @@ export const configSchema = {
       type: "object",
       additionalProperties: true,
       properties: {
+        max_tool_iterations: { type: "integer", minimum: 1 },
         system_prompt: { type: "string", minLength: 1 }
       },
       required: ["system_prompt"]
+    },
+    permissions: {
+      type: "object",
+      additionalProperties: true,
+      properties: {
+        ask_timeout_s: { type: "number", exclusiveMinimum: 0 },
+        rules: {
+          type: "array",
+          items: {
+            type: "object",
+            additionalProperties: true,
+            properties: {
+              decision: { type: "string", enum: ["allow", "ask", "deny"] },
+              path: { type: "string", minLength: 1 },
+              tool: { type: "string", minLength: 1 }
+            },
+            required: ["tool", "decision"]
+          }
+        }
+      },
+      required: ["ask_timeout_s", "rules"]
+    },
+    workspace: {
+      type: "object",
+      additionalProperties: true,
+      properties: {
+        root: { type: "string", minLength: 1 }
+      }
+    },
+    search: {
+      type: "object",
+      additionalProperties: true,
+      properties: {
+        engine: {
+          type: "object",
+          additionalProperties: true,
+          properties: {
+            api_key_ref: { type: "string", pattern: "^secret://[A-Za-z0-9_.-]+$" },
+            base_url: { type: "string", minLength: 1 },
+            kind: { type: "string", enum: ["mock", "searx", "brave"] }
+          },
+          required: ["kind"]
+        }
+      },
+      required: ["engine"]
     },
     governance: {
       type: "object",
@@ -145,10 +191,11 @@ export const configSchema = {
       properties: {
         image: { type: "string", minLength: 1 },
         default_profile: { type: "string", enum: ["safe", "dev", "trusted"] },
-        profiles: { type: "object", additionalProperties: true }
+        profiles: { type: "object", additionalProperties: true },
+        timeout_s: { type: "number", exclusiveMinimum: 0 }
       },
-      required: ["image", "default_profile", "profiles"]
+      required: ["image", "default_profile", "profiles", "timeout_s"]
     }
   },
-  required: ["models", "roles", "gateway", "kernel", "governance", "research", "sandbox"]
+  required: ["models", "roles", "gateway", "kernel", "permissions", "search", "governance", "research", "sandbox"]
 } as const;

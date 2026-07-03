@@ -1,8 +1,8 @@
 import { readFileSync, writeFileSync } from "node:fs";
-import { mkdtemp, readFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { spawn, type ChildProcessByStdio } from "node:child_process";
+import { spawn, spawnSync, type ChildProcessByStdio } from "node:child_process";
 import type { Readable } from "node:stream";
 import { afterEach, describe, expect, it } from "vitest";
 import WebSocket from "ws";
@@ -67,7 +67,12 @@ const killGateway = async (process: GatewayProcess): Promise<void> => {
   await new Promise<void>((resolve) => process.once("exit", () => resolve()));
 };
 
-const writeConfig = (path: string, dataDir: string, token: string, baseUrl: string): void => {
+const hasDocker = (): boolean => spawnSync("docker", ["--version"], { timeout: 2000, windowsHide: true }).status === 0;
+
+const writeConfig = (path: string, dataDir: string, token: string, baseUrl: string, options: {
+  readonly permissions?: readonly string[];
+  readonly workspaceRoot?: string;
+} = {}): void => {
   writeFileSync(
     path,
     [
@@ -89,7 +94,19 @@ const writeConfig = (path: string, dataDir: string, token: string, baseUrl: stri
       "  auth:",
       `    token: ${JSON.stringify(token)}`,
       "kernel:",
-      "  system_prompt: M1 e2e test prompt"
+      "  system_prompt: M1 e2e test prompt",
+      "  max_tool_iterations: 16",
+      ...(options.workspaceRoot
+        ? ["workspace:", `  root: ${JSON.stringify(options.workspaceRoot.replace(/\\/g, "/"))}`]
+        : []),
+      ...(options.permissions
+        ? [
+            "permissions:",
+            "  ask_timeout_s: 3",
+            "  rules:",
+            ...options.permissions
+          ]
+        : [])
     ].join("\n"),
     "utf8"
   );
@@ -297,6 +314,180 @@ describe("gateway M1 e2e", () => {
       expect(turnEvents.map((event) => event.type)).toContain("turn.interrupted");
       expect(turnEvents.some((event) => event.type === "turn.final")).toBe(false);
       assertSchemaValidStream(client.events());
+    } finally {
+      await stopGateway(gateway);
+    }
+  });
+
+  it("runs an auto-allowed fs.read tool call, spills oversized results, and completes", async () => {
+    provider = await MockOpenAIChatServer.start();
+    provider.enqueueScript({
+      toolCalls: [{ id: "call_read", name: "fs.read", args: { path: "big.txt" } }]
+    });
+    provider.enqueueScript({
+      text: ["I read the file and saw MAGIC_CONTENT."],
+      usage: { completion_tokens: 8, prompt_tokens: 10, total_tokens: 18 }
+    });
+
+    const temp = await mkdtemp(join(tmpdir(), "fairy-gateway-tools-"));
+    const dataDir = join(temp, "data");
+    const workspaceRoot = join(temp, "workspace");
+    const configPath = join(temp, "fairy.yaml");
+    const token = "tools-token";
+    await mkdir(workspaceRoot, { recursive: true });
+    await writeFile(join(workspaceRoot, "big.txt"), `${"x".repeat(40 * 1024)}\nMAGIC_CONTENT\n`, "utf8");
+    writeConfig(configPath, dataDir, token, provider.url, { workspaceRoot });
+    const gateway = startGateway(configPath);
+
+    try {
+      const port = await waitForGateway(gateway);
+      const client = await MockFairyClient.connect({ token, url: `ws://127.0.0.1:${port}` });
+      const created = await client.createSession("tools");
+      const turnEvents = await client.sendTurnInput(created.sid, {
+        content: [{ kind: "text", text: "read big.txt" }]
+      });
+      client.close();
+
+      expect(turnEvents.map((event) => event.type)).toEqual([
+        "turn.input",
+        "tool.call",
+        "artifact.created",
+        "tool.result",
+        "turn.delta",
+        "turn.final"
+      ]);
+      expect(turnEvents.find((event) => event.type === "tool.result")?.payload).toMatchObject({
+        artifacts: [expect.objectContaining({ mime: "text/plain" })],
+        call_id: "call_read",
+        result: expect.objectContaining({ truncated: true }),
+        status: "ok"
+      });
+      expect(turnEvents.at(-1)?.payload).toMatchObject({
+        content: [{ kind: "text", text: "I read the file and saw MAGIC_CONTENT." }]
+      });
+      assertSchemaValidStream(client.events());
+    } finally {
+      await stopGateway(gateway);
+    }
+  });
+
+  it("continues gracefully when policy denies a tool call", async () => {
+    provider = await MockOpenAIChatServer.start();
+    provider.enqueueScript({
+      toolCalls: [{ id: "call_denied", name: "fs.read", args: { path: "secret.txt" } }]
+    });
+    provider.enqueueScript({
+      text: ["I cannot read that file because policy denied the tool call."]
+    });
+
+    const temp = await mkdtemp(join(tmpdir(), "fairy-gateway-deny-"));
+    const dataDir = join(temp, "data");
+    const workspaceRoot = join(temp, "workspace");
+    const configPath = join(temp, "fairy.yaml");
+    const token = "deny-token";
+    await mkdir(workspaceRoot, { recursive: true });
+    await writeFile(join(workspaceRoot, "secret.txt"), "secret", "utf8");
+    writeConfig(configPath, dataDir, token, provider.url, {
+      permissions: [
+        "    - tool: \"fs.read\"",
+        "      decision: deny",
+        "    - tool: \"*\"",
+        "      decision: ask"
+      ],
+      workspaceRoot
+    });
+    const gateway = startGateway(configPath);
+
+    try {
+      const port = await waitForGateway(gateway);
+      const client = await MockFairyClient.connect({ token, url: `ws://127.0.0.1:${port}` });
+      const created = await client.createSession("deny");
+      const turnEvents = await client.sendTurnInput(created.sid, {
+        content: [{ kind: "text", text: "read secret" }]
+      });
+      client.close();
+
+      expect(turnEvents.find((event) => event.type === "tool.result")?.payload).toMatchObject({
+        denied_by_policy: true,
+        error: { class: "PolicyError" },
+        status: "error"
+      });
+      expect(turnEvents.at(-1)?.type).toBe("turn.final");
+      assertSchemaValidStream(client.events());
+    } finally {
+      await stopGateway(gateway);
+    }
+  });
+
+  it("emits session.resumed as the replay sentinel on attach", async () => {
+    provider = await MockOpenAIChatServer.start({ text: ["hello"] });
+    const temp = await mkdtemp(join(tmpdir(), "fairy-gateway-sentinel-"));
+    const dataDir = join(temp, "data");
+    const configPath = join(temp, "fairy.yaml");
+    const token = "sentinel-token";
+    writeConfig(configPath, dataDir, token, provider.url);
+    const gateway = startGateway(configPath);
+
+    try {
+      const port = await waitForGateway(gateway);
+      const first = await MockFairyClient.connect({ token, url: `ws://127.0.0.1:${port}` });
+      const created = await first.createSession("sentinel");
+      await first.sendTurnInput(created.sid, { content: [{ kind: "text", text: "hi" }] });
+      first.close();
+
+      const second = await MockFairyClient.connect({ token, url: `ws://127.0.0.1:${port}` });
+      const before = second.events().length;
+      await second.attachSession(created.sid);
+      const replayed = second.events().slice(before);
+      second.close();
+
+      expect(replayed.at(-1)?.type).toBe("session.resumed");
+      expect(replayed.map((event) => event.type)).toContain("turn.final");
+    } finally {
+      await stopGateway(gateway);
+    }
+  });
+
+  it.skipIf(!hasDocker())("asks once for shell.run, stores a session grant, and audits execution", async () => {
+    provider = await MockOpenAIChatServer.start();
+    provider.enqueueScript({
+      toolCalls: [{ id: "call_shell_1", name: "shell.run", args: { command: "printf first" } }]
+    });
+    provider.enqueueScript({
+      toolCalls: [{ id: "call_shell_2", name: "shell.run", args: { command: "printf second" } }]
+    });
+    provider.enqueueScript({ text: ["shell complete"] });
+
+    const temp = await mkdtemp(join(tmpdir(), "fairy-gateway-shell-"));
+    const dataDir = join(temp, "data");
+    const workspaceRoot = join(temp, "workspace");
+    const configPath = join(temp, "fairy.yaml");
+    const token = "shell-token";
+    await mkdir(workspaceRoot, { recursive: true });
+    await writeFile(join(workspaceRoot, "README.md"), "workspace", "utf8");
+    writeConfig(configPath, dataDir, token, provider.url, { workspaceRoot });
+    const gateway = startGateway(configPath);
+
+    try {
+      const port = await waitForGateway(gateway);
+      const client = await MockFairyClient.connect({ token, url: `ws://127.0.0.1:${port}` });
+      const created = await client.createSession("shell");
+      client.sendTurnInputNoWait(created.sid, { content: [{ kind: "text", text: "run shell twice" }] });
+      const approval = await client.waitFor((event) => event.type === "approval.request", 30000);
+      client.resolveApproval(created.sid, approval.id, "session");
+      await client.waitFor((event) => event.type === "turn.final", 120000);
+      const events = client.events();
+      client.close();
+
+      expect(events.filter((event) => event.type === "approval.request")).toHaveLength(1);
+      expect(events.filter((event) => event.type === "tool.call")).toHaveLength(2);
+      expect(events.filter((event) => event.type === "tool.result")).toHaveLength(2);
+
+      const audit = await fetch(`http://127.0.0.1:${port}/audit?token=${token}&limit=20`).then((response) => response.json()) as {
+        entries: { op: string; tool: string | null; decision: string | null }[];
+      };
+      expect(audit.entries.some((entry) => entry.op === "approval.resolved" && entry.decision === "session")).toBe(true);
+      expect(audit.entries.filter((entry) => entry.op === "tool.execute" && entry.tool === "shell.run")).toHaveLength(2);
     } finally {
       await stopGateway(gateway);
     }

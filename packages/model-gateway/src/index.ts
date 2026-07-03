@@ -12,5 +12,6 @@ export type {
   ModelGatewayConfig,
   NormalizedModelEvent,
   RoleBinding,
+  ToolDefinition,
   UsageSnapshot
 } from "./types.js";

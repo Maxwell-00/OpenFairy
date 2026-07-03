@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { runDoctor } from "../doctor.js";
-import { runChat, runSessions } from "../chat.js";
+import { runAudit, runChat, runSessions } from "../chat.js";
 
 const [command, ...args] = process.argv.slice(2);
 
@@ -20,5 +20,10 @@ if (command === "sessions") {
   process.exit(0);
 }
 
-console.error("Usage: fairy <doctor|chat|sessions>");
+if (command === "audit") {
+  await runAudit(args);
+  process.exit(0);
+}
+
+console.error("Usage: fairy <doctor|chat|sessions|audit>");
 process.exit(1);

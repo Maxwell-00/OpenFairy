@@ -1,5 +1,6 @@
 import { defaultDataDir, loadConfig } from "@fairy/config";
-import { resolve } from "node:path";
+import type { PermissionRule } from "@fairy/kernel";
+import { join, resolve } from "node:path";
 
 export interface GatewayCliOptions {
   readonly configPath?: string;
@@ -8,12 +9,17 @@ export interface GatewayCliOptions {
 }
 
 export interface GatewayRuntimeConfig {
+  readonly artifactsDir: string;
+  readonly askTimeoutMs: number;
   readonly authToken: string;
   readonly config: Record<string, unknown>;
   readonly dataDir: string;
   readonly host: "127.0.0.1";
+  readonly maxToolIterations: number;
+  readonly permissionRules: readonly PermissionRule[];
   readonly systemPrompt: string;
   readonly port: number;
+  readonly workspaceRoot: string;
 }
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
@@ -22,6 +28,11 @@ const isRecord = (value: unknown): value is Record<string, unknown> =>
 const readGatewayBlock = (config: Record<string, unknown>): Record<string, unknown> => {
   const gateway = config.gateway;
   return isRecord(gateway) ? gateway : {};
+};
+
+const readBlock = (config: Record<string, unknown>, key: string): Record<string, unknown> => {
+  const block = config[key];
+  return isRecord(block) ? block : {};
 };
 
 const readAuthToken = (gateway: Record<string, unknown>): string => {
@@ -33,11 +44,47 @@ const readAuthToken = (gateway: Record<string, unknown>): string => {
 };
 
 const readSystemPrompt = (config: Record<string, unknown>): string => {
-  const kernel = config.kernel;
-  if (isRecord(kernel) && typeof kernel.system_prompt === "string") {
+  const kernel = readBlock(config, "kernel");
+  if (typeof kernel.system_prompt === "string") {
     return kernel.system_prompt;
   }
-  return "You are Fairy, Chidi's helpful bilingual AI companion. Be concise, capable, and honest.";
+  return "You are Fairy, a helpful bilingual (Chinese/English) AI companion. Be concise, capable, and honest.";
+};
+
+const readMaxToolIterations = (config: Record<string, unknown>): number => {
+  const kernel = readBlock(config, "kernel");
+  return typeof kernel.max_tool_iterations === "number" ? kernel.max_tool_iterations : 16;
+};
+
+const readAskTimeoutMs = (config: Record<string, unknown>): number => {
+  const permissions = readBlock(config, "permissions");
+  return (typeof permissions.ask_timeout_s === "number" ? permissions.ask_timeout_s : 300) * 1000;
+};
+
+const readPermissionRules = (config: Record<string, unknown>): PermissionRule[] => {
+  const permissions = readBlock(config, "permissions");
+  if (!Array.isArray(permissions.rules)) {
+    return [];
+  }
+  return permissions.rules.flatMap((rule): PermissionRule[] => {
+    if (!isRecord(rule) || typeof rule.tool !== "string") {
+      return [];
+    }
+    const decision = rule.decision;
+    if (decision !== "allow" && decision !== "ask" && decision !== "deny") {
+      return [];
+    }
+    return [{
+      decision,
+      ...(typeof rule.path === "string" ? { path: rule.path } : {}),
+      tool: rule.tool
+    }];
+  });
+};
+
+const readWorkspaceRoot = (config: Record<string, unknown>, cwd: string): string => {
+  const workspace = readBlock(config, "workspace");
+  return resolve(typeof workspace.root === "string" ? workspace.root : cwd);
 };
 
 const resolveSecretRefForDevGateway = (ref: string, env: NodeJS.ProcessEnv): string => {
@@ -103,15 +150,21 @@ export const loadGatewayConfig = (
   const configuredPort = typeof gateway.port === "number" ? gateway.port : 8787;
   const configuredDataDir = typeof gateway.data_dir === "string" ? gateway.data_dir : defaultDataDir(env);
   const configuredToken = readAuthToken(gateway);
+  const dataDir = resolve(options.dataDir ?? configuredDataDir);
 
   return {
+    artifactsDir: join(dataDir, "artifacts"),
+    askTimeoutMs: readAskTimeoutMs(loaded.config),
     authToken: configuredToken.startsWith("secret://")
       ? resolveSecretRefForDevGateway(configuredToken, env)
       : configuredToken,
     config: loaded.config,
-    dataDir: resolve(options.dataDir ?? configuredDataDir),
+    dataDir,
     host: "127.0.0.1",
+    maxToolIterations: readMaxToolIterations(loaded.config),
+    permissionRules: readPermissionRules(loaded.config),
     systemPrompt: readSystemPrompt(loaded.config),
-    port: options.port ?? configuredPort
+    port: options.port ?? configuredPort,
+    workspaceRoot: readWorkspaceRoot(loaded.config, cwd)
   };
 };

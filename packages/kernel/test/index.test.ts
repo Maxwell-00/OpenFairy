@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 
-import { TurnRunner, type KernelEvent } from "../src/index.js";
+import { PermissionEngine, TurnRunner, type KernelEvent } from "../src/index.js";
 import type { ModelGateway, NormalizedModelEvent } from "@fairy/model-gateway";
+import type { EventEnvelope } from "@fairy/protocol";
 
 const labels = { residency: "global-ok", sensitivity: "internal" } as const;
 
@@ -13,6 +14,22 @@ const fakeGateway = (events: readonly NormalizedModelEvent[], onRequest?: (messa
     }
   }
 });
+
+const makeEmit = (events: KernelEvent[]) => async (event: KernelEvent): Promise<EventEnvelope> => {
+  events.push(event);
+  return {
+    actor: "agent",
+    id: `evt_01J0000000000000000000000${String(events.length).padStart(2, "0")}`,
+    labels,
+    payload: event.payload,
+    provenance: "agent",
+    sid: "ses_01J00000000000000000000000",
+    ts: "2026-07-03T00:00:00.000Z",
+    turn: 1,
+    type: event.type,
+    v: 1
+  };
+};
 
 describe("@fairy/kernel TurnRunner", () => {
   it("assembles prompt and emits reasoning, text, and final events", async () => {
@@ -33,9 +50,7 @@ describe("@fairy/kernel TurnRunner", () => {
     });
 
     const result = await runner.runTurn({
-      emit: async (event) => {
-        emitted.push(event);
-      },
+      emit: makeEmit(emitted),
       history: { messages: [{ content: "earlier", role: "user" }, { content: "reply", role: "assistant" }] },
       input: "now",
       labels,
@@ -69,9 +84,7 @@ describe("@fairy/kernel TurnRunner", () => {
     const emitted: KernelEvent[] = [];
     const runner = new TurnRunner({ modelGateway: gateway });
     const run = runner.runTurn({
-      emit: async (event) => {
-        emitted.push(event);
-      },
+      emit: makeEmit(emitted),
       history: { messages: [] },
       input: "cancel me",
       labels,
@@ -85,6 +98,61 @@ describe("@fairy/kernel TurnRunner", () => {
     await run;
 
     expect(emitted.map((event) => event.type)).toEqual(["turn.delta", "turn.interrupted"]);
+    expect(emitted.at(-1)?.payload).toMatchObject({ reason: "user_cancelled" });
+  });
+
+  it("interrupts when cancelled while a tool is executing", async () => {
+    let started: (() => void) | undefined;
+    const toolStarted = new Promise<void>((resolve) => {
+      started = resolve;
+    });
+    const gateway: ModelGateway = {
+      async *generate() {
+        yield { args: {}, call_id: "call_slow", name: "test.slow", type: "tool_call" };
+      }
+    };
+    const tools = new Map([[
+      "test.slow",
+      {
+        description: "slow test tool",
+        labels_out: labels,
+        name: "test.slow",
+        params: { type: "object" },
+        async execute(_args: Record<string, unknown>, ctx: { abort?: AbortSignal }) {
+          await new Promise<void>((_resolve, reject) => {
+            if (ctx.abort?.aborted) {
+              reject(new Error("aborted"));
+              return;
+            }
+            ctx.abort?.addEventListener("abort", () => reject(new Error("aborted")), { once: true });
+            started?.();
+          });
+          return { content: "done", labels, provenance: "tool:test.slow" };
+        }
+      }
+    ]]);
+    const emitted: KernelEvent[] = [];
+    const runner = new TurnRunner({
+      modelGateway: gateway,
+      permissionEngine: new PermissionEngine({ rules: [{ decision: "allow", tool: "test.slow" }] }),
+      toolContext: { artifactsDir: process.cwd(), env: process.env, workspaceRoot: process.cwd() },
+      tools
+    });
+    const run = runner.runTurn({
+      emit: makeEmit(emitted),
+      history: { messages: [] },
+      input: "run tool",
+      labels,
+      sid: "ses_01J00000000000000000000002",
+      turn: 1
+    });
+
+    await toolStarted;
+    expect(runner.cancel("ses_01J00000000000000000000002")).toBe(true);
+    const result = await run;
+
+    expect(result).toMatchObject({ finish_reason: "cancelled" });
+    expect(emitted.map((event) => event.type)).toEqual(["tool.call", "turn.interrupted"]);
     expect(emitted.at(-1)?.payload).toMatchObject({ reason: "user_cancelled" });
   });
 });

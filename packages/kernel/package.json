@@ -16,6 +16,7 @@
   },
   "dependencies": {
     "@fairy/model-gateway": "workspace:*",
-    "@fairy/protocol": "workspace:*"
+    "@fairy/protocol": "workspace:*",
+    "@fairy/tools-std": "workspace:*"
   }
 }

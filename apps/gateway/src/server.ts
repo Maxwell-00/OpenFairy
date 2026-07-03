@@ -1,4 +1,4 @@
-import { TurnRunner, type TurnRunnerHistory } from "@fairy/kernel";
+import { AuditLog, PermissionEngine, TurnRunner, type KernelEventType, type TurnRunnerHistory } from "@fairy/kernel";
 import { createModelGateway, type ChatMessage } from "@fairy/model-gateway";
 import {
   createEventId,
@@ -11,6 +11,7 @@ import {
   type Labels,
   type Provenance
 } from "@fairy/protocol";
+import { createStandardToolRegistry } from "@fairy/tools-std";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import { WebSocket, WebSocketServer } from "ws";
 
@@ -38,8 +39,10 @@ interface ClientMessage {
   readonly payload?: unknown;
   readonly content?: unknown;
   readonly channel?: unknown;
+  readonly decision?: unknown;
   readonly event?: unknown;
   readonly replay_from?: unknown;
+  readonly request_id?: unknown;
 }
 
 const json = (response: ServerResponse, status: number, body: unknown): void => {
@@ -136,22 +139,55 @@ const hasOpenTurn = (events: readonly EventEnvelope[]): EventEnvelope | undefine
   return openTurns.at(-1);
 };
 
+const actorForKernelEvent = (type: KernelEventType): Actor => {
+  if (type === "tool.call" || type === "tool.result") {
+    return "tool";
+  }
+  if (type === "approval.request" || type === "approval.resolved" || type === "artifact.created" || type === "error" || type === "turn.interrupted") {
+    return "system";
+  }
+  return "agent";
+};
+
 export class MinimalGateway {
   readonly #config: GatewayRuntimeConfig;
   readonly #log: EventLog;
   readonly #server: Server;
   readonly #wss: WebSocketServer;
   readonly #startedAt = Date.now();
+  readonly #auditLog: AuditLog;
   readonly #sessions = new Map<string, SessionState>();
   readonly #connections = new Set<WebSocket>();
   readonly #subscriptions = new Map<string, Set<WebSocket>>();
+  readonly #turns = new Set<Promise<unknown>>();
   readonly #runner: TurnRunner;
 
   constructor(config: GatewayRuntimeConfig) {
     this.#config = config;
     this.#log = new EventLog(config.dataDir);
+    this.#auditLog = new AuditLog(config.dataDir);
+    const tools = createStandardToolRegistry({
+      artifactsDir: config.artifactsDir,
+      config: config.config,
+      workspaceRoot: config.workspaceRoot
+    });
+    const permissionEngine = new PermissionEngine({
+      auditLog: this.#auditLog,
+      rules: config.permissionRules
+    });
     this.#runner = new TurnRunner({
+      artifactsDir: config.artifactsDir,
+      auditLog: this.#auditLog,
+      maxToolIterations: config.maxToolIterations,
       modelGateway: createModelGateway(config.config),
+      permissionAskTimeoutMs: config.askTimeoutMs,
+      permissionEngine,
+      toolContext: {
+        artifactsDir: config.artifactsDir,
+        env: process.env,
+        workspaceRoot: config.workspaceRoot
+      },
+      tools,
       systemPrompt: config.systemPrompt
     });
     this.#server = createServer((request, response) => this.#handleHttp(request, response));
@@ -174,7 +210,13 @@ export class MinimalGateway {
     return { host: this.#config.host, port };
   }
 
+  abortActiveTurns(reason: string): void {
+    this.#runner.abortAll(reason);
+  }
+
   async stop(): Promise<void> {
+    await Promise.allSettled([...this.#turns]);
+
     for (const socket of this.#connections) {
       socket.close(1001, "gateway shutting down");
     }
@@ -272,8 +314,10 @@ export class MinimalGateway {
           echo_responder: false,
           kernel: true,
           model_calls: true,
+          permissions: true,
           session_attach: true,
           session_resume: true,
+          tools: true,
           turn_cancel: true
         },
         protocol_version: protocolVersion,
@@ -299,6 +343,18 @@ export class MinimalGateway {
           }))
           .sort((left, right) => right.last_active.localeCompare(left.last_active))
       });
+      return;
+    }
+
+    if (path === "/audit") {
+      const token = queryToken(request) ?? bearerToken(request);
+      if (token !== this.#config.authToken) {
+        json(response, 401, { error: "unauthorized" });
+        return;
+      }
+      const parsed = new URL(request.url ?? "/", "http://127.0.0.1");
+      const limit = Math.min(100, Math.max(1, Number(parsed.searchParams.get("limit") ?? 20)));
+      json(response, 200, { entries: this.#auditLog.list(Number.isFinite(limit) ? limit : 20) });
       return;
     }
 
@@ -370,6 +426,18 @@ export class MinimalGateway {
       return;
     }
 
+    if (message.op === "approval.resolve") {
+      if (!isSessionId(message.sid) || typeof message.request_id !== "string") {
+        throw new Error("approval.resolve requires sid and request_id");
+      }
+      if (message.decision !== "once" && message.decision !== "session" && message.decision !== "deny") {
+        throw new Error("approval.resolve decision must be once, session, or deny");
+      }
+      const resolved = this.#runner.resolveApproval(message.sid, message.request_id, message.decision, "cli");
+      this.#sendRaw(socket, { ok: resolved, op: "approval.resolve", request_id: message.request_id, sid: message.sid });
+      return;
+    }
+
     if (isSessionId(message.sid)) {
       await this.#emitError(socket, message.sid, `unknown op ${String(message.op)}`);
       return;
@@ -401,15 +469,22 @@ export class MinimalGateway {
       throw new Error(`unknown session ${sid}`);
     }
 
-    this.#subscribe(socket, sid);
     const events = await this.#log.readSessionEvents(sid);
-    const start = replayFrom
-      ? Math.max(0, events.findIndex((event) => event.id >= replayFrom))
-      : 0;
+    const replayIndex = replayFrom ? events.findIndex((event) => event.id >= replayFrom) : 0;
+    const start = replayIndex < 0 ? events.length : replayIndex;
     for (const event of events.slice(start)) {
       this.#sendEvent(socket, event);
     }
+    this.#subscribe(socket, sid);
     state.lastActive = events.at(-1)?.ts ?? state.lastActive;
+    await this.#emit({
+      actor: "system",
+      payload: { resumed_at: new Date().toISOString() },
+      provenance: "agent",
+      sid,
+      turn: state.turn,
+      type: "session.resumed"
+    });
   }
 
   async #acceptTurnInput(socket: WebSocket, sid: `ses_${string}`, payload: unknown): Promise<void> {
@@ -441,22 +516,24 @@ export class MinimalGateway {
       type: "turn.input"
     });
 
-    await this.#runner.runTurn({
+    const run = this.#runner.runTurn({
       emit: (event) =>
         this.#emit({
-          actor: event.type === "error" || event.type === "turn.interrupted" ? "system" : "agent",
+          actor: actorForKernelEvent(event.type),
           payload: event.payload,
           provenance: "agent",
           sid,
           turn,
           type: event.type
-        }).then(() => undefined),
+        }),
       history,
       input: text,
       labels: defaultLabels,
       sid,
       turn
     });
+    this.#turns.add(run);
+    await run.finally(() => this.#turns.delete(run));
   }
 
   #subscribe(socket: WebSocket, sid: `ses_${string}`): void {

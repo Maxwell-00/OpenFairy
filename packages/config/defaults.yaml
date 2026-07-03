@@ -6,7 +6,22 @@ gateway:
   auth:
     token: dev-token
 kernel:
-  system_prompt: "You are Fairy, Chidi's helpful bilingual AI companion. Be concise, capable, and honest."
+  system_prompt: "You are Fairy, a helpful bilingual (Chinese/English) AI companion. Be concise, capable, and honest."
+  max_tool_iterations: 16
+permissions:
+  ask_timeout_s: 300
+  rules:
+    - tool: "fs.*"
+      decision: allow
+    - tool: "shell.run"
+      decision: ask
+    - tool: "web.*"
+      decision: allow
+    - tool: "*"
+      decision: ask
+search:
+  engine:
+    kind: mock
 governance:
   home_regions: []
   categories:
@@ -50,8 +65,9 @@ research:
     max_store: 5GB
     evict: LRU
 sandbox:
-  image: fairy-sandbox:ubuntu-lts
+  image: node:22-slim
   default_profile: safe
+  timeout_s: 120
   profiles:
     safe:
       network: none

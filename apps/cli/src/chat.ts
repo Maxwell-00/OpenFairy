@@ -6,11 +6,18 @@ interface ChatOptions {
   readonly gateway: string;
   readonly session?: string;
   readonly showReasoning: boolean;
+  readonly showTools: boolean;
   readonly token: string;
 }
 
 interface SessionsOptions {
   readonly gateway: string;
+  readonly token: string;
+}
+
+interface AuditOptions {
+  readonly gateway: string;
+  readonly limit: number;
   readonly token: string;
 }
 
@@ -40,12 +47,19 @@ export const parseChatOptions = (args: readonly string[], env: NodeJS.ProcessEnv
     gateway: readOption(args, "--gateway") ?? env.FAIRY_GATEWAY_URL ?? "ws://127.0.0.1:8787",
     ...(session ? { session } : {}),
     showReasoning: !hasFlag(args, "--hide-reasoning"),
+    showTools: hasFlag(args, "--show-tools"),
     token: readOption(args, "--token") ?? env.FAIRY_GATEWAY_TOKEN ?? "dev-token"
   };
 };
 
 export const parseSessionsOptions = (args: readonly string[], env: NodeJS.ProcessEnv = process.env): SessionsOptions => ({
   gateway: readOption(args, "--gateway") ?? env.FAIRY_GATEWAY_URL ?? "ws://127.0.0.1:8787",
+  token: readOption(args, "--token") ?? env.FAIRY_GATEWAY_TOKEN ?? "dev-token"
+});
+
+export const parseAuditOptions = (args: readonly string[], env: NodeJS.ProcessEnv = process.env): AuditOptions => ({
+  gateway: readOption(args, "--gateway") ?? env.FAIRY_GATEWAY_URL ?? "ws://127.0.0.1:8787",
+  limit: Number(readOption(args, "--limit") ?? "20"),
   token: readOption(args, "--token") ?? env.FAIRY_GATEWAY_TOKEN ?? "dev-token"
 });
 
@@ -129,6 +143,7 @@ export const runChat = async (args: readonly string[]): Promise<void> => {
   let sid = options.session;
   let activeTurn = false;
   let cancelRequested = false;
+  let pendingApproval: { requestId: string; sid: string } | undefined;
 
   socket.on("message", (data) => {
     const parsed = JSON.parse(data.toString()) as unknown;
@@ -141,6 +156,11 @@ export const runChat = async (args: readonly string[]): Promise<void> => {
     if (event.type === "session.created") {
       sid = event.sid;
       process.stdout.write(`session ${event.sid}\n`);
+      return;
+    }
+
+    if (event.type === "session.resumed") {
+      process.stdout.write(`session ${event.sid} resumed\n`);
       return;
     }
 
@@ -161,6 +181,38 @@ export const runChat = async (args: readonly string[]): Promise<void> => {
       if (isRecord(event.payload) && typeof event.payload.text === "string") {
         textSeenByTurn.add(`${event.sid}:${event.turn}`);
         process.stdout.write(event.payload.text);
+      }
+      return;
+    }
+
+    if (event.type === "approval.request") {
+      pendingApproval = { requestId: event.id, sid: event.sid };
+      const summary = isRecord(event.payload) && typeof event.payload.summary === "string" ? event.payload.summary : "approval requested";
+      process.stdout.write(`\n[approval] ${summary}\napprove once / session / deny > `);
+      return;
+    }
+
+    if (event.type === "approval.resolved") {
+      const decision = isRecord(event.payload) && typeof event.payload.decision === "string" ? event.payload.decision : "resolved";
+      process.stdout.write(`\n[approval ${decision}]\n`);
+      return;
+    }
+
+    if (event.type === "tool.call") {
+      const tool = isRecord(event.payload) && typeof event.payload.tool === "string" ? event.payload.tool : "tool";
+      process.stdout.write(`\n[tool] ${tool} started\n`);
+      if (options.showTools) {
+        process.stdout.write(`${JSON.stringify(event.payload)}\n`);
+      }
+      return;
+    }
+
+    if (event.type === "tool.result") {
+      const status = isRecord(event.payload) && typeof event.payload.status === "string" ? event.payload.status : "done";
+      const callId = isRecord(event.payload) && typeof event.payload.call_id === "string" ? event.payload.call_id : "tool";
+      process.stdout.write(`[tool] ${callId} ${status}\n`);
+      if (options.showTools) {
+        process.stdout.write(`${JSON.stringify(event.payload)}\n`);
       }
       return;
     }
@@ -193,6 +245,7 @@ export const runChat = async (args: readonly string[]): Promise<void> => {
 
   if (sid) {
     socket.send(JSON.stringify({ op: "session.attach", sid }));
+    await waitForEvent(socket, (event) => event.type === "session.resumed" && event.sid === sid);
   } else {
     socket.send(JSON.stringify({ op: "session.create" }));
     const created = await waitForEvent(socket, (event) => event.type === "session.created");
@@ -204,6 +257,30 @@ export const runChat = async (args: readonly string[]): Promise<void> => {
 
   rl.on("line", (line) => {
     const trimmed = line.trim();
+    if (pendingApproval) {
+      const decision = trimmed === "approve once" || trimmed === "once" || trimmed === "approve"
+        ? "once"
+        : trimmed === "session"
+          ? "session"
+          : trimmed === "deny"
+            ? "deny"
+            : undefined;
+      if (!decision) {
+        process.stdout.write("type: approve once, session, or deny\n");
+        rl.prompt();
+        return;
+      }
+      socket.send(JSON.stringify({
+        decision,
+        op: "approval.resolve",
+        request_id: pendingApproval.requestId,
+        sid: pendingApproval.sid
+      }));
+      pendingApproval = undefined;
+      rl.prompt();
+      return;
+    }
+
     if (!trimmed) {
       rl.prompt();
       return;
@@ -253,5 +330,30 @@ export const runSessions = async (args: readonly string[]): Promise<void> => {
   }
   for (const session of sessions) {
     console.log(`${session.id}  turns=${session.turn_count}  last=${session.last_active}  ${session.title ?? ""}`);
+  }
+};
+
+export const runAudit = async (args: readonly string[]): Promise<void> => {
+  const options = parseAuditOptions(args);
+  const response = await fetch(httpUrl(options.gateway, options.token, `/audit?limit=${Number.isFinite(options.limit) ? options.limit : 20}`));
+  if (!response.ok) {
+    throw new Error(`gateway /audit failed: HTTP ${response.status}`);
+  }
+  const body = (await response.json()) as {
+    entries?: readonly {
+      id: number;
+      actor: string | null;
+      decision: string | null;
+      op: string;
+      sid: string | null;
+      tool: string | null;
+      ts: string;
+      turn: number | null;
+    }[];
+  };
+  for (const entry of body.entries ?? []) {
+    console.log(
+      `${entry.id} ${entry.ts} ${entry.op} ${entry.tool ?? "-"} ${entry.decision ?? "-"} ${entry.sid ?? "-"}#${entry.turn ?? "-"} ${entry.actor ?? ""}`
+    );
   }
 };

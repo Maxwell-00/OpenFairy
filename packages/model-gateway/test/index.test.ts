@@ -104,4 +104,89 @@ describe("@fairy/model-gateway", () => {
       messages: [{ content: "stall", role: "user" }]
     }))).rejects.toBeInstanceOf(ProviderError);
   });
+
+  it("normalizes whole native tool calls", async () => {
+    const mock = await startServer();
+    mock.setDefaultScript({
+      toolCalls: [{ id: "call_read", name: "fs.read", args: { path: "README.md" } }]
+    });
+    const gateway = createModelGateway(configFor(mock.url));
+
+    const events = await collect(gateway.generate("main", {
+      messages: [{ content: "read", role: "user" }],
+      tools: [{ description: "read file", name: "fs.read", params: { type: "object" } }]
+    }));
+
+    expect(events).toEqual([
+      { args: { path: "README.md" }, call_id: "call_read", name: "fs.read", type: "tool_call" },
+      { type: "usage", usage: { estimated: false, input_tokens: 4, output_tokens: 0 } }
+    ]);
+  });
+
+  it("reassembles fragmented tool-call arguments", async () => {
+    const mock = await startServer();
+    mock.setDefaultScript({
+      toolCalls: [{ fragments: ['{"path"', ':"README.md"}'], id: "call_frag", name: "fs.read" }]
+    });
+    const gateway = createModelGateway(configFor(mock.url));
+
+    const events = await collect(gateway.generate("main", {
+      messages: [{ content: "read", role: "user" }],
+      tools: [{ description: "read file", name: "fs.read", params: { type: "object" } }]
+    }));
+
+    expect(events.find((event) => event.type === "tool_call")).toMatchObject({
+      args: { path: "README.md" },
+      call_id: "call_frag",
+      name: "fs.read"
+    });
+  });
+
+  it("waits when a provider sends the tool name before argument fragments", async () => {
+    const mock = await startServer();
+    mock.setDefaultScript({
+      toolCalls: [{ fragments: ["", '{"path":"README.md"}'], id: "call_name_first", name: "fs.read" }]
+    });
+    const gateway = createModelGateway(configFor(mock.url));
+
+    const events = await collect(gateway.generate("main", {
+      messages: [{ content: "read", role: "user" }],
+      tools: [{ description: "read file", name: "fs.read", params: { type: "object" } }]
+    }));
+
+    expect(events.filter((event) => event.type === "tool_call")).toEqual([
+      { args: { path: "README.md" }, call_id: "call_name_first", name: "fs.read", type: "tool_call" }
+    ]);
+  });
+
+  it("preserves parallel tool-call order", async () => {
+    const mock = await startServer();
+    mock.setDefaultScript({
+      toolCalls: [
+        { id: "call_a", name: "fs.read", args: { path: "a.txt" } },
+        { id: "call_b", name: "fs.read", args: { path: "b.txt" } }
+      ]
+    });
+    const gateway = createModelGateway(configFor(mock.url));
+
+    const events = await collect(gateway.generate("main", {
+      messages: [{ content: "read", role: "user" }],
+      tools: [{ description: "read file", name: "fs.read", params: { type: "object" } }]
+    }));
+
+    expect(events.filter((event) => event.type === "tool_call").map((event) => event.call_id)).toEqual(["call_a", "call_b"]);
+  });
+
+  it("surfaces malformed tool-call JSON as a provider error", async () => {
+    const mock = await startServer();
+    mock.setDefaultScript({
+      toolCalls: [{ id: "call_bad", malformedArguments: "{\"path\":", name: "fs.read" }]
+    });
+    const gateway = createModelGateway(configFor(mock.url));
+
+    await expect(collect(gateway.generate("main", {
+      messages: [{ content: "read", role: "user" }],
+      tools: [{ description: "read file", name: "fs.read", params: { type: "object" } }]
+    }))).rejects.toBeInstanceOf(ProviderError);
+  });
 });
