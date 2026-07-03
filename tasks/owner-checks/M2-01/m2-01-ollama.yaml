@@ -1,0 +1,19 @@
+﻿models:
+  - id: ollama-live
+    transport: openai-chat
+    base_url: http://127.0.0.1:11434/v1
+    model: qwen3.5:4b
+    api_key_ref: secret://ollama
+    capabilities:
+      tools: prompted
+    data_clearance:
+      max_sensitivity: secret
+      residency: [local-only]
+
+roles:
+  main:
+    model: ollama-live
+
+governance:
+  profile: balanced
+  home_regions: [cn]

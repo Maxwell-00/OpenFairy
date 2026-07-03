@@ -1,0 +1,17 @@
+﻿models:
+  - id: deepseek-live
+    transport: openai-chat
+    base_url: https://api.deepseek.com
+    model: deepseek-v4-flash
+    api_key_ref: secret://deepseek
+    data_clearance:
+      max_sensitivity: internal
+      residency: [global-ok]
+
+roles:
+  main:
+    model: deepseek-live
+
+governance:
+  profile: balanced
+  home_regions: [cn]

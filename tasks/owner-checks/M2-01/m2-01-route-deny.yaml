@@ -1,0 +1,17 @@
+﻿models:
+  - id: cloud-deny
+    transport: openai-chat
+    base_url: http://127.0.0.1:9/v1
+    model: unreachable-if-called
+    api_key_ref: secret://unused
+    data_clearance:
+      max_sensitivity: internal
+      residency: [global-ok]
+
+roles:
+  main:
+    model: cloud-deny
+
+governance:
+  profile: balanced
+  home_regions: [cn]
