@@ -32,7 +32,7 @@ All events use the envelope of ARCHITECTURE §6 (`v, id, sid, turn, ts, actor, t
 | Plan | `plan.proposed` · `plan.step.updated` · `plan.deviation` | Plan artifact by ref; steps by id |
 | Loop | `loop.iteration.started` · `loop.iteration.completed` · `loop.stopped` | Budgets snapshot in payload |
 | Workflow | `workflow.checkpoint` · `workflow.run.updated` · `workflow.approval.parked` | Checkpoint = durable-execution unit |
-| Memory | `memory.written` · `memory.superseded` · `memory.deleted` · `memory.gate.decision` | Gate decisions are auditable events (specs/memory §4a) |
+| Memory | `memory.written` · `memory.superseded` · `memory.deleted` · `memory.gate.decision` | Gate decisions are auditable events (specs/memory §4a). `gate.decision.payload.decision ∈ allow \| deny \| hold`; `payload.phase ∈ admission \| retrieval` (additive since M2-02 — one event type, two enforcement points). Retrieval denials carry reason code + record id but **never denied record text** for `personal+` records |
 | Research | `citation.recorded` · `snapshot.created` · `sourceset.reviewed` | See specs/research.md |
 | Speech | `speech.asr.partial` · `speech.asr.final` · `speech.tts.chunk` · `speech.mark` | Relationship to binary frames: §5 |
 | Affect | `affect.updated` | With cause summary |

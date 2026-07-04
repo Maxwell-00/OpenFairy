@@ -71,7 +71,7 @@ Before changing memory behavior, add or preserve tests that prove:
 Acceptance:
 
 - Existing M2-01 tests remain green.
-- Add at least one regression test that would fail if a denied secret memory candidate is written to any durable memory projection.
+- Add at least one regression test that would fail if a denied secret memory candidate is written to any durable memory projection — **it must attempt a direct `MemoryStore.insert` of a secret-labeled record (bypassing the gate) and assert the store itself rejects it**, in addition to the end-to-end gate-deny path. The projection layer is its own defense line, not a trusting consumer of the gate.
 
 ### 1. MemoryStore v1 as a rebuildable projection
 
@@ -83,7 +83,7 @@ Required semantics:
 - The store is a projection/index over accepted memory events, not a second truth source.
 - It must be rebuildable from `memory.written`, `memory.superseded`, and `memory.deleted` events.
 - It must live in the existing local data directory / `core.db` world; do not add external memory services.
-- Use SQLite tables and deterministic indexes. FTS5 is allowed; vector embeddings/sqlite-vec are **not** in this task.
+- Use SQLite tables and deterministic indexes. FTS5 is allowed; vector embeddings/sqlite-vec are **not** in this task. *Why (spec-anchored, not an oversight): ROADMAP M2 has a dedicated decision gate (sqlite-vec vs LanceDB, ≥200k-record benchmark) for the vector layer, and sqlite-vec is a native loadable extension — pulling it in under `node:sqlite` would break the repo's build-free/native-free posture. This slice's scorer is therefore BM25(FTS5) + recency + use-frequency + tier weight, an interim subset of memory.md §4's hybrid scorer; vector similarity joins at the decision-gate slice.*
 - Tests must not depend on a prior build or stale local database.
 
 Minimum record shape:
@@ -186,7 +186,8 @@ Populate the context-engine memory zone with a compact retrieval digest.
 Required behavior:
 
 - Query = current user input + current task headline if available. Do not use the whole history as query.
-- Default digest budget: 600 estimated tokens, configurable under `context.memory_digest_budget` or similar.
+- Default digest budget: 600 estimated tokens, config key **`context.memory_digest_budget`** (pinned — name it exactly this and include it in the §8 context-engine docs proposal; config keys must be spec-registered).
+- **Integration seam (the subtle part):** digest assembly must run inside/adjacent to `assemblePrompt` so that admitted-record labels flow into `deriveMessageLabels` **before** `canRouteToModel` runs — the memory zone stops being `tokens: 0` and contributes both tokens and labels. An admitted `personal` memory must be able to force a route-deny/fallback exactly like `personal` history content does (M2-01's composition rule extends to the digest).
 - Render admitted records as compact bullets with:
   - stable memory id,
   - kind,
@@ -275,6 +276,16 @@ Acceptance:
 
 - Synthetic replay tests for retrieval admit/deny and memory deleted.
 - Existing replay tests for route-deny, context manifests, and truncated tail remain green.
+
+### 7b. Named eval suites (evals.md registry — M2 gates on these, not on ad-hoc tests)
+
+Register two named suites in `packages/testing` matching the evals.md registry rows, implemented over the tests this brief already requires:
+
+- **`memory.deletion-permanence`** — deleted facts: 0 resurrections across delete → rebuild → retrieval (asserts on store rows AND retrieval results).
+- **`memory.leakage`** — scripted `personal+` retrieval attempts against under-cleared routes: 0 admits, asserted on `memory.gate.decision phase=retrieval` events (never on absence of output alone).
+- **`memory.canary`** (100-fact recall precision) is explicitly **stubbed/deferred** with a tracking note — it needs consolidation cycles that don't exist until the dream-cycle slice. The stub must fail loudly if invoked, not fake-pass.
+
+Acceptance: `pnpm -r test` runs both suites; their names appear in output so the M2 exit gate can reference them.
 
 ### 8. Docs proposals only
 

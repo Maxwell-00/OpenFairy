@@ -69,6 +69,8 @@ admit(record, ctx) where ctx = {channel_trust, workspace, mode, task_class, labe
 
 Gate decisions (admit/deny + rule) are `memory.gate.decision` events — auditable, and the leakage eval suite asserts on them. Denials are silent to the model (the digest simply omits) — the gate must not become an oracle.
 
+*Implementation status: M2-01 shipped the gate in **admission-only** mode (explicit-remember candidates: secret→deny, personal→hold, internal→allow; no retrieval, no stores, no embeddings, no prompt injection — memory zone stayed a placeholder). Retrieval-side gating with `phase: retrieval` arrives with MemoryStore v1 (M2-02).*
+
 ### 4b. Evidence pull-through
 
 Digest bullets are lossy by design; correction and trust need the original. `memory.evidence(id)` returns the fact's provenance quote **plus the surrounding episode slice** (adjacent turns from the session log), so Fairy can answer "你为什么这么认为？" with receipts, and the user can spot extraction errors at the source. Evidence slices inherit the record's labels and pass the same gate.

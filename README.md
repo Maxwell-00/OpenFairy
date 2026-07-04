@@ -4,7 +4,7 @@
 
 Fairy is model-agnostic by design: any OpenAI-compatible LLM can serve as its brain, and different components (main agent, subagents, summarizer, vision, voice) can each run on models from different vendors.
 
-> **Status: design phase.** No implementation yet. Documents below define what will be built.
+> **Status: early implementation.** M0 (scaffold + protocol) and M1 (text spine: any OpenAI-compatible brain, tools with permissions + audit, context ladder, offline replay, conformance kit) are complete. M2 (trust milestone: governance routing, memory, research) is in progress. The docs below remain the normative design; `tasks/*-review.md` records the implementation trail.
 
 ## Document map
 

@@ -118,3 +118,15 @@ GitHub Actions still reports the Node 20 deprecation warning for `pnpm/action-se
 M2-01 is accepted and closed at task level.
 
 Proceed to M2-02 after applying or consciously carrying the reviewer-owned docs pass. The next implementation slice should be memory storage + gated retrieval digest, not research/persona/proactivity.
+
+---
+
+## Countersignature (second reviewer: Claude, Cowork; verification by opus subagent) — 2026-07-03
+
+Independent code-level verification of all ten critical brief items (a–j): **all VERIFIED** at commit `737aa8a`, including the two hardest — effective-label composition over the whole assembled prompt (`deriveMessageLabels` over history + tool results, kernel `assemblePrompt` → `generate`) and the history-contamination e2e (secret in turn 1 gates turn 2 with `provider.requests === 0`). Working tree clean.
+
+Primary review assessment: verdict **upheld**; noted that its acceptance matrix rests on the work report + owner artifacts rather than code reading (honest about it, but the composition rule — the subtlest requirement — was assumed rather than checked; countersigner verified it). Two observations the primary missed, both non-blocking: the kernel provider guard is a vitest file-scan (a moved test would silently drop it — consider a dep-cruiser rule later); `canRouteToModel` carries a vestigial no-op `prefer_local` branch.
+
+Reviewer-owned actions completed: all four M2-01 doc edits applied (protocol `memory.gate.decision` enum + phase; data-governance route-gate enforcement status; memory.md admission-only v0 note; README status → early implementation). M2-02 brief patched before dispatch: vector-deferral spec-anchored (ROADMAP decision gate + native-extension rationale), direct-`MemoryStore.insert` bypass regression required, digest-label→route-clearance seam named, `context.memory_digest_budget` key pinned, named eval suites (`memory.deletion-permanence`, `memory.leakage`, stubbed `memory.canary`) added as §7b.
+
+**M2-01 CLOSED.** M2-02 brief is dispatch-ready.
