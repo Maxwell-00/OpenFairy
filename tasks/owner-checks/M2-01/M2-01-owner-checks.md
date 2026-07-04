@@ -6,7 +6,7 @@ Date: 2026-07-04
 
 Repo: Maxwell-00/OpenFairy
 
-Commit: <填 git rev-parse --short HEAD 输出>
+Commit: ab08485
 
 
 
@@ -74,7 +74,7 @@ Session:
 
 
 
-\- `<填 route-deny session id>`
+\- `ses_01KWNN97BM791M2HS9R775K2SV`
 
 
 
@@ -112,7 +112,6 @@ Input:
 
 
 
-```text
 
 remember that my favorite shell is pwsh
 
@@ -120,7 +119,7 @@ Session:
 
 
 
-<ses\_01KWNNTC4KANKK5VAE4W0QRJDS>
+-`ses_01KWNNTC4KANKK5VAE4W0QRJDS`
 
 
 
@@ -164,7 +163,7 @@ Session:
 
 
 
-<ses\_01KWNP0JGD3HXWD5GT5DA11GYT>
+-`ses\_01KWNP0JGD3HXWD5GT5DA11GYT`
 
 
 
