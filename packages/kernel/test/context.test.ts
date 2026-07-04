@@ -124,4 +124,26 @@ describe("context engine", () => {
       effective_labels: { residency: "local-only", sensitivity: "secret" }
     });
   });
+
+  it("includes gate-admitted memory digest as a labeled memory zone", () => {
+    const assembled = assemblePrompt({
+      config: { minRecentTurns: 4, reduceAt: 0.8 },
+      currentInput: "what shell do I prefer?",
+      currentLabels: { residency: "global-ok", sensitivity: "internal" },
+      history: [],
+      memoryDigest: {
+        content: "Memory digest:\n- mem_shell preference confidence=high: favorite shell is pwsh (source ses_x#1/evt_x)",
+        labels: { residency: "local-only", sensitivity: "personal" }
+      },
+      model: gateway.modelInfo("main"),
+      modelGateway: gateway,
+      systemPrompt: "system",
+      tools: []
+    });
+
+    expect(assembled.messages.map((message) => message.content).join("\n")).toContain("mem_shell");
+    expect(assembled.messages.map((message) => message.content).join("\n")).not.toContain("context.manifest");
+    expect(assembled.effectiveLabels).toEqual({ residency: "local-only", sensitivity: "personal" });
+    expect(assembled.manifest.zones.find((zone) => zone.name === "memory")?.tokens).toBeGreaterThan(0);
+  });
 });

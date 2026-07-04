@@ -2,7 +2,7 @@ import { canRouteToModel, defaultRequestLabels } from "./governance.js";
 import { parseModelGatewayConfig, resolveSecretRef } from "./config.js";
 import { streamOpenAIChat } from "./openai-chat.js";
 import { estimateTextTokens } from "./tokens.js";
-import { ProviderError, type GenerateOptions, type GenerateRequest, type ModelConfig, type ModelGateway, type ModelMetadata, type ModelTrace, type NormalizedModelEvent, type TokenEstimate } from "./types.js";
+import { ProviderError, type GenerateOptions, type GenerateRequest, type ModelConfig, type ModelGateway, type ModelMetadata, type ModelRouteCheck, type ModelTrace, type NormalizedModelEvent, type RequestLabels, type RoutingHints, type TokenEstimate } from "./types.js";
 
 const shouldFallback = (error: ProviderError): boolean =>
   error.auth || error.rate_limited || error.retryable;
@@ -52,6 +52,28 @@ export class ConfiguredModelGateway implements ModelGateway {
       id: model.id,
       ...(model.max_output ? { max_output: model.max_output } : {}),
       model: model.model
+    };
+  }
+
+  canRoute(role: string, labels: RequestLabels, routingHints?: RoutingHints): ModelRouteCheck {
+    const denied: DeniedCandidateTrace[] = [];
+    for (const model of this.#modelsForRole(role)) {
+      const clearance = canRouteToModel(labels, model, this.#config.governance, routingHints);
+      if (clearance.ok) {
+        return {
+          denied_candidates: denied,
+          model_id: model.id,
+          ok: true
+        };
+      }
+      denied.push({
+        model_id: model.id,
+        reason: clearance.reason ?? "model clearance does not satisfy request labels"
+      });
+    }
+    return {
+      denied_candidates: denied,
+      ok: false
     };
   }
 

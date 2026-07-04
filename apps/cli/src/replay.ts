@@ -114,9 +114,11 @@ const renderChronological = (events: readonly EventEnvelope[]): string[] => {
         : "?";
       lines.push(`turn ${event.turn} route.denied ${String(event.payload.role ?? "?")} ${clearance} ${short(String(event.payload.reason ?? ""))}`);
     } else if (event.type === "memory.gate.decision" && isRecord(event.payload)) {
-      lines.push(`turn ${event.turn} memory.gate.decision ${String(event.payload.decision ?? "?")} ${String(event.payload.memory_id ?? "?")} ${short(String(event.payload.reason ?? ""))}`);
+      lines.push(`turn ${event.turn} memory.gate.decision phase=${String(event.payload.phase ?? "?")} ${String(event.payload.decision ?? "?")} ${String(event.payload.memory_id ?? "?")} ${short(String(event.payload.reason ?? ""))}`);
     } else if (event.type === "memory.written" && isRecord(event.payload)) {
       lines.push(`turn ${event.turn} memory.written ${String(event.payload.memory_id ?? "?")} ${String(event.payload.tier ?? "?")}`);
+    } else if (event.type === "memory.deleted" && isRecord(event.payload)) {
+      lines.push(`turn ${event.turn} memory.deleted ${String(event.payload.memory_id ?? "?")} ${short(String(event.payload.reason ?? ""))}`);
     } else if (event.type === "turn.final") {
       const streamed = deltas.get(event.turn);
       lines.push(`turn ${event.turn} < ${short(streamed || payloadText(event.payload))}`);
@@ -141,7 +143,7 @@ const zoneTokens = (payload: Record<string, unknown>, zone: string): string => {
 
 const renderManifests = (events: readonly EventEnvelope[]): string[] => {
   const manifests = events.filter((event) => event.type === "context.manifest" && isRecord(event.payload));
-  const lines = ["turn model projected/budget/window stages system tools history input prefix"];
+  const lines = ["turn model projected/budget/window stages system tools memory history input prefix"];
   for (const event of manifests) {
     const payload = event.payload as Record<string, unknown>;
     const stages = Array.isArray(payload.reduction_stages_applied) && payload.reduction_stages_applied.length > 0
@@ -154,6 +156,7 @@ const renderManifests = (events: readonly EventEnvelope[]): string[] => {
       stages,
       zoneTokens(payload, "system"),
       zoneTokens(payload, "tools"),
+      zoneTokens(payload, "memory"),
       zoneTokens(payload, "history"),
       zoneTokens(payload, "input"),
       String(payload.prefix_hash ?? "?")

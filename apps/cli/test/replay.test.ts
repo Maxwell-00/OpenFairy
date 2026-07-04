@@ -58,7 +58,7 @@ describe("fairy replay", () => {
         actor: "system",
         id: "evt_01J00000000000000000000002",
         labels: { residency: "local-only", sensitivity: "secret" },
-        payload: { decision: "deny", memory_id: "mem_secret", reason: "secret_denied" },
+        payload: { decision: "deny", memory_id: "mem_secret", phase: "admission", reason: "secret_denied" },
         provenance: "agent",
         sid,
         ts: "2026-07-02T10:00:00.001Z",
@@ -86,7 +86,7 @@ describe("fairy replay", () => {
         actor: "system",
         id: "evt_01J00000000000000000000004",
         labels: { residency: "global-ok", sensitivity: "internal" },
-        payload: { decision: "allow", memory_id: "mem_safe", reason: "explicit_remember" },
+        payload: { decision: "allow", memory_id: "mem_safe", phase: "admission", reason: "explicit_remember" },
         provenance: "agent",
         sid,
         ts: "2026-07-02T10:00:00.003Z",
@@ -105,6 +105,30 @@ describe("fairy replay", () => {
         turn: 2,
         type: "memory.written",
         v: 1
+      },
+      {
+        actor: "system",
+        id: "evt_01J00000000000000000000006",
+        labels: { residency: "local-only", sensitivity: "personal" },
+        payload: { decision: "deny", memory_id: "mem_private", phase: "retrieval", reason: "label_clearance_denied", score: 0.91 },
+        provenance: "agent",
+        sid,
+        ts: "2026-07-02T10:00:00.005Z",
+        turn: 3,
+        type: "memory.gate.decision",
+        v: 1
+      },
+      {
+        actor: "system",
+        id: "evt_01J00000000000000000000007",
+        labels: { residency: "global-ok", sensitivity: "internal" },
+        payload: { memory_id: "mem_safe", reason: "user_deleted" },
+        provenance: "agent",
+        sid,
+        ts: "2026-07-02T10:00:00.006Z",
+        turn: 3,
+        type: "memory.deleted",
+        v: 1
       }
     ];
     await writeFile(join(sessionDir, "log.jsonl"), events.map((event) => JSON.stringify(event)).join("\n"), "utf8");
@@ -113,9 +137,11 @@ describe("fairy replay", () => {
     const rendered = renderReplay(result, { json: false, manifests: false });
     const json = renderReplay(result, { json: true, manifests: false });
 
-    expect(rendered).toContain("memory.gate.decision deny mem_secret secret_denied");
+    expect(rendered).toContain("memory.gate.decision phase=admission deny mem_secret secret_denied");
+    expect(rendered).toContain("memory.gate.decision phase=retrieval deny mem_private label_clearance_denied");
     expect(rendered).toContain("route.denied main secret/local-only");
     expect(rendered).toContain("memory.written mem_safe semantic");
+    expect(rendered).toContain("memory.deleted mem_safe user_deleted");
     expect(json).toContain("\"type\":\"route.denied\"");
     expect(json).toContain("\"decision\":\"deny\"");
     expect(json).toContain("\"required_clearance\"");

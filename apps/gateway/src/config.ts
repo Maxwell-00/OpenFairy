@@ -60,6 +60,7 @@ const readMaxToolIterations = (config: Record<string, unknown>): number => {
 const readContextConfig = (config: Record<string, unknown>): ContextConfig => {
   const context = readBlock(config, "context");
   return {
+    ...(typeof context.memory_digest_budget === "number" ? { memoryDigestBudget: context.memory_digest_budget } : {}),
     minRecentTurns: typeof context.min_recent_turns === "number" ? context.min_recent_turns : 4,
     ...(typeof context.output_reserve === "number" ? { outputReserve: context.output_reserve } : {}),
     reduceAt: typeof context.reduce_at === "number" ? context.reduce_at : 0.8

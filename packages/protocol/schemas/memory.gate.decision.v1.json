@@ -53,6 +53,13 @@
           "minLength": 1,
           "type": "string"
         },
+        "phase": {
+          "enum": [
+            "admission",
+            "retrieval"
+          ],
+          "type": "string"
+        },
         "reason": {
           "minLength": 1,
           "type": "string"

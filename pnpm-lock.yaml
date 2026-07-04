@@ -41,6 +41,9 @@ importers:
       '@fairy/config':
         specifier: workspace:*
         version: link:../../packages/config
+      '@fairy/memory':
+        specifier: workspace:*
+        version: link:../../packages/memory
       '@fairy/protocol':
         specifier: workspace:*
         version: link:../../packages/protocol
@@ -60,6 +63,9 @@ importers:
       '@fairy/kernel':
         specifier: workspace:*
         version: link:../../packages/kernel
+      '@fairy/memory':
+        specifier: workspace:*
+        version: link:../../packages/memory
       '@fairy/model-gateway':
         specifier: workspace:*
         version: link:../../packages/model-gateway
@@ -125,6 +131,9 @@ importers:
       '@fairy/config':
         specifier: workspace:*
         version: link:../config
+      '@fairy/memory':
+        specifier: workspace:*
+        version: link:../memory
       '@fairy/model-gateway':
         specifier: workspace:*
         version: link:../model-gateway

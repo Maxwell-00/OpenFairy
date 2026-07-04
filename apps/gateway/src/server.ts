@@ -1,4 +1,5 @@
 import { AuditLog, escalateLabelsForContent, PermissionEngine, TurnRunner, type KernelEventType, type TurnRunnerHistory } from "@fairy/kernel";
+import { MemoryStore } from "@fairy/memory";
 import { createModelGateway, type ChatMessage, type RoutingHints } from "@fairy/model-gateway";
 import {
   createEventId,
@@ -199,6 +200,7 @@ export class MinimalGateway {
   readonly #wss: WebSocketServer;
   readonly #startedAt = Date.now();
   readonly #auditLog: AuditLog;
+  readonly #memoryStore: MemoryStore;
   readonly #sessions = new Map<string, SessionState>();
   readonly #connections = new Set<WebSocket>();
   readonly #subscriptions = new Map<string, Set<WebSocket>>();
@@ -209,6 +211,7 @@ export class MinimalGateway {
     this.#config = config;
     this.#log = new EventLog(config.dataDir);
     this.#auditLog = new AuditLog(config.dataDir);
+    this.#memoryStore = new MemoryStore(config.dataDir);
     const tools = createStandardToolRegistry({
       artifactsDir: config.artifactsDir,
       config: config.config,
@@ -224,6 +227,7 @@ export class MinimalGateway {
       auditLog: this.#auditLog,
       contextConfig: config.contextConfig,
       maxToolIterations: config.maxToolIterations,
+      memoryStore: this.#memoryStore,
       modelGateway,
       permissionAskTimeoutMs: config.askTimeoutMs,
       permissionEngine,
@@ -241,6 +245,7 @@ export class MinimalGateway {
   }
 
   async start(): Promise<{ host: string; port: number }> {
+    await this.#memoryStore.rebuildFromSessionLogs();
     await this.#recoverSessions();
     await new Promise<void>((resolve, reject) => {
       this.#server.once("error", reject);

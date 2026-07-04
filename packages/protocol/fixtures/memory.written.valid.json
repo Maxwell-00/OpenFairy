@@ -6,7 +6,18 @@
     "sensitivity": "internal"
   },
   "payload": {
+    "confidence": 0.8,
+    "kind": "preference",
     "memory_id": "mem-1",
+    "scope": {
+      "kind": "personal"
+    },
+    "source": {
+      "event_id": "evt_01J00000000000000000000018",
+      "quote": "User prefers concise answers.",
+      "sid": "ses_01J00000000000000000000000",
+      "turn": 1
+    },
     "summary": "User prefers concise answers.",
     "tier": "semantic"
   },

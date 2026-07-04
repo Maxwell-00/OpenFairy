@@ -64,6 +64,15 @@ export interface ModelMetadata {
   readonly model: string;
 }
 
+export interface ModelRouteCheck {
+  readonly ok: boolean;
+  readonly model_id?: string;
+  readonly denied_candidates: readonly {
+    readonly model_id: string;
+    readonly reason: string;
+  }[];
+}
+
 export type NormalizedModelEvent =
   | { readonly type: "text"; readonly text: string }
   | { readonly type: "reasoning"; readonly text: string }
@@ -168,6 +177,7 @@ export class ProviderError extends Error {
 }
 
 export interface ModelGateway {
+  canRoute?(role: string, labels: RequestLabels, routingHints?: RoutingHints): ModelRouteCheck;
   estimateTokens(input: string): TokenEstimate;
   generate(role: string, request: GenerateRequest, options?: GenerateOptions): AsyncIterable<NormalizedModelEvent>;
   modelInfo(role: string): ModelMetadata;

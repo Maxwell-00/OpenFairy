@@ -5,6 +5,7 @@ export type ContextZoneName = "system" | "persona" | "tools" | "memory" | "skill
 export type ReductionStage = "L1" | "L2" | "L3" | "L4" | "L5";
 
 export interface ContextConfig {
+  readonly memoryDigestBudget?: number;
   readonly minRecentTurns: number;
   readonly outputReserve?: number;
   readonly reduceAt: number;
@@ -30,6 +31,10 @@ export interface AssemblePromptOptions {
   readonly history: readonly ChatMessage[];
   readonly model: ModelMetadata;
   readonly modelGateway: ModelGateway;
+  readonly memoryDigest?: {
+    readonly content: string;
+    readonly labels?: RequestLabels;
+  };
   readonly systemPrompt: string;
   readonly toolSafetyPrompt?: string;
   readonly tools: readonly ToolDefinition[];
@@ -180,6 +185,7 @@ const snipOldTurns = (
 const tokenZones = (
   modelGateway: ModelGateway,
   systemContent: string,
+  memoryDigest: string,
   tools: readonly ToolDefinition[],
   history: readonly ChatMessage[],
   input: string
@@ -187,7 +193,7 @@ const tokenZones = (
   const tokensByZone: Record<ContextZoneName, number> = {
     history: estimate(modelGateway, history),
     input: estimate(modelGateway, input),
-    memory: 0,
+    memory: memoryDigest ? estimate(modelGateway, memoryDigest) : 0,
     persona: 0,
     skills: 0,
     system: estimate(modelGateway, systemContent),
@@ -216,7 +222,9 @@ export const assemblePrompt = (options: AssemblePromptOptions): AssembledPrompt 
     stages.add("L1");
   }
 
-  let zones = tokenZones(options.modelGateway, systemContent, options.tools, [...history, ...currentTurnMessages], options.currentInput);
+  const memoryDigest = options.memoryDigest?.content.trim() ? options.memoryDigest : undefined;
+
+  let zones = tokenZones(options.modelGateway, systemContent, memoryDigest?.content ?? "", options.tools, [...history, ...currentTurnMessages], options.currentInput);
   let projected = totalZoneTokens(zones) + outputReserve;
   const protectedTurns = protectedRecentTurns(history, options.config.minRecentTurns);
 
@@ -226,7 +234,7 @@ export const assemblePrompt = (options: AssemblePromptOptions): AssembledPrompt 
     if (l2.changed) {
       stages.add("L2");
     }
-    zones = tokenZones(options.modelGateway, systemContent, options.tools, [...history, ...currentTurnMessages], options.currentInput);
+    zones = tokenZones(options.modelGateway, systemContent, memoryDigest?.content ?? "", options.tools, [...history, ...currentTurnMessages], options.currentInput);
     projected = totalZoneTokens(zones) + outputReserve;
   }
 
@@ -236,12 +244,13 @@ export const assemblePrompt = (options: AssemblePromptOptions): AssembledPrompt 
     if (l3.changed) {
       stages.add("L3");
     }
-    zones = tokenZones(options.modelGateway, systemContent, options.tools, [...history, ...currentTurnMessages], options.currentInput);
+    zones = tokenZones(options.modelGateway, systemContent, memoryDigest?.content ?? "", options.tools, [...history, ...currentTurnMessages], options.currentInput);
     projected = totalZoneTokens(zones) + outputReserve;
   }
 
   const messages = [
     { content: systemContent, labels: defaultRequestLabels, role: "system" },
+    ...(memoryDigest ? [{ content: memoryDigest.content, labels: memoryDigest.labels ?? currentLabels, role: "system" } satisfies ChatMessage] : []),
     ...history,
     { content: options.currentInput, labels: currentLabels, role: "user" },
     ...currentTurnMessages

@@ -7,7 +7,7 @@ import {
   type ToolDefinition,
   type UsageSnapshot
 } from "@fairy/model-gateway";
-import { MemoryGate, proposeMemoryCandidate } from "@fairy/memory";
+import { deriveMemoryLabels, evaluateRetrievalGate, MemoryGate, proposeMemoryCandidate, renderMemoryDigest, type MemoryLabels, type MemoryStore, type ScoredMemoryRecord } from "@fairy/memory";
 import type { EventEnvelope, Labels } from "@fairy/protocol";
 import {
   PolicyError,
@@ -108,6 +108,7 @@ export interface TurnRunnerOptions {
   readonly contextConfig?: Partial<ContextConfig>;
   readonly maxToolIterations?: number;
   readonly memoryGate?: MemoryGate;
+  readonly memoryStore?: MemoryStore;
   readonly modelGateway: ModelGateway;
   readonly permissionEngine?: PermissionEngine;
   readonly permissionAskTimeoutMs?: number;
@@ -293,6 +294,7 @@ export class TurnRunner {
   readonly #contextConfig: ContextConfig;
   readonly #maxToolIterations: number;
   readonly #memoryGate: MemoryGate;
+  readonly #memoryStore: MemoryStore | undefined;
   readonly #modelGateway: ModelGateway;
   readonly #pendingApprovals = new Map<string, PendingApproval>();
   readonly #permissionAskTimeoutMs: number;
@@ -307,10 +309,12 @@ export class TurnRunner {
     this.#contextConfig = {
       minRecentTurns: options.contextConfig?.minRecentTurns ?? 4,
       ...(options.contextConfig?.outputReserve !== undefined ? { outputReserve: options.contextConfig.outputReserve } : {}),
+      ...(options.contextConfig?.memoryDigestBudget !== undefined ? { memoryDigestBudget: options.contextConfig.memoryDigestBudget } : {}),
       reduceAt: options.contextConfig?.reduceAt ?? 0.8
     };
     this.#maxToolIterations = options.maxToolIterations ?? 16;
     this.#memoryGate = options.memoryGate ?? new MemoryGate();
+    this.#memoryStore = options.memoryStore;
     this.#modelGateway = options.modelGateway;
     this.#permissionAskTimeoutMs = options.permissionAskTimeoutMs ?? 300_000;
     this.#permissionEngine = options.permissionEngine ?? new PermissionEngine({
@@ -393,12 +397,14 @@ export class TurnRunner {
       for (let iteration = 0; iteration <= this.#maxToolIterations; iteration += 1) {
         const toolCalls: ToolCall[] = [];
         let sawDone = false;
+        const memoryDigest = await this.#buildMemoryDigest(options, currentLabels);
         const assembled = assemblePrompt({
           config: this.#contextConfig,
           currentLabels,
           currentInput: options.input,
           currentTurnMessages: turnMessages,
           history: options.history.messages,
+          ...(memoryDigest ? { memoryDigest } : {}),
           model: this.#modelGateway.modelInfo("main"),
           modelGateway: this.#modelGateway,
           systemPrompt: this.#systemPrompt,
@@ -618,6 +624,7 @@ export class TurnRunner {
         category: candidate.category,
         decision: decision.decision,
         memory_id: decision.memory_id,
+        phase: "admission",
         reason: decision.reason,
         source: candidate.source
       },
@@ -628,15 +635,92 @@ export class TurnRunner {
       return;
     }
 
-    await options.emit({
+    const written = await options.emit({
       labels,
       payload: {
+        confidence: 0.8,
+        kind: candidate.category === "fact" ? "fact" : "preference",
         memory_id: decision.memory_id,
+        scope: { kind: "personal" },
+        source: {
+          ...candidate.source,
+          quote: candidate.text
+        },
         summary: candidate.text,
         tier: "semantic"
       },
       type: "memory.written"
     });
+
+    if (!this.#memoryStore) {
+      return;
+    }
+
+    try {
+      this.#memoryStore.insertFromWrittenEvent(written);
+    } catch (error) {
+      await options.emit({
+        labels,
+        payload: {
+          class: "MemoryProjectionError",
+          message: error instanceof Error ? error.message : String(error),
+          memory_id: decision.memory_id,
+          retryable: false
+        },
+        type: "error"
+      });
+    }
+  }
+
+  async #buildMemoryDigest(
+    options: RunTurnOptions,
+    currentLabels: MemoryLabels
+  ): Promise<{ content: string; labels?: MemoryLabels } | undefined> {
+    if (!this.#memoryStore) {
+      return undefined;
+    }
+
+    const candidates = this.#memoryStore.search(options.input, { includeIrrelevant: true, limit: 12 });
+    if (candidates.length === 0) {
+      return undefined;
+    }
+
+    const admitted: ScoredMemoryRecord[] = [];
+    for (const candidate of candidates) {
+      const routeLabels = deriveMemoryLabels([{ labels: currentLabels }, { labels: candidate.record.labels }]);
+      const routeAllowed = this.#modelGateway.canRoute
+        ? this.#modelGateway.canRoute("main", routeLabels, options.routingHints).ok
+        : true;
+      const gate = evaluateRetrievalGate(candidate, {
+        channelTrust: "trusted",
+        mode: "chat",
+        requestLabels: currentLabels,
+        routeAllowed,
+        scope: candidate.record.scope
+      });
+      await options.emit({
+        labels: candidate.record.labels,
+        payload: {
+          decision: gate.decision,
+          memory_id: candidate.record.id,
+          phase: "retrieval",
+          reason: gate.reason,
+          score: Number(gate.score.toFixed(4))
+        },
+        type: "memory.gate.decision"
+      });
+      if (gate.decision === "allow") {
+        admitted.push(candidate);
+      }
+    }
+
+    const digest = renderMemoryDigest(admitted, { estimatedTokenBudget: this.#contextConfig.memoryDigestBudget ?? 600 });
+    for (const item of digest.records) {
+      this.#memoryStore.markUsed(item.record.id);
+    }
+    return digest.content
+      ? { content: digest.content, ...(digest.labels ? { labels: digest.labels } : {}) }
+      : undefined;
   }
 
   async #handleToolCall(

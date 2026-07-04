@@ -22,6 +22,7 @@ export type {
   ModelGateway,
   ModelGatewayConfig,
   ModelMetadata,
+  ModelRouteCheck,
   NormalizedModelEvent,
   RoleBinding,
   RequestLabels,

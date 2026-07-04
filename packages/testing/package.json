@@ -11,10 +11,11 @@
   },
   "scripts": {
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "vitest run"
+    "test": "vitest run --reporter verbose"
   },
   "dependencies": {
     "@fairy/config": "workspace:*",
+    "@fairy/memory": "workspace:*",
     "@fairy/model-gateway": "workspace:*",
     "@fairy/protocol": "workspace:*",
     "ws": "^8.18.3"

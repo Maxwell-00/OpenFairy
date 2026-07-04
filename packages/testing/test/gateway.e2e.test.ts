@@ -8,6 +8,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import WebSocket from "ws";
 
 import { validateEvent, validateFrame, type EventEnvelope } from "@fairy/protocol";
+import { MemoryStore } from "@fairy/memory";
 import {
   acceptIncomingEvent,
   assertM1TurnCompletes,
@@ -142,6 +143,87 @@ const readLoggedEvents = async (dataDir: string, sid: string): Promise<EventEnve
     .trim()
     .split("\n")
     .map((line) => JSON.parse(line) as EventEnvelope);
+
+const providerPromptAt = (server: MockOpenAIChatServer, index: number): string => {
+  const body = server.requestBodies.at(index) as { messages?: readonly { content?: unknown }[] } | undefined;
+  return (body?.messages ?? []).map((message) => typeof message.content === "string" ? message.content : "").join("\n");
+};
+
+const zoneTokens = (event: EventEnvelope | undefined, zone: string): number => {
+  const payload = event?.payload;
+  const zones = payload && typeof payload === "object" && Array.isArray((payload as { zones?: unknown }).zones)
+    ? (payload as { zones: unknown[] }).zones
+    : [];
+  const match = zones.find((item) => item && typeof item === "object" && (item as { name?: unknown }).name === zone);
+  return match && typeof (match as { tokens?: unknown }).tokens === "number" ? (match as { tokens: number }).tokens : 0;
+};
+
+const isPayloadRecord = (event: EventEnvelope): event is EventEnvelope & { payload: Record<string, unknown> } =>
+  event.payload !== null && typeof event.payload === "object" && !Array.isArray(event.payload);
+
+const sendTurnInputWithTimeout = async (
+  client: MockFairyClient,
+  sid: string,
+  payload: { readonly content: readonly { readonly kind: "text"; readonly text: string }[] },
+  timeoutMs = 30000
+): Promise<readonly EventEnvelope[]> => {
+  const before = client.sendTurnInputNoWait(sid, payload);
+  await client.waitFor((event) =>
+    event.sid === sid &&
+    event.type === "turn.final" &&
+    client.events().indexOf(event) >= before, timeoutMs);
+  return client.events().slice(before);
+};
+
+const seedMemoryLog = async (
+  dataDir: string,
+  options: {
+    readonly labels?: { readonly residency: "global-ok" | "local-only" | "region-restricted"; readonly sensitivity: "internal" | "personal" | "public" | "secret" };
+    readonly memoryId?: string;
+    readonly summary?: string;
+  } = {}
+): Promise<string> => {
+  const sid = "ses_01J00000000000000000009999";
+  const sessionDir = join(dataDir, "sessions", sid);
+  const labels = options.labels ?? { residency: "global-ok", sensitivity: "internal" };
+  const summary = options.summary ?? "favorite shell is pwsh";
+  await mkdir(sessionDir, { recursive: true });
+  await writeFile(join(sessionDir, "log.jsonl"), [
+    JSON.stringify({
+      actor: "user",
+      id: "evt_01J00000000000000000009998",
+      labels,
+      payload: { content: [{ kind: "text", text: `remember that ${summary}` }] },
+      provenance: "user",
+      sid,
+      ts: "2026-07-02T10:00:00.000Z",
+      turn: 1,
+      type: "turn.input",
+      v: 1
+    }),
+    JSON.stringify({
+      actor: "system",
+      id: "evt_01J00000000000000000009999",
+      labels,
+      payload: {
+        confidence: 0.8,
+        kind: "preference",
+        memory_id: options.memoryId ?? "mem_seed_shell",
+        scope: { kind: "personal" },
+        source: { event_id: "evt_01J00000000000000000009998", quote: summary, sid, turn: 1 },
+        summary,
+        tier: "semantic"
+      },
+      provenance: "agent",
+      sid,
+      ts: "2026-07-02T10:00:00.001Z",
+      turn: 1,
+      type: "memory.written",
+      v: 1
+    })
+  ].join("\n"), "utf8");
+  return sid;
+};
 
 afterEach(async () => {
   await provider?.stop();
@@ -434,7 +516,6 @@ describe("gateway M1 e2e", () => {
       const turnEvents = await client.sendTurnInput(created.sid, {
         content: [{ kind: "text", text: "remember that favorite editor is Helix" }]
       });
-      client.close();
 
       const gateIndex = turnEvents.findIndex((event) => event.type === "memory.gate.decision");
       const writtenIndex = turnEvents.findIndex((event) => event.type === "memory.written");
@@ -448,7 +529,22 @@ describe("gateway M1 e2e", () => {
         summary: "favorite editor is Helix",
         tier: "semantic"
       });
+
+      const recalled = await client.createSession("memory recall");
+      const recallEvents = await sendTurnInputWithTimeout(client, recalled.sid, {
+        content: [{ kind: "text", text: "which editor do I prefer?" }]
+      });
+      expect(recallEvents.find((event) => event.type === "memory.gate.decision" && isPayloadRecord(event) && event.payload.reason === "admit")?.payload).toMatchObject({
+        decision: "allow",
+        phase: "retrieval"
+      });
+      expect(zoneTokens(recallEvents.find((event) => event.type === "context.manifest"), "memory")).toBeGreaterThan(0);
+      expect(providerPromptAt(provider, -1)).toContain("Memory digest:");
+      expect(providerPromptAt(provider, -1)).toContain("favorite editor is Helix");
       assertSchemaValidStream(client.events());
+      expect(providerPromptAt(provider, -1)).not.toContain("context.manifest");
+      expect(new MemoryStore(dataDir).list().filter((record) => record.text === "favorite editor is Helix")).toHaveLength(1);
+      client.close();
     } finally {
       await stopGateway(gateway);
     }
@@ -479,9 +575,147 @@ describe("gateway M1 e2e", () => {
       });
       expect(turnEvents.some((event) => event.type === "memory.written")).toBe(false);
       expect(turnEvents.map((event) => event.type)).toContain("route.denied");
+      expect(new MemoryStore(dataDir).list()).toEqual([]);
       assertSchemaValidStream(client.events());
     } finally {
       await stopGateway(gateway);
+    }
+  });
+
+  it("does not inject irrelevant memories into the memory zone", async () => {
+    provider = await MockOpenAIChatServer.start({ text: ["ordinary answer"] });
+    const temp = await mkdtemp(join(tmpdir(), "fairy-gateway-memory-irrelevant-"));
+    const dataDir = join(temp, "data");
+    await seedMemoryLog(dataDir, { summary: "favorite shell is pwsh" });
+    const configPath = join(temp, "fairy.yaml");
+    const token = "memory-irrelevant-token";
+    writeConfig(configPath, dataDir, token, provider.url);
+    const gateway = startGateway(configPath);
+
+    try {
+      const port = await waitForGateway(gateway);
+      const client = await MockFairyClient.connect({ token, url: `ws://127.0.0.1:${port}` });
+      const created = await client.createSession("irrelevant memory");
+      const turnEvents = await sendTurnInputWithTimeout(client, created.sid, {
+        content: [{ kind: "text", text: "tell me about ocean tides" }]
+      });
+      client.close();
+
+      expect(turnEvents.find((event) => event.type === "memory.gate.decision")?.payload).toMatchObject({
+        decision: "deny",
+        phase: "retrieval",
+        reason: "below_relevance_floor"
+      });
+      expect(zoneTokens(turnEvents.find((event) => event.type === "context.manifest"), "memory")).toBe(0);
+      expect(providerPromptAt(provider, -1)).not.toContain("favorite shell is pwsh");
+      assertSchemaValidStream(client.events());
+    } finally {
+      await stopGateway(gateway);
+    }
+  });
+
+  it("keeps personal local-only memory out of an under-cleared cloud route", async () => {
+    provider = await MockOpenAIChatServer.start({ text: ["cloud answer"] });
+    const temp = await mkdtemp(join(tmpdir(), "fairy-gateway-memory-route-deny-"));
+    const dataDir = join(temp, "data");
+    await seedMemoryLog(dataDir, {
+      labels: { residency: "local-only", sensitivity: "personal" },
+      memoryId: "mem_personal_shell",
+      summary: "favorite shell is pwsh"
+    });
+    const configPath = join(temp, "fairy.yaml");
+    const token = "memory-route-deny-token";
+    writeConfig(configPath, dataDir, token, provider.url);
+    const gateway = startGateway(configPath);
+
+    try {
+      const port = await waitForGateway(gateway);
+      const client = await MockFairyClient.connect({ token, url: `ws://127.0.0.1:${port}` });
+      const created = await client.createSession("under-cleared memory");
+      const turnEvents = await sendTurnInputWithTimeout(client, created.sid, {
+        content: [{ kind: "text", text: "which shell do I prefer?" }]
+      });
+      client.close();
+
+      const gate = turnEvents.find((event) => event.type === "memory.gate.decision");
+      expect(gate?.payload).toMatchObject({
+        decision: "deny",
+        memory_id: "mem_personal_shell",
+        phase: "retrieval",
+        reason: "label_clearance_denied"
+      });
+      expect(JSON.stringify(gate?.payload)).not.toContain("pwsh");
+      expect(zoneTokens(turnEvents.find((event) => event.type === "context.manifest"), "memory")).toBe(0);
+      expect(provider.requests).toBe(1);
+      expect(providerPromptAt(provider, -1)).not.toContain("favorite shell is pwsh");
+      assertSchemaValidStream(client.events());
+    } finally {
+      await stopGateway(gateway);
+    }
+  });
+
+  it("admits personal local-only memory only when a cleared local fallback is selected", async () => {
+    provider = await MockOpenAIChatServer.start({ text: ["primary should not be called"] });
+    const fallback = await MockOpenAIChatServer.start({
+      text: ["local answer"],
+      usage: { completion_tokens: 2, prompt_tokens: 3, total_tokens: 5 }
+    });
+    const temp = await mkdtemp(join(tmpdir(), "fairy-gateway-memory-fallback-"));
+    const dataDir = join(temp, "data");
+    await seedMemoryLog(dataDir, {
+      labels: { residency: "local-only", sensitivity: "personal" },
+      memoryId: "mem_personal_shell",
+      summary: "favorite shell is pwsh"
+    });
+    const configPath = join(temp, "fairy.yaml");
+    const token = "memory-fallback-token";
+    writeConfig(configPath, dataDir, token, provider.url, {
+      extraModels: [
+        "  - id: mock-local",
+        "    transport: openai-chat",
+        `    base_url: ${JSON.stringify(fallback.url)}`,
+        "    model: mock-model",
+        "    data_clearance:",
+        "      max_sensitivity: secret",
+        "      residency: [local-only]"
+      ],
+      mainRole: [
+        "    model: mock-main",
+        "    fallback: [mock-local]"
+      ]
+    });
+    const gateway = startGateway(configPath);
+
+    try {
+      const port = await waitForGateway(gateway);
+      const client = await MockFairyClient.connect({ token, url: `ws://127.0.0.1:${port}` });
+      const created = await client.createSession("memory fallback");
+      const turnEvents = await sendTurnInputWithTimeout(client, created.sid, {
+        content: [{ kind: "text", text: "which shell do I prefer?" }]
+      });
+      client.close();
+
+      expect(turnEvents.find((event) => event.type === "memory.gate.decision")?.payload).toMatchObject({
+        decision: "allow",
+        memory_id: "mem_personal_shell",
+        phase: "retrieval",
+        reason: "admit"
+      });
+      expect(turnEvents.find((event) => event.type === "progress.update")?.payload).toMatchObject({
+        model_id: "mock-main",
+        stage: "route-denied"
+      });
+      expect(turnEvents.find((event) => event.type === "context.manifest")?.payload).toMatchObject({
+        effective_labels: { residency: "local-only", sensitivity: "personal" }
+      });
+      expect(zoneTokens(turnEvents.find((event) => event.type === "context.manifest"), "memory")).toBeGreaterThan(0);
+      expect(provider.requests).toBe(0);
+      expect(fallback.requests).toBe(1);
+      expect(providerPromptAt(fallback, -1)).toContain("favorite shell is pwsh");
+      assertSchemaValidStream(client.events());
+    } finally {
+      await stopGateway(gateway);
+      await fallback.stop();
     }
   });
 

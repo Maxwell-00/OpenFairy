@@ -8,6 +8,7 @@
   "payload": {
     "decision": "hold",
     "memory_id": "mem-1",
+    "phase": "admission",
     "reason": "personal_default_hold"
   },
   "provenance": "agent",
