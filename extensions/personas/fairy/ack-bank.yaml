@@ -1,0 +1,10 @@
+ack:
+  neutral:
+    - "On it."
+    - "收到，开始处理。"
+  dry:
+    - "On it. Minimal drama, maximum utility."
+    - "收到，少一点戏剧性，多一点结果。"
+  warm:
+    - "I have you. Let's take it one step at a time."
+    - "我在，先稳住，一步一步来。"

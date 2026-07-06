@@ -25,6 +25,12 @@ context:
   reduce_at: 0.8
   min_recent_turns: 4
   memory_digest_budget: 600
+persona:
+  id: fairy
+  enabled: true
+  root: extensions/personas
+affect:
+  enabled: true
 search:
   engine:
     kind: mock

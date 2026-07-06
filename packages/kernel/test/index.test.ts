@@ -1,9 +1,11 @@
 import { describe, expect, it, vi } from "vitest";
+import { resolve } from "node:path";
 
 import {
   detectSensitiveText,
   EgressGuard,
   escalateLabelsForContent,
+  loadPersonaRuntime,
   PermissionEngine,
   profileDefaults,
   redactText,
@@ -15,6 +17,7 @@ import { estimateTextTokens, type ModelGateway, type NormalizedModelEvent } from
 import type { EventEnvelope } from "@fairy/protocol";
 
 const labels = { residency: "global-ok", sensitivity: "internal" } as const;
+const repoRoot = resolve(new URL("../../..", import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, "$1"));
 
 const fakeGateway = (events: readonly NormalizedModelEvent[], onRequest?: (messages: readonly unknown[]) => void): ModelGateway => ({
   estimateTokens(input) {
@@ -493,5 +496,78 @@ describe("@fairy/kernel TurnRunner", () => {
       payload: { provenance: "tool:research.fetch", status: "ok" },
       type: "tool.result"
     });
+  });
+
+  it("emits affect.updated at the turn boundary when persona affect is enabled", async () => {
+    const emitted: KernelEvent[] = [];
+    let promptText = "";
+    const runner = new TurnRunner({
+      modelGateway: fakeGateway(
+        [
+          { text: "done", type: "text" },
+          { finish_reason: "stop", type: "done", usage: { estimated: true, input_tokens: 1, output_tokens: 1 } }
+        ],
+        (messages) => {
+          promptText = messages.map((message) =>
+            typeof message === "object" && message && "content" in message ? String((message as { content?: unknown }).content ?? "") : ""
+          ).join("\n");
+        }
+      ),
+      personaRuntime: loadPersonaRuntime({
+        affect: { enabled: true },
+        persona: { enabled: true, id: "fairy", root: "extensions/personas" }
+      }, repoRoot)
+    });
+
+    await runner.runTurn({
+      emit: makeEmit(emitted),
+      history: { messages: [] },
+      input: "thanks",
+      labels,
+      sid: "ses_01J00000000000000000000007",
+      turn: 1
+    });
+
+    expect(promptText).toContain("persona: fairy (Fairy)");
+    expect(promptText).toContain("affect: dry/low-energy");
+    expect(emitted.map((event) => event.type)).toEqual([
+      "context.manifest",
+      "turn.delta",
+      "turn.final",
+      "affect.updated"
+    ]);
+    expect(emitted.at(-1)).toMatchObject({
+      payload: { cause: "user-thanks", stance: "warm" },
+      type: "affect.updated"
+    });
+  });
+
+  it("uses plain style and emits no affect update when persona and affect are disabled", async () => {
+    const emitted: KernelEvent[] = [];
+    let promptText = "";
+    const runner = new TurnRunner({
+      modelGateway: fakeGateway(
+        [{ finish_reason: "stop", type: "done", usage: { estimated: true, input_tokens: 1, output_tokens: 0 } }],
+        (messages) => {
+          promptText = messages.map((message) =>
+            typeof message === "object" && message && "content" in message ? String((message as { content?: unknown }).content ?? "") : ""
+          ).join("\n");
+        }
+      ),
+      personaRuntime: loadPersonaRuntime({ affect: { enabled: false }, persona: "none" }, repoRoot)
+    });
+
+    await runner.runTurn({
+      emit: makeEmit(emitted),
+      history: { messages: [] },
+      input: "plain answer",
+      labels,
+      sid: "ses_01J00000000000000000000008",
+      turn: 1
+    });
+
+    expect(promptText).toContain("persona: none (plain assistant)");
+    expect(promptText).toContain("affect: disabled");
+    expect(emitted.some((event) => event.type === "affect.updated")).toBe(false);
   });
 });

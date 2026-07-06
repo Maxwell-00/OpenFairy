@@ -75,6 +75,8 @@ const hasDocker = (): boolean => spawnSync("docker", ["--version"], { timeout: 2
 
 const writeConfig = (path: string, dataDir: string, token: string, baseUrl: string, options: {
   readonly context?: readonly string[];
+  readonly persona?: readonly string[];
+  readonly affect?: readonly string[];
   readonly extraModels?: readonly string[];
   readonly mainRole?: readonly string[];
   readonly model?: readonly string[];
@@ -115,6 +117,14 @@ const writeConfig = (path: string, dataDir: string, token: string, baseUrl: stri
             ...options.context
           ]
         : []),
+      "persona:",
+      ...(options.persona ?? [
+        "  enabled: false"
+      ]),
+      "affect:",
+      ...(options.affect ?? [
+        "  enabled: false"
+      ]),
       ...(options.workspaceRoot
         ? ["workspace:", `  root: ${JSON.stringify(options.workspaceRoot.replace(/\\/g, "/"))}`]
         : []),
@@ -1850,6 +1860,141 @@ describe("gateway M1 e2e", () => {
     } finally {
       await stopGateway(gateway);
       await fallback.stop();
+    }
+  }, 90_000);
+
+  it("logs affect.updated for an enabled persona turn without writing memory", async () => {
+    provider = await MockOpenAIChatServer.start({
+      text: ["gladly done"],
+      usage: { completion_tokens: 2, prompt_tokens: 4, total_tokens: 6 }
+    });
+    const temp = await mkdtemp(join(tmpdir(), "fairy-gateway-affect-enabled-"));
+    const dataDir = join(temp, "data");
+    const configPath = join(temp, "fairy.yaml");
+    const token = "affect-enabled-token";
+    writeConfig(configPath, dataDir, token, provider.url, {
+      affect: ["  enabled: true"],
+      persona: ["  enabled: true"]
+    });
+    const gateway = startGateway(configPath);
+
+    try {
+      const port = await waitForGateway(gateway);
+      const client = await MockFairyClient.connect({ token, url: `ws://127.0.0.1:${port}` });
+      const created = await client.createSession("affect enabled");
+      const turnEvents = await sendTurnInputWithTimeout(client, created.sid, {
+        content: [{ kind: "text", text: "thanks for finishing this" }]
+      }, 60000);
+      const affect = await client.waitFor((event) =>
+        event.sid === created.sid &&
+        event.type === "affect.updated" &&
+        isPayloadRecord(event) &&
+        event.payload.cause === "user-thanks",
+      30000);
+      client.close();
+
+      expect(turnEvents.some((event) => event.type === "memory.written")).toBe(false);
+      expect(affect).toMatchObject({
+        actor: "agent",
+        labels: { residency: "global-ok", sensitivity: "internal" },
+        payload: { cause: "user-thanks", stance: "warm" }
+      });
+      expect(zoneTokens(turnEvents.find((event) => event.type === "context.manifest"), "persona")).toBeGreaterThan(0);
+
+      const logged = await readLoggedEvents(dataDir, created.sid);
+      expect(logged.some((event) => event.type === "affect.updated")).toBe(true);
+      assertSchemaValidStream(client.events());
+    } finally {
+      await stopGateway(gateway);
+    }
+  }, 90_000);
+
+  it("keeps affect disabled silent while rendering a plain persona zone", async () => {
+    provider = await MockOpenAIChatServer.start({ text: ["plain response"] });
+    const temp = await mkdtemp(join(tmpdir(), "fairy-gateway-affect-disabled-"));
+    const dataDir = join(temp, "data");
+    const configPath = join(temp, "fairy.yaml");
+    const token = "affect-disabled-token";
+    writeConfig(configPath, dataDir, token, provider.url);
+    const gateway = startGateway(configPath);
+
+    try {
+      const port = await waitForGateway(gateway);
+      const client = await MockFairyClient.connect({ token, url: `ws://127.0.0.1:${port}` });
+      const created = await client.createSession("affect disabled");
+      const turnEvents = await sendTurnInputWithTimeout(client, created.sid, {
+        content: [{ kind: "text", text: "answer plainly" }]
+      }, 60000);
+      client.close();
+
+      expect(turnEvents.some((event) => event.type === "affect.updated")).toBe(false);
+      expect(zoneTokens(turnEvents.find((event) => event.type === "context.manifest"), "persona")).toBeGreaterThan(0);
+      expect(providerPromptAt(provider, 0)).toContain("persona: none (plain assistant)");
+      expect(providerPromptAt(provider, 0)).toContain("affect: disabled");
+      assertSchemaValidStream(client.events());
+    } finally {
+      await stopGateway(gateway);
+    }
+  }, 90_000);
+
+  it("does not change route clearance or permission outcome after distress affect state changes", async () => {
+    provider = await MockOpenAIChatServer.start();
+    provider.enqueueScript({ text: ["steady"] });
+    provider.enqueueScript({
+      toolCalls: [{ id: "call_read_after_affect", name: "fs.read", args: { path: "README.md" } }]
+    });
+    provider.enqueueScript({ text: ["read ok"] });
+
+    const temp = await mkdtemp(join(tmpdir(), "fairy-gateway-affect-invariance-"));
+    const dataDir = join(temp, "data");
+    const workspaceRoot = join(temp, "workspace");
+    const configPath = join(temp, "fairy.yaml");
+    const token = "affect-invariance-token";
+    await mkdir(workspaceRoot, { recursive: true });
+    await writeFile(join(workspaceRoot, "README.md"), "workspace read ok", "utf8");
+    writeConfig(configPath, dataDir, token, provider.url, {
+      affect: ["  enabled: true"],
+      persona: ["  enabled: true"],
+      workspaceRoot
+    });
+    const gateway = startGateway(configPath);
+
+    try {
+      const port = await waitForGateway(gateway);
+      const client = await MockFairyClient.connect({ token, url: `ws://127.0.0.1:${port}` });
+      const created = await client.createSession("affect invariance");
+      const distressTurn = await sendTurnInputWithTimeout(client, created.sid, {
+        content: [{ kind: "text", text: "I am overwhelmed and scared" }]
+      }, 60000);
+      const distressAffect = await client.waitFor((event) =>
+        event.sid === created.sid &&
+        event.type === "affect.updated" &&
+        isPayloadRecord(event) &&
+        event.payload.cause === "user-distress",
+      30000);
+      const readTurn = await sendTurnInputWithTimeout(client, created.sid, {
+        content: [{ kind: "text", text: "read README.md" }]
+      }, 60000);
+      client.close();
+
+      expect(distressTurn.some((event) => event.type === "memory.written")).toBe(false);
+      expect(distressAffect).toMatchObject({
+        payload: { cause: "user-distress", stance: "warm" }
+      });
+      expect(readTurn.some((event) => event.type === "route.denied")).toBe(false);
+      expect(readTurn.find((event) => event.type === "tool.call" && isPayloadRecord(event) && event.payload.call_id === "call_read_after_affect")).toMatchObject({
+        payload: { tool: "fs.read" }
+      });
+      expect(readTurn.find((event) => event.type === "tool.result" && isPayloadRecord(event) && event.payload.call_id === "call_read_after_affect")).toMatchObject({
+        payload: { status: "ok" }
+      });
+      const audit = await fetch(`http://127.0.0.1:${port}/audit?limit=20&token=${token}`).then((response) => response.json()) as {
+        entries: { decision: string | null; op: string; tool: string | null }[];
+      };
+      expect(audit.entries.some((entry) => entry.op === "permission.decide" && entry.tool === "fs.read" && entry.decision === "allow")).toBe(true);
+      assertSchemaValidStream(client.events());
+    } finally {
+      await stopGateway(gateway);
     }
   }, 90_000);
 

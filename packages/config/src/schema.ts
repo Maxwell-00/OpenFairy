@@ -137,6 +137,27 @@ export const configSchema = {
       },
       required: ["reduce_at", "min_recent_turns"]
     },
+    persona: {
+      oneOf: [
+        { type: "string", enum: ["none"] },
+        {
+          type: "object",
+          additionalProperties: true,
+          properties: {
+            enabled: { type: "boolean" },
+            id: { type: "string", minLength: 1 },
+            root: { type: "string", minLength: 1 }
+          }
+        }
+      ]
+    },
+    affect: {
+      type: "object",
+      additionalProperties: true,
+      properties: {
+        enabled: { type: "boolean" }
+      }
+    },
     workspace: {
       type: "object",
       additionalProperties: true,

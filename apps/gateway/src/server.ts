@@ -228,6 +228,7 @@ export class MinimalGateway {
       modelGateway,
       permissionAskTimeoutMs: config.askTimeoutMs,
       permissionEngine,
+      personaRuntime: config.personaRuntime,
       toolContext: {
         artifactsDir: config.artifactsDir,
         env: process.env,

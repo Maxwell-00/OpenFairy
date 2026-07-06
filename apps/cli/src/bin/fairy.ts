@@ -2,6 +2,7 @@
 import { runDoctor } from "../doctor.js";
 import { runAudit, runChat, runSessions } from "../chat.js";
 import { runMemory } from "../memory.js";
+import { runAffect, runPersona } from "../persona.js";
 import { runResearch } from "../research.js";
 import { runReplay } from "../replay.js";
 
@@ -43,5 +44,15 @@ if (command === "research") {
   process.exit(0);
 }
 
-console.error("Usage: fairy <doctor|chat|sessions|audit|replay|memory|research>");
+if (command === "persona") {
+  await runPersona(args);
+  process.exit(0);
+}
+
+if (command === "affect") {
+  await runAffect(args);
+  process.exit(0);
+}
+
+console.error("Usage: fairy <doctor|chat|sessions|audit|replay|memory|research|persona|affect>");
 process.exit(1);

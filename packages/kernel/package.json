@@ -18,6 +18,7 @@
     "@fairy/memory": "workspace:*",
     "@fairy/model-gateway": "workspace:*",
     "@fairy/protocol": "workspace:*",
-    "@fairy/tools-std": "workspace:*"
+    "@fairy/tools-std": "workspace:*",
+    "yaml": "^2.8.1"
   }
 }

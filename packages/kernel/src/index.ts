@@ -34,6 +34,12 @@ import {
   type EgressGuardConfig,
   type PermissionProvenanceSummary
 } from "./governance.js";
+import {
+  AffectEngine,
+  renderPersonaAffectZone,
+  type AffectState,
+  type PersonaRuntime
+} from "./persona.js";
 
 export { assemblePrompt } from "./context.js";
 export type { AssembledPrompt, ContextConfig, ContextManifestPayload, ContextZoneName, ReductionStage } from "./context.js";
@@ -48,6 +54,16 @@ export {
   sensitiveContextFromMessages,
   sensitiveFingerprint
 } from "./governance.js";
+export {
+  AffectEngine,
+  bannedPersonaMatches,
+  bannedPersonaPatterns,
+  loadPersonaPack,
+  loadPersonaRuntime,
+  plainPersonaPack,
+  readPersonaSettings,
+  renderPersonaAffectZone
+} from "./persona.js";
 export type {
   EgressDecision,
   EgressGuardConfig,
@@ -59,6 +75,17 @@ export type {
   SensitiveContextItem,
   SensitiveMatch
 } from "./governance.js";
+export type {
+  AffectAppraisalInput,
+  AffectBounds,
+  AffectEnergy,
+  AffectStance,
+  AffectState,
+  AffectUpdateResult,
+  PersonaPack,
+  PersonaRuntime,
+  PersonaSettings
+} from "./persona.js";
 
 export const defaultSystemPrompt =
   "You are Fairy, a helpful bilingual (Chinese/English) AI companion. Be concise, capable, and honest.";
@@ -69,6 +96,7 @@ const toolSafetySystemPrompt =
 export type KernelEventType =
   | "approval.request"
   | "approval.resolved"
+  | "affect.updated"
   | "artifact.created"
   | "citation.recorded"
   | "context.manifest"
@@ -154,12 +182,14 @@ export interface TurnRunnerOptions {
   readonly modelGateway: ModelGateway;
   readonly permissionEngine?: PermissionEngine;
   readonly permissionAskTimeoutMs?: number;
+  readonly personaRuntime?: PersonaRuntime;
   readonly systemPrompt?: string;
   readonly toolContext?: Omit<ToolExecutionContext, "abort">;
   readonly tools?: ToolRegistry;
 }
 
 export interface RunTurnOptions {
+  readonly affectState?: AffectState;
   readonly channelTrust?: "trusted" | "untrusted";
   readonly sid: `ses_${string}`;
   readonly turn: number;
@@ -186,6 +216,11 @@ interface ActiveTurn {
 
 interface PendingApproval {
   readonly resolve: (decision: { actor: string; decision: ApprovalDecision }) => void;
+}
+
+interface AffectSession {
+  humorSuppressed: boolean;
+  state: AffectState;
 }
 
 interface ToolCall {
@@ -356,6 +391,8 @@ export class PermissionEngine {
 
 export class TurnRunner {
   readonly #active = new Map<string, ActiveTurn>();
+  readonly #affectEngine: AffectEngine | undefined;
+  readonly #affectSessions = new Map<string, AffectSession>();
   readonly #artifactsDir: string | undefined;
   readonly #auditLog: AuditLog | undefined;
   readonly #contextConfig: ContextConfig;
@@ -367,6 +404,7 @@ export class TurnRunner {
   readonly #pendingApprovals = new Map<string, PendingApproval>();
   readonly #permissionAskTimeoutMs: number;
   readonly #permissionEngine: PermissionEngine;
+  readonly #personaRuntime: PersonaRuntime | undefined;
   readonly #systemPrompt: string;
   readonly #toolContext: Omit<ToolExecutionContext, "abort"> | undefined;
   readonly #tools: ToolRegistry;
@@ -389,6 +427,14 @@ export class TurnRunner {
     this.#permissionEngine = options.permissionEngine ?? new PermissionEngine({
       ...(options.auditLog ? { auditLog: options.auditLog } : {})
     });
+    this.#personaRuntime = options.personaRuntime;
+    this.#affectEngine = options.personaRuntime
+      ? new AffectEngine({
+          baseline: options.personaRuntime.pack.affectBaseline,
+          bounds: options.personaRuntime.pack.affectBounds,
+          enabled: options.personaRuntime.affectEnabled
+        })
+      : undefined;
     this.#systemPrompt = options.systemPrompt ?? defaultSystemPrompt;
     this.#toolContext = options.toolContext;
     this.#tools = options.tools ?? new Map();
@@ -454,6 +500,11 @@ export class TurnRunner {
     let totalUsage: UsageSnapshot | undefined;
     let finishReason: RunTurnResult["finish_reason"] = "stop";
     let interrupted = false;
+    let completedCleanly = false;
+    let providerError = false;
+    let routeDenied = false;
+    let toolFailureCount = 0;
+    const affectSession = this.#personaRuntime ? this.#affectSessionFor(options.sid, options.affectState) : undefined;
 
     try {
       const inputEscalation = escalateLabelsForContent(options.input, options.labels);
@@ -467,6 +518,13 @@ export class TurnRunner {
         const toolCalls: ToolCall[] = [];
         let sawDone = false;
         const memoryDigest = await this.#buildMemoryDigest(options, currentLabels);
+        const personaZone = this.#personaRuntime && affectSession
+          ? renderPersonaAffectZone(this.#personaRuntime.pack, affectSession.state, {
+              affectEnabled: this.#personaRuntime.affectEnabled,
+              humorSuppressed: affectSession.humorSuppressed,
+              personaEnabled: this.#personaRuntime.enabled
+            })
+          : undefined;
         const assembled = assemblePrompt({
           config: this.#contextConfig,
           currentLabels,
@@ -476,6 +534,7 @@ export class TurnRunner {
           ...(memoryDigest ? { memoryDigest } : {}),
           model: this.#modelGateway.modelInfo("main"),
           modelGateway: this.#modelGateway,
+          ...(personaZone ? { personaZone } : {}),
           systemPrompt: this.#systemPrompt,
           ...(definitions.length > 0 ? { toolSafetyPrompt: toolSafetySystemPrompt } : {}),
           tools: definitions
@@ -523,6 +582,7 @@ export class TurnRunner {
           if (event.type === "route_denied") {
             sawDone = true;
             finishReason = "error";
+            routeDenied = true;
             await options.emit({
               labels: assembled.effectiveLabels,
               payload: event.payload,
@@ -569,6 +629,7 @@ export class TurnRunner {
           sawDone = true;
           totalUsage = combineUsage(totalUsage, event.usage);
           finishReason = event.finish_reason;
+          completedCleanly = event.finish_reason === "stop" && toolFailureCount === 0;
           await options.emit({
             labels: assembled.effectiveLabels,
             payload: {
@@ -586,6 +647,7 @@ export class TurnRunner {
         }
 
         if (toolCalls.length === 0) {
+          completedCleanly = true;
           await options.emit({
             labels: assembled.effectiveLabels,
             payload: {
@@ -628,6 +690,9 @@ export class TurnRunner {
 
         for (const call of toolCalls) {
           const toolResult = await this.#handleToolCall(call, options, active, assembled.effectiveLabels, assembled.messages);
+          if (toolResult.contextPayload.status === "error") {
+            toolFailureCount += 1;
+          }
           turnMessages.push({
             content: resultToContext(call, toolResult.contextPayload),
             labels: labelsFromUnknown(toolResult.contextPayload.labels, assembled.effectiveLabels),
@@ -649,22 +714,35 @@ export class TurnRunner {
           type: "turn.interrupted"
         });
       } else {
-        const providerError = error instanceof ProviderError ? error : undefined;
+        const providerIssue = error instanceof ProviderError ? error : undefined;
+        providerError = true;
         finishReason = "error";
         await options.emit({
           payload: {
-            auth: providerError?.auth ?? false,
+            auth: providerIssue?.auth ?? false,
             class: "ProviderError",
-            context_overflow: providerError?.context_overflow ?? false,
+            context_overflow: providerIssue?.context_overflow ?? false,
             message: redactText(error instanceof Error ? error.message : String(error)),
-            rate_limited: providerError?.rate_limited ?? false,
-            retryable: providerError?.retryable ?? false
+            rate_limited: providerIssue?.rate_limited ?? false,
+            retryable: providerIssue?.retryable ?? false
           },
           type: "error"
         });
       }
     } finally {
+      const affectUpdate = !interrupted
+        ? this.#nextAffectUpdateEvent(affectSession, {
+          completedCleanly,
+          providerError,
+          routeDenied,
+          toolFailureCount,
+          userText: options.input
+        })
+        : undefined;
       this.#active.delete(options.sid);
+      if (affectUpdate) {
+        await options.emit(affectUpdate);
+      }
     }
 
     return {
@@ -672,6 +750,60 @@ export class TurnRunner {
       ...(finishReason ? { finish_reason: finishReason } : {}),
       ...(totalUsage ? { usage: totalUsage } : {}),
       ...(interrupted ? { finish_reason: "cancelled" as const } : {})
+    };
+  }
+
+  #affectSessionFor(sid: string, override?: AffectState): AffectSession {
+    const existing = this.#affectSessions.get(sid);
+    if (existing && !override) {
+      return existing;
+    }
+    const baseline = this.#affectEngine?.baseline() ?? this.#personaRuntime?.pack.affectBaseline;
+    const session: AffectSession = {
+      humorSuppressed: false,
+      state: override ?? baseline ?? {
+        arousal: 0,
+        cause: "baseline",
+        energy: "medium",
+        stance: "neutral",
+        updated_at: "1970-01-01T00:00:00.000Z",
+        valence: 0
+      }
+    };
+    this.#affectSessions.set(sid, session);
+    return session;
+  }
+
+  #nextAffectUpdateEvent(
+    session: AffectSession | undefined,
+    input: {
+      readonly completedCleanly: boolean;
+      readonly providerError: boolean;
+      readonly routeDenied: boolean;
+      readonly toolFailureCount: number;
+      readonly userText: string;
+    }
+  ): KernelEvent | undefined {
+    if (!this.#personaRuntime || !this.#affectEngine || !session || !this.#personaRuntime.affectEnabled) {
+      return undefined;
+    }
+    const update = this.#affectEngine.update(session.state, input, session.humorSuppressed);
+    session.state = update.state;
+    session.humorSuppressed = update.humorSuppressed;
+    if (!update.changed) {
+      return undefined;
+    }
+    return {
+      labels: this.#personaRuntime.pack.labels,
+      payload: {
+        arousal: update.state.arousal,
+        cause: update.state.cause,
+        energy: update.state.energy,
+        stance: update.state.stance,
+        updated_at: update.state.updated_at,
+        valence: update.state.valence
+      },
+      type: "affect.updated"
     };
   }
 

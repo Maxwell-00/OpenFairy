@@ -236,4 +236,53 @@ describe("loadConfig", () => {
       }
     });
   });
+
+  it("accepts persona off switches and affect config", () => {
+    const cwd = makeTempDir();
+    const userConfigPath = join(cwd, "fairy.yaml");
+    writeFileSync(
+      userConfigPath,
+      [
+        "persona: none",
+        "affect:",
+        "  enabled: false"
+      ].join("\n")
+    );
+
+    expect(loadConfig({ cwd, userConfigPath }).config).toMatchObject({
+      affect: { enabled: false },
+      persona: "none"
+    });
+
+    writeFileSync(
+      userConfigPath,
+      [
+        "persona:",
+        "  enabled: false",
+        "  id: fairy",
+        "  root: extensions/personas",
+        "affect:",
+        "  enabled: true"
+      ].join("\n")
+    );
+
+    expect(loadConfig({ cwd, userConfigPath }).config).toMatchObject({
+      affect: { enabled: true },
+      persona: { enabled: false, id: "fairy" }
+    });
+  });
+
+  it("rejects malformed affect config", () => {
+    const cwd = makeTempDir();
+    const userConfigPath = join(cwd, "fairy.yaml");
+    writeFileSync(
+      userConfigPath,
+      [
+        "affect:",
+        "  enabled: sometimes"
+      ].join("\n")
+    );
+
+    expect(() => loadConfig({ cwd, userConfigPath })).toThrow(ConfigValidationError);
+  });
 });

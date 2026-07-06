@@ -1,5 +1,5 @@
 import { defaultDataDir, loadConfig } from "@fairy/config";
-import type { ContextConfig, EgressGuardConfig, PermissionRule } from "@fairy/kernel";
+import { loadPersonaRuntime, type ContextConfig, type EgressGuardConfig, type PermissionRule, type PersonaRuntime } from "@fairy/kernel";
 import { join, resolve } from "node:path";
 
 export interface GatewayCliOptions {
@@ -19,6 +19,7 @@ export interface GatewayRuntimeConfig {
   readonly host: "127.0.0.1";
   readonly maxToolIterations: number;
   readonly permissionRules: readonly PermissionRule[];
+  readonly personaRuntime: PersonaRuntime;
   readonly systemPrompt: string;
   readonly port: number;
   readonly workspaceRoot: string;
@@ -194,6 +195,7 @@ export const loadGatewayConfig = (
     host: "127.0.0.1",
     maxToolIterations: readMaxToolIterations(loaded.config),
     permissionRules: readPermissionRules(loaded.config),
+    personaRuntime: loadPersonaRuntime(loaded.config, cwd),
     systemPrompt: readSystemPrompt(loaded.config),
     port: options.port ?? configuredPort,
     workspaceRoot: readWorkspaceRoot(loaded.config, cwd)

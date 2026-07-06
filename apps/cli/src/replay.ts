@@ -118,6 +118,8 @@ const renderChronological = (events: readonly EventEnvelope[]): string[] => {
       lines.push(`turn ${event.turn} approval.request ${short(redactText(String(event.payload.summary ?? "")))}`);
     } else if (event.type === "approval.resolved" && isRecord(event.payload)) {
       lines.push(`turn ${event.turn} approval.resolved ${String(event.payload.decision ?? "?")}`);
+    } else if (event.type === "affect.updated" && isRecord(event.payload)) {
+      lines.push(`turn ${event.turn} affect.updated ${String(event.payload.stance ?? "?")}/${String(event.payload.energy ?? "?")} valence=${String(event.payload.valence ?? "?")} arousal=${String(event.payload.arousal ?? "?")} cause=${short(redactText(String(event.payload.cause ?? "")))}`);
     } else if (event.type === "route.denied" && isRecord(event.payload)) {
       const clearance = isRecord(event.payload.required_clearance)
         ? `${String(event.payload.required_clearance.sensitivity ?? "?")}/${String(event.payload.required_clearance.residency ?? "?")}`
@@ -162,7 +164,7 @@ const zoneTokens = (payload: Record<string, unknown>, zone: string): string => {
 
 const renderManifests = (events: readonly EventEnvelope[]): string[] => {
   const manifests = events.filter((event) => event.type === "context.manifest" && isRecord(event.payload));
-  const lines = ["turn model projected/budget/window stages system tools memory history input prefix"];
+  const lines = ["turn model projected/budget/window stages system tools persona memory history input prefix"];
   for (const event of manifests) {
     const payload = event.payload as Record<string, unknown>;
     const stages = Array.isArray(payload.reduction_stages_applied) && payload.reduction_stages_applied.length > 0
@@ -175,6 +177,7 @@ const renderManifests = (events: readonly EventEnvelope[]): string[] => {
       stages,
       zoneTokens(payload, "system"),
       zoneTokens(payload, "tools"),
+      zoneTokens(payload, "persona"),
       zoneTokens(payload, "memory"),
       zoneTokens(payload, "history"),
       zoneTokens(payload, "input"),

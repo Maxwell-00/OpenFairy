@@ -259,4 +259,72 @@ describe("fairy replay", () => {
     const diagnosticEvents = jsonEvents.filter((event) => ["error", "progress.update", "tool.call", "tool.result"].includes(event.type));
     expect(JSON.stringify(diagnosticEvents)).not.toContain("sk_test_1234567890abcdef");
   });
+
+  it("renders affect updates compactly and includes persona tokens in manifest view", async () => {
+    const dataDir = join(tmpdir(), `fairy-replay-affect-${Date.now()}`);
+    const sid = "ses_01J00000000000000000000000";
+    const sessionDir = join(dataDir, "sessions", sid);
+    await mkdir(sessionDir, { recursive: true });
+    const events = [
+      {
+        actor: "system",
+        id: "evt_01J00000000000000000000021",
+        labels: { residency: "global-ok", sensitivity: "internal" },
+        payload: {
+          budget: 6400,
+          model: "mock-model",
+          output_reserve: 1024,
+          prefix_hash: "sha256:persona",
+          projected_tokens: 1200,
+          reduction_stages_applied: [],
+          window: 8000,
+          zones: [
+            { estimated: true, name: "system", tokens: 12 },
+            { estimated: true, name: "tools", tokens: 0 },
+            { estimated: true, name: "persona", tokens: 44 },
+            { estimated: true, name: "memory", tokens: 0 },
+            { estimated: true, name: "history", tokens: 0 },
+            { estimated: true, name: "input", tokens: 8 }
+          ]
+        },
+        provenance: "agent",
+        sid,
+        ts: "2026-07-02T10:00:00.000Z",
+        turn: 1,
+        type: "context.manifest",
+        v: 1
+      },
+      {
+        actor: "agent",
+        id: "evt_01J00000000000000000000022",
+        labels: { residency: "global-ok", sensitivity: "internal" },
+        payload: {
+          arousal: 0.1,
+          cause: "user-thanks",
+          energy: "medium",
+          stance: "warm",
+          updated_at: "2026-07-02T10:00:00.000Z",
+          valence: 0.33
+        },
+        provenance: "agent",
+        sid,
+        ts: "2026-07-02T10:00:00.001Z",
+        turn: 1,
+        type: "affect.updated",
+        v: 1
+      }
+    ];
+    await writeFile(join(sessionDir, "log.jsonl"), events.map((event) => JSON.stringify(event)).join("\n"), "utf8");
+
+    const result = await readReplayLog({ dataDir, sid });
+    const rendered = renderReplay(result, { json: false, manifests: false });
+    const manifests = renderReplay(result, { json: false, manifests: true });
+    const json = renderReplay(result, { json: true, manifests: false });
+
+    expect(rendered).toContain("affect.updated warm/medium valence=0.33 arousal=0.1 cause=user-thanks");
+    expect(manifests).toContain("system tools persona memory");
+    expect(manifests).toContain(" 12 0 44 0 ");
+    expect(json).toContain("\"type\":\"affect.updated\"");
+    expect(json).toContain("\"updated_at\":\"2026-07-02T10:00:00.000Z\"");
+  });
 });

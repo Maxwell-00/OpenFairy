@@ -35,6 +35,10 @@ export interface AssemblePromptOptions {
     readonly content: string;
     readonly labels?: RequestLabels;
   };
+  readonly personaZone?: {
+    readonly content: string;
+    readonly labels?: RequestLabels;
+  };
   readonly systemPrompt: string;
   readonly toolSafetyPrompt?: string;
   readonly tools: readonly ToolDefinition[];
@@ -185,6 +189,7 @@ const snipOldTurns = (
 const tokenZones = (
   modelGateway: ModelGateway,
   systemContent: string,
+  personaContent: string,
   memoryDigest: string,
   tools: readonly ToolDefinition[],
   history: readonly ChatMessage[],
@@ -194,7 +199,7 @@ const tokenZones = (
     history: estimate(modelGateway, history),
     input: estimate(modelGateway, input),
     memory: memoryDigest ? estimate(modelGateway, memoryDigest) : 0,
-    persona: 0,
+    persona: personaContent ? estimate(modelGateway, personaContent) : 0,
     skills: 0,
     system: estimate(modelGateway, systemContent),
     task: 0,
@@ -223,8 +228,9 @@ export const assemblePrompt = (options: AssemblePromptOptions): AssembledPrompt 
   }
 
   const memoryDigest = options.memoryDigest?.content.trim() ? options.memoryDigest : undefined;
+  const personaZone = options.personaZone?.content.trim() ? options.personaZone : undefined;
 
-  let zones = tokenZones(options.modelGateway, systemContent, memoryDigest?.content ?? "", options.tools, [...history, ...currentTurnMessages], options.currentInput);
+  let zones = tokenZones(options.modelGateway, systemContent, personaZone?.content ?? "", memoryDigest?.content ?? "", options.tools, [...history, ...currentTurnMessages], options.currentInput);
   let projected = totalZoneTokens(zones) + outputReserve;
   const protectedTurns = protectedRecentTurns(history, options.config.minRecentTurns);
 
@@ -234,7 +240,7 @@ export const assemblePrompt = (options: AssemblePromptOptions): AssembledPrompt 
     if (l2.changed) {
       stages.add("L2");
     }
-    zones = tokenZones(options.modelGateway, systemContent, memoryDigest?.content ?? "", options.tools, [...history, ...currentTurnMessages], options.currentInput);
+    zones = tokenZones(options.modelGateway, systemContent, personaZone?.content ?? "", memoryDigest?.content ?? "", options.tools, [...history, ...currentTurnMessages], options.currentInput);
     projected = totalZoneTokens(zones) + outputReserve;
   }
 
@@ -244,12 +250,13 @@ export const assemblePrompt = (options: AssemblePromptOptions): AssembledPrompt 
     if (l3.changed) {
       stages.add("L3");
     }
-    zones = tokenZones(options.modelGateway, systemContent, memoryDigest?.content ?? "", options.tools, [...history, ...currentTurnMessages], options.currentInput);
+    zones = tokenZones(options.modelGateway, systemContent, personaZone?.content ?? "", memoryDigest?.content ?? "", options.tools, [...history, ...currentTurnMessages], options.currentInput);
     projected = totalZoneTokens(zones) + outputReserve;
   }
 
   const messages = [
     { content: systemContent, labels: defaultRequestLabels, role: "system" },
+    ...(personaZone ? [{ content: personaZone.content, labels: personaZone.labels ?? defaultRequestLabels, role: "system" } satisfies ChatMessage] : []),
     ...(memoryDigest ? [{ content: memoryDigest.content, labels: memoryDigest.labels ?? currentLabels, role: "system" } satisfies ChatMessage] : []),
     ...history,
     { content: options.currentInput, labels: currentLabels, role: "user" },
@@ -258,7 +265,7 @@ export const assemblePrompt = (options: AssemblePromptOptions): AssembledPrompt 
   const effectiveLabels = deriveMessageLabels(messages, currentLabels);
 
   const prefixHash = createHash("sha256")
-    .update(stableSerialize({ system: systemContent, tools: options.tools }))
+    .update(stableSerialize({ persona: personaZone?.content ?? "", system: systemContent, tools: options.tools }))
     .digest("hex")
     .slice(0, 16);
 

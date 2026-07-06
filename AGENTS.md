@@ -2,7 +2,9 @@
 
 Personal AI companion (ZZZ-Fairy-inspired): resident gateway, any OpenAI-compatible LLM as the brain, memory, low-latency voice, sandboxed execution, bounded persona. Single owner (Chidi), zh/en bilingual.
 
-**Current phase: design complete (3 external review rounds absorbed), pre-M0. No code exists yet.** The next work is M0 scaffolding, then an M1 vertical slice. Do not start new design documents or review rounds — build.
+> **If you are the reviewer Claude in a Cowork conversation** (gating briefs, countersigning reviews, owning docs): read [REVIEWER-HANDBOOK.md](REVIEWER-HANDBOOK.md) before doing anything else — it carries the accumulated review method, environment landmines, and standing rules.
+
+**Current phase: M2 (trust milestone) in progress.** M0–M1 are closed (text spine: gateway, TurnRunner, tools + permissions + audit, context ladder L1–L3, `fairy replay`, conformance kit, two live providers). For the live position, trust `git log` and the newest `tasks/*-review.md` files over any static phase note — including this one.
 
 ## Read this before writing code
 
@@ -47,11 +49,9 @@ Personal AI companion (ZZZ-Fairy-inspired): resident gateway, any OpenAI-compati
   - `docs-zh/` — owner-maintained Chinese translations. **Never edit.** When you change an English doc, tell the owner which files need re-translation.
   - `.auto-memory/` — Claude session memory; not project content.
 
-## What to build next (in order)
+## What to build next
 
-1. **M0:** monorepo scaffolding, CI, `packages/protocol` v0 (envelope + event registry + golden fixtures, labels field from day one), config loader with schema validation, `fairy doctor` skeleton. Exit criteria in ROADMAP.
-2. **M1 vertical slice first** (owner priority: usable early beats architecturally complete): CLI chat against one provider + `web.search`/`web.fetch` + sandboxed `shell` + session log/resume — a daily-usable Fairy within weeks. Then widen to the rest of M1 (second provider, conformance kit, L1–L3 context ladder, permission engine v1, `fairy replay`).
-3. Keep M1 slim per ROADMAP — budgets/alerts, third provider, L5 compaction are deliberately M2+.
+The current task brief is always the newest un-reviewed `tasks/M<x>-<nn>-*.md`; milestone scope and exit criteria live in [docs/ROADMAP.md](docs/ROADMAP.md). The implementation trail (brief → work report → review + countersignature, incl. every incident-derived rule) is in `tasks/` — read the latest 2–3 review files before starting anything.
 
 ## Scope guard
 

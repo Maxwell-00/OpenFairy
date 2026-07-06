@@ -146,4 +146,61 @@ describe("context engine", () => {
     expect(assembled.effectiveLabels).toEqual({ residency: "local-only", sensitivity: "personal" });
     expect(assembled.manifest.zones.find((zone) => zone.name === "memory")?.tokens).toBeGreaterThan(0);
   });
+
+  it("includes persona and affect zone tokens without lowering effective labels", () => {
+    const assembled = assemblePrompt({
+      config: { minRecentTurns: 4, reduceAt: 0.8 },
+      currentInput: "harmless follow-up",
+      currentLabels: { residency: "local-only", sensitivity: "secret" },
+      history: [],
+      model: gateway.modelInfo("main"),
+      modelGateway: gateway,
+      personaZone: {
+        content: [
+          "persona: fairy (Fairy)",
+          "style: dry and concise",
+          "affect: dry/low-energy; humor suppressed=false; cause=baseline"
+        ].join("\n"),
+        labels: { residency: "global-ok", sensitivity: "internal" }
+      },
+      systemPrompt: "system",
+      tools: []
+    });
+
+    const promptText = assembled.messages.map((message) => message.content).join("\n");
+    expect(promptText).toContain("persona: fairy (Fairy)");
+    expect(promptText).not.toContain("context.manifest");
+    expect(assembled.effectiveLabels).toEqual({ residency: "local-only", sensitivity: "secret" });
+    expect(assembled.manifest.zones.find((zone) => zone.name === "persona")?.tokens).toBeGreaterThan(0);
+  });
+
+  it("keeps prefix stable for the same persona state and limits affect changes to that line", () => {
+    const common = {
+      config: { minRecentTurns: 4, reduceAt: 0.8 },
+      currentInput: "same task",
+      history: [{ content: "same prior message", role: "user" as const }],
+      model: gateway.modelInfo("main"),
+      modelGateway: gateway,
+      systemPrompt: "system",
+      tools: [{ description: "read", name: "fs.read", params: { type: "object" } }]
+    };
+    const baselinePersona = [
+      "persona: fairy (Fairy)",
+      "style: dry and concise",
+      "affect: dry/low-energy; humor suppressed=false; cause=baseline"
+    ].join("\n");
+    const shiftedPersona = baselinePersona.replace("cause=baseline", "cause=user-thanks");
+    const first = assemblePrompt({ ...common, personaZone: { content: baselinePersona } });
+    const second = assemblePrompt({ ...common, personaZone: { content: baselinePersona } });
+    const third = assemblePrompt({ ...common, personaZone: { content: shiftedPersona } });
+
+    expect(second.manifest.prefix_hash).toBe(first.manifest.prefix_hash);
+    expect(third.manifest.prefix_hash).not.toBe(first.manifest.prefix_hash);
+    expect(third.messages[0]).toEqual(first.messages[0]);
+    expect(third.messages.slice(2)).toEqual(first.messages.slice(2));
+    expect(third.manifest.zones.find((zone) => zone.name === "tools")?.tokens).toBe(
+      first.manifest.zones.find((zone) => zone.name === "tools")?.tokens
+    );
+    expect(third.messages[1]?.content).toContain("cause=user-thanks");
+  });
 });
