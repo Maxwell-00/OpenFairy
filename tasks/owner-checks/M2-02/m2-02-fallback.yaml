@@ -1,0 +1,34 @@
+﻿models:
+  - id: cloud-under-cleared
+    transport: openai-chat
+    base_url: http://127.0.0.1:9/v1
+    model: unreachable-if-called
+    api_key_ref: secret://unused
+    data_clearance:
+      max_sensitivity: internal
+      residency: [global-ok]
+
+  - id: ollama-local
+    transport: openai-chat
+    base_url: http://127.0.0.1:11434/v1
+    model: qwen3.5:4b
+    api_key_ref: secret://ollama
+    capabilities:
+      tools: prompted
+    data_clearance:
+      max_sensitivity: secret
+      residency: [local-only]
+
+roles:
+  main:
+    model: cloud-under-cleared
+    fallback: [ollama-local]
+
+governance:
+  profile: balanced
+  home_regions: [cn]
+
+context:
+  reduce_at: 0.8
+  min_recent_turns: 4
+  memory_digest_budget: 600

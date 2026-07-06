@@ -1,0 +1,1 @@
+﻿{"memories":[{"confidence":0.8,"id":"mem_local_private_shell","kind":"preference","labels":{"residency":"local-only","sensitivity":"personal"},"scope":{"kind":"personal"},"source":{"event_id":"evt_01M20200000000000000000000","sid":"ses_01M20200000000000000000000","turn":1},"text":"my private shell is pwsh-local","use_count":0,"score":1.2194289171454846}]}
