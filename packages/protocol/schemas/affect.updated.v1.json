@@ -43,11 +43,19 @@
       "properties": {
         "arousal": {
           "maximum": 1,
-          "minimum": 0,
+          "minimum": -1,
           "type": "number"
         },
         "cause": {
           "minLength": 1,
+          "type": "string"
+        },
+        "energy": {
+          "enum": [
+            "low",
+            "medium",
+            "high"
+          ],
           "type": "string"
         },
         "stance": {
@@ -55,8 +63,13 @@
             "warm",
             "neutral",
             "focused",
-            "playful"
+            "playful",
+            "dry"
           ],
+          "type": "string"
+        },
+        "updated_at": {
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$",
           "type": "string"
         },
         "valence": {

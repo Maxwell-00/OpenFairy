@@ -124,7 +124,7 @@ Observed:
 
 - conformance: PASS
 
-Verdict: PASS / N/A / FAIL
+Verdict: PASS
 
 ## Overall
 

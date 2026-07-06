@@ -58,6 +58,8 @@ A single default table can't serve both "daily usability" and "psychological saf
 
 *Research label defaults enforced since M2-03: public web/search content defaults `public / global-ok`; authenticated/private page fetches default `personal / local-only` or stricter (mock provider fixtures carry these labels; snapshots and research tool results inherit them and compose into effective prompt labels before route clearance — §3).*
 
+*Profiles enforced since M2-04: `governance.profile` is a closed enum (`balanced | sovereign | cloud-friendly`) — invalid names fail config validation; per-profile default tables ship in code and are unit-tested as golden tables; a provider claiming `region-restricted` without declaring `regions` fails validation (§4).*
+
 ## 2. Provider clearance
 
 Model registry entries (model-gateway §2) gain:
@@ -74,8 +76,8 @@ data_clearance: { max_sensitivity: personal, residency: [global-ok], regions: [u
 |---|---|
 | **Role router** | Before dispatch: max label of assembled context vs. target clearance (filter), then `routing_hints` reorder surviving candidates. Violation → try fallback chain member with clearance → else refuse with visible `route.denied` event ("this needs your local model; it's offline"). Never silent downgrade of content, never silent upgrade of provider. *Enforced since M2-01: effective labels derive over the whole assembled prompt (history + tool results included); a denied provider receives **zero request bytes**; skipped candidates recorded in `model_trace`/progress; `regions ⊆ home_regions` set check + profile validation live in config. Since M2-03, research fetched/source labels (snapshots and `research.*` tool results) join effective prompt labels the same way memory digests do: gateway E2E asserts an authenticated `personal / local-only` snapshot raises effective labels mid-turn, denies the under-cleared primary (zero further request bytes), and completes on a cleared local fallback.* |
 | **Memory retrieval (MemoryGate)** | Admission conditioned on labels × channel trust (memory spec §4a). *Enforced since M2-02: retrieval gate runs with `phase: retrieval`; admitted memory labels join the effective prompt labels before model route clearance; an under-cleared route denies retrieval silently to the model (digest omits) and audits via `memory.gate.decision`; denials carry reason + record id, never `personal+` record text.* |
-| **Egress guard** | Outbound tool args scanned for `personal+` content and secret patterns (sandbox-security §4.4) |
-| **Telemetry/logs** | `personal+` content never enters traces or error reports; label-aware redaction middleware |
+| **Egress guard** | Outbound tool args scanned for `personal+` content and secret patterns (sandbox-security §4.4). *Enforced since M2-04 (v1): runs **before** tool network/process/container execution for tools matching `governance.egress.external_tools` (default `["web.*", "shell.run"]`); scans for secret patterns (API keys, tokens, bearer headers, private keys, context-anchored OTP — bare digits never fire) and exact `personal+`-labeled strings from current turn/tool-result/memory/research context; secret ⇒ always blocked, `personal` ⇒ blocked unless the tool is in `governance.egress.personal_allowed_tools` (default empty); denials surface via `tool.result` error + audit + `progress.update {stage: "egress.denied"}` with redacted reason codes — no new event type* |
+| **Telemetry/logs** | `personal+` content never enters traces or error reports; label-aware redaction middleware. *Since M2-04: deterministic redaction with reason code + hashed fingerprint (`[REDACTED:<reason>:<fingerprint>]`) applied to audit rows, `error`/diagnostic payloads, `tool.result` error messages, and CLI audit/replay diagnostic text; session JSONL source-of-truth facts are not blanket-mutated* |
 | **Export/delivery** | Sending an artifact to a channel below its sensitivity (e.g., `personal` report → group chat) → approval.request |
 
 ## 4. Residency policy
@@ -105,6 +107,6 @@ Labels are **invisible by default, inspectable always**: the user picks a profil
 
 ## 7. Tests (→ specs/evals.md)
 
-Conformance: seeded `secret`/`personal` content provably never reaches a non-cleared provider across the full tool/subagent/workflow matrix (0 tolerance, PRD metric); derivation property tests (max/intersection laws; hints-never-gate; escalation one-way); redaction verification on traces; per-profile golden default tables (a profile change is a config diff, testable).
+Conformance: seeded `secret`/`personal` content provably never reaches a non-cleared provider across the full tool/subagent/workflow matrix (0 tolerance, PRD metric); derivation property tests (max/intersection laws; hints-never-gate; escalation one-way); redaction verification on traces; per-profile golden default tables (a profile change is a config diff, testable). *Registered since M2-04 as `label.conformance` — deterministic PR-tier coverage in `packages/testing` (derivation laws, category escalation + near-miss, provider clearance, egress blocking, redaction diagnostics), mock providers/tools only.*
 
 **Friction canary** (safe-but-unusable is also a failure): ≤ 1 governance interruption per 50 turns in soak, **and** route-denied recovery — after a `route.denied`, the task still completes (cleared fallback, local model, or one-step declassification) ≥ 95% of the time; dead-ended denials are logged and reviewed weekly. Measured continuously from M2 (nightly) and gating at M5 soak.

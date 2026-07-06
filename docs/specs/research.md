@@ -40,7 +40,7 @@ The agent stays in charge of *judgment* (what to pursue, when enough is enough);
 
 - Research findings land in **artifacts** (reports) and the workspace **Chronicle** (memory spec §6a) — *not* in personal semantic memory. Facts *about the user* extracted from web content are never auto-persisted (untrusted provenance → MemoryGate default-deny); explicit user confirmation required.
 - Snapshots inherit `web:` provenance and default `public` sensitivity label; fetched content from authenticated/personal pages defaults `personal` (data-governance spec).
-- Injection defenses apply at full strength: quarantine wrapping, capability narrowing while snapshots are in the working set, egress guard on all outbound args. *M2 ships quarantine wrapping + provenance (asserted by `injection.research-v0`); capability narrowing and the egress guard are separate governance-hardening/M5 work (sandbox-security §4 status notes) — research quarantine must not be read as implying them.*
+- Injection defenses apply at full strength: quarantine wrapping, capability narrowing while snapshots are in the working set, egress guard on all outbound args. *M2 ships quarantine wrapping + provenance (asserted by `injection.research-v0`); since M2-04 the egress guard (sandbox-security §4.4) scans outbound tool args and research source provenance (`web:<domain>`) is summarized into the provenance-aware permission/audit context — but full M5 capability narrowing remains separate: research quarantine must not be read as implying it.*
 
 ## 5. Config sketch
 

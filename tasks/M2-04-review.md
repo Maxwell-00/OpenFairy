@@ -1,19 +1,23 @@
 # M2-04 Review — Governance Hardening v1
 
 Review date: 2026-07-06  
-Reviewed commit: `14ae2c5`  
+Reviewed implementation commit: `14ae2c5`  
+Reviewed owner-evidence commit: `5dad00c`  
 Task brief: `tasks/M2-04-governance-hardening.md`  
-Work report: `tasks/M2-04-work.md`
+Work report: `tasks/M2-04-work.md`  
+Owner evidence: `tasks/owner-checks/M2-04/`
 
 ## Verdict
 
-**ACCEPTED WITH NOTES / OWNER MANUAL CHECKS PENDING**
+**ACCEPTED WITH NOTES / CLOSED**
 
-M2-04 implementation is acceptable at code/CI-evidence level based on committed GitHub state and the reported green CI, with no runtime blocker found in this pass. Task-level close still requires owner evidence under `tasks/owner-checks/M2-04/`.
+M2-04 is accepted at task level. The implementation commit delivered the governance hardening slice, and the owner-evidence commit records deterministic fixture/mock validation for label conformance, egress guard behavior, redaction, config validation, provenance-aware permission context, CLI audit/replay behavior, and the optional acceptance tail.
 
 ## Reviewed scope
 
-Commit `14ae2c5` changes the expected M2-04 implementation surface:
+### Implementation commit `14ae2c5`
+
+M2-04 implementation changed the expected governance surface:
 
 - CLI audit/replay support
 - gateway config/server plumbing
@@ -23,22 +27,54 @@ Commit `14ae2c5` changes the expected M2-04 implementation surface:
 - testing e2e/evals
 - `tasks/M2-04-work.md`
 
-The work report states `docs/` and `docs-zh/` were not changed.
+The file tree did not include `docs/` or `docs-zh/`.
 
-## Acceptance summary
+### Owner-evidence commit `5dad00c`
 
-| Area | Result | Notes |
+Owner evidence added only `tasks/` material:
+
+- `tasks/M2-04-owner-manual-checks.md`
+- `tasks/M2-04-review.md`
+- `tasks/owner-checks/M2-04/*`
+
+No runtime code, no docs, no `docs-zh/`, and no owner DB artifacts were added.
+
+## Acceptance evidence
+
+### CI
+
+GitHub Actions for the implementation commit `14ae2c5` are green on the existing matrix. The action list shows `M2-04-work` / CI #45 for commit `14ae2c5`, on `main`, duration 2m10s.
+
+The owner-evidence summary also records GitHub Actions green on ubuntu + windows. The owner evidence commit itself is task/evidence-only, so the runtime acceptance baseline remains the implementation CI plus committed test logs.
+
+### Local / owner evidence
+
+The committed owner logs establish:
+
+- `@fairy/testing`: `7 passed | 1 skipped` test files; `44 passed | 1 skipped` tests.
+- `@fairy/kernel`: `3 passed` test files; `15 passed` tests.
+- `@fairy/config`: `1 passed` test file; `10 passed` tests.
+- `@fairy/cli`: `5 passed` test files; `7 passed` tests.
+- full `pnpm -r test`: no `Failed` marker; package summaries are green.
+- `pnpm -r typecheck`: all workspace packages report `Done`.
+- `pnpm dep-check`: no dependency violations.
+- `pnpm conformance`: mock mode 18/18 PASS.
+
+The committed owner summary lists M2-04 owner manual checks as PASS. Some sub-section placeholders remain in the summary, but the raw logs prove the pass conditions directly.
+
+## Deliverable verification
+
+| Deliverable | Result | Notes |
 |---|---:|---|
-| Preserve M2 invariants | PASS | Work report records M2 suites still visible: memory leakage/deletion permanence, research citation/zh-en/injection, plus new governance suites. |
-| Egress Guard v1 | PASS | Guard is reported to run before permission/tool execution; denials use existing event types and audit rows; no new canonical event type. |
-| Secret redaction / fingerprints | PASS | Redaction helpers include deterministic fingerprints and context-anchored OTP detection; raw secret diagnostics are avoided. |
-| Provenance-aware permission context v0 | PASS WITH NOTE | `channelTrust`, `sandboxProfile`, `untrustedContentPresent`, and provenance summary are now passed into permission context. Broad M5 capability narrowing remains out of scope. |
-| Governance profiles | PASS | Profile names closed to `balanced`, `sovereign`, `cloud-friendly`; config validation covers invalid profiles and region-restricted providers without regions. |
-| `label.conformance` | PASS | Deterministic suite registered; covers derivation, semantic escalation, near-miss, clearance, egress, redaction. |
-| `governance.friction-canary` | PASS | Deterministic PR-tier suite; reports interruption count, recovery, dead-end cases. |
-| CLI / replay | PASS | `fairy audit --json`; replay text renders egress denial; replay JSON redacts diagnostic payloads while preserving source events. |
-| docs/docs-zh boundary | PASS | No docs or docs-zh edits in implementation commit; docs proposals are in work report. |
-| CI | OWNER-STATED GREEN | User reports GitHub Actions green for `14ae2c5`. I did not receive a run URL in this pass; the implementation review should be amended with the run ID after owner evidence if desired. |
+| Preserve M2 invariants | PASS | Existing memory/research/injection/gateway suites still appear and pass. |
+| Egress Guard v1 | PASS | Egress guard blocks seeded secret and personal content before outbound tool execution; `web.*` and `shell.run` are covered in e2e/evals. |
+| Redaction middleware v1 | PASS | Diagnostic/audit/replay surfaces redact secret-shaped content with deterministic fingerprints; raw source-of-truth events are not blanket-mutated. |
+| Provenance-aware permission context v0 | PASS | Kernel tests show non-hardcoded permission context and provenance summary. Full M5 capability narrowing remains out of scope. |
+| Governance profiles + label defaults | PASS | Config tests validate closed profile enum, invalid profile rejection, region validation, and egress/permission config shape. |
+| Label conformance suite | PASS | `label.conformance` appears in `packages/testing` and covers derivation, escalation, near-miss, provider clearance, egress blocking, and redaction diagnostics. |
+| Friction canary v0 | PASS | `governance.friction-canary` appears and covers deterministic route-denied recovery reporting. |
+| CLI/replay visibility | PASS | Audit JSON/text and replay JSON/text paths are tested with redacted egress diagnostics. |
+| Docs boundary | PASS | Codex did not edit `docs/` or `docs-zh/`; proposed docs edits are in the work report only. |
 
 ## BLOCKER
 
@@ -46,46 +82,29 @@ None.
 
 ## CARRY-IN
 
-1. **Owner manual checks pending.**  
-   M2-04 cannot close until owner evidence is committed under `tasks/owner-checks/M2-04/`.
+1. **Reviewer-owned M2-04 docs pass.**  
+   Apply Codex's proposed docs edits to English specs after this close:
+   - `docs/specs/data-governance.md`
+   - `docs/specs/sandbox-security.md`
+   - `docs/specs/evals.md`
+   - `docs/specs/protocol.md`
+   - `docs/specs/research.md`
 
-2. **Reviewer-owned docs pass pending.**  
-   M2-04 work report proposes docs edits for `data-governance.md`, `sandbox-security.md`, `evals.md`, `protocol.md`, and `research.md`. Apply after owner checks and final close decision.
+2. **Owner-summary hygiene.**  
+   `tasks/owner-checks/M2-04/M2-04-owner-checks.md` still contains some `PASS / FAIL` placeholders and references implementation commit `14ae2c5` rather than evidence commit `5dad00c`. Not a runtime blocker, because raw logs and overall PASS are sufficient. A future evidence-cleanup commit may normalize it.
 
-3. **Session grants vs provenance rules should be watched.**  
-   Permission rules now accept provenance/trust fields. The permission engine still preserves existing session-grant behavior. If future tasks want untrusted-content rules to override existing session grants, make that explicit and test it.
+3. **M5 capability narrowing remains out of scope.**  
+   M2-04 passes accurate provenance/trust context and deterministic rule matching. Broad automatic narrowing based on untrusted-content presence remains an M5 hardening task unless scoped separately with causal attribution tests.
 
-4. **Personal/context matching is exact-string only.**  
-   Work report correctly records this as deterministic and not semantic paraphrase detection. Do not overstate it in docs.
+4. **Semantic personal-content redaction is intentionally narrow.**  
+   The implementation uses exact-string/context-derived matching, not semantic paraphrase detection. This is acceptable for M2. Broader semantic egress detection should be a later task with a false-positive budget.
 
 ## NIT
 
-- Work report says CI was not observed by Codex because no push occurred from its workspace. That is expected; reviewer/owner CI evidence comes from GitHub after user push.
-- Manual owner checks can be fixture/test-output based. No real web, real API key, or live provider is needed for M2-04.
+PowerShell evidence logs contain stderr wrapping and mojibake (`node.exe :`, `鉁?`). This is display noise. Vitest summaries are green and sufficient.
 
-## Verified / Owner-stated / Not verified
+## Final decision
 
-### Verified
+**M2-04 CLOSED.**
 
-- Commit `14ae2c5` file tree and diff scope.
-- No docs/docs-zh changes in commit file tree.
-- M2-04 work report content and local verification claims.
-- Config schema includes governance egress and provenance-aware permission rule fields.
-- Kernel exports/uses governance helpers and egress guard in the TurnRunner path.
-- `governance.evals.test.ts` includes `label.conformance` and `governance.friction-canary` suites.
-- Work report proposes docs edits only.
-
-### Owner-stated
-
-- GitHub Actions is green on the existing matrix for commit `14ae2c5`.
-
-### Not verified
-
-- I did not rerun commands locally.
-- I did not independently access a GitHub Actions run URL for `14ae2c5`.
-- Owner manual evidence is not yet present.
-
-## Decision
-
-**M2-04 implementation accepted with notes.**  
-Proceed to owner manual checks. Do not start M2-05 yet.
+The M2 trust stack now has MemoryGate/admission, MemoryStore/retrieval, research snapshot/citation pipeline, route clearance, egress guard, provenance-aware permission context, redaction, and deterministic label/friction suites. M2 is not yet closed: persona/affect, perception, context L4/L5, Chronicle/dream-cycle, and final docs pass remain.

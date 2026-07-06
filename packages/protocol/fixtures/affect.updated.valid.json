@@ -6,10 +6,12 @@
     "sensitivity": "internal"
   },
   "payload": {
-    "arousal": 0.4,
-    "cause": "User completed a task",
-    "stance": "warm",
-    "valence": 0.2
+    "arousal": -0.1,
+    "cause": "post-task decay toward baseline",
+    "energy": "low",
+    "stance": "dry",
+    "updated_at": "2026-07-02T10:00:00.000Z",
+    "valence": 0.15
   },
   "provenance": "agent",
   "sid": "ses_01J00000000000000000000000",

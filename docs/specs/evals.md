@@ -48,6 +48,8 @@ Eval requirements were scattered across seven specs; external review rightly not
 
 **M2-03 registration status:** `research.citation-precision` (deterministic v1 — each cited claim must resolve to a snapshot span containing required support terms; **no LLM judge in CI**, judge + human sampling stubbed for later), `research.zh-en-parity` (seeded bilingual fixtures; asserts comparable source grades plus ≥ 1 overlapping canonical source / source family), and `injection.research-v0` (research-page corpus asserted through the TurnRunner tool loop; see sandbox-security §4) run as named deterministic suites in `packages/testing` on every PR, mock providers only.
 
+**M2-04 registration status:** `label.conformance` (derivation laws, category escalation + near-miss non-escalation, provider clearance, egress blocking, redaction diagnostics) and `governance.friction-canary` v0 (deterministic route-denied-recovery report; **PR-tier fixture suite for now** — the nightly cadence and soak thresholds in the table above activate with real workloads) run as named deterministic suites in `packages/testing`, mock providers/tools only.
+
 ## 3. Judges & humans
 
 LLM judges run on the `critic` role with **frozen judge model versions per release** (judge drift invalidates trend lines; version bumps re-baseline). Human protocol: weekly sample review (tone/cringe/creepiness — the things judges are worst at), plus sign-off checklists at milestone gates. Judge-vs-human agreement is itself tracked; divergence > threshold triggers judge prompt revision.
