@@ -1,4 +1,4 @@
-import { AuditLog, escalateLabelsForContent, PermissionEngine, TurnRunner, type KernelEventType, type TurnRunnerHistory } from "@fairy/kernel";
+import { AuditLog, escalateLabelsForContent, PermissionEngine, profileDefaults, TurnRunner, type KernelEventType, type TurnRunnerHistory } from "@fairy/kernel";
 import { MemoryStore } from "@fairy/memory";
 import { createModelGateway, type ChatMessage, type RoutingHints } from "@fairy/model-gateway";
 import {
@@ -21,10 +21,6 @@ import { EventLog } from "./event-log.js";
 import type { GatewayRuntimeConfig } from "./config.js";
 
 export const gatewayVersion = "0.1.0-m1";
-
-const balancedDefaultLabels: Labels = { sensitivity: "internal", residency: "global-ok" };
-const sovereignDefaultLabels: Labels = { sensitivity: "personal", residency: "local-only" };
-const cloudFriendlyDefaultLabels: Labels = { sensitivity: "personal", residency: "global-ok" };
 
 interface SessionState {
   readonly sid: `ses_${string}`;
@@ -121,14 +117,11 @@ const governanceProfile = (config: Record<string, unknown>): "balanced" | "sover
 };
 
 const defaultLabelsForProfile = (profile: "balanced" | "sovereign" | "cloud-friendly"): Labels => {
-  if (profile === "sovereign") {
-    return sovereignDefaultLabels;
-  }
-  if (profile === "cloud-friendly") {
-    return cloudFriendlyDefaultLabels;
-  }
-  return balancedDefaultLabels;
+  return profileDefaults(profile).userInputTrusted.labels;
 };
+
+const channelTrustFromPayload = (payload: Record<string, unknown>): "trusted" | "untrusted" =>
+  payload.channel === "untrusted" || payload.channel === "external" ? "untrusted" : "trusted";
 
 const stablePayload = (payload: Record<string, unknown>): string =>
   JSON.stringify(Object.fromEntries(Object.entries(payload).sort(([left], [right]) => left.localeCompare(right))));
@@ -229,6 +222,7 @@ export class MinimalGateway {
       artifactsDir: config.artifactsDir,
       auditLog: this.#auditLog,
       contextConfig: config.contextConfig,
+      egressGuardConfig: config.egressGuardConfig,
       maxToolIterations: config.maxToolIterations,
       memoryStore: this.#memoryStore,
       modelGateway,
@@ -654,6 +648,7 @@ export class MinimalGateway {
 
     const labelEscalation = escalateLabelsForContent(text, inputLabels ?? this.#defaultLabels());
     const labels = labelEscalation.labels;
+    const channelTrust = channelTrustFromPayload(payload);
     const history: TurnRunnerHistory = { messages: [...state.history] };
     const turn = state.turn + 1;
     await this.#emit({
@@ -683,6 +678,7 @@ export class MinimalGateway {
       history,
       input: text,
       labels,
+      channelTrust,
       ...(routingHints ? { routingHints } : {}),
       sid,
       turn

@@ -17,6 +17,7 @@ interface SessionsOptions {
 
 interface AuditOptions {
   readonly gateway: string;
+  readonly json: boolean;
   readonly limit: number;
   readonly token: string;
 }
@@ -59,6 +60,7 @@ export const parseSessionsOptions = (args: readonly string[], env: NodeJS.Proces
 
 export const parseAuditOptions = (args: readonly string[], env: NodeJS.ProcessEnv = process.env): AuditOptions => ({
   gateway: readOption(args, "--gateway") ?? env.FAIRY_GATEWAY_URL ?? "ws://127.0.0.1:8787",
+  json: hasFlag(args, "--json"),
   limit: Number(readOption(args, "--limit") ?? "20"),
   token: readOption(args, "--token") ?? env.FAIRY_GATEWAY_TOKEN ?? "dev-token"
 });
@@ -353,6 +355,7 @@ export const runAudit = async (args: readonly string[]): Promise<void> => {
       id: number;
       actor: string | null;
       decision: string | null;
+      details: string | null;
       op: string;
       sid: string | null;
       tool: string | null;
@@ -360,9 +363,14 @@ export const runAudit = async (args: readonly string[]): Promise<void> => {
       turn: number | null;
     }[];
   };
+  if (options.json) {
+    console.log(JSON.stringify(body));
+    return;
+  }
   for (const entry of body.entries ?? []) {
+    const details = entry.details ? ` ${entry.details}` : "";
     console.log(
-      `${entry.id} ${entry.ts} ${entry.op} ${entry.tool ?? "-"} ${entry.decision ?? "-"} ${entry.sid ?? "-"}#${entry.turn ?? "-"} ${entry.actor ?? ""}`
+      `${entry.id} ${entry.ts} ${entry.op} ${entry.tool ?? "-"} ${entry.decision ?? "-"} ${entry.sid ?? "-"}#${entry.turn ?? "-"} ${entry.actor ?? ""}${details}`
     );
   }
 };

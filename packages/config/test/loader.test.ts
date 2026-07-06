@@ -178,4 +178,62 @@ describe("loadConfig", () => {
 
     expect(() => loadConfig({ cwd, userConfigPath })).toThrow(ConfigValidationError);
   });
+
+  it("rejects region-restricted model clearance without regions", () => {
+    const cwd = makeTempDir();
+    const userConfigPath = join(cwd, "fairy.yaml");
+    writeFileSync(
+      userConfigPath,
+      [
+        "models:",
+        "  - id: regional-cloud",
+        "    transport: openai-chat",
+        "    base_url: https://api.example.test/v1",
+        "    model: regional",
+        "    data_clearance:",
+        "      max_sensitivity: personal",
+        "      residency: [region-restricted]"
+      ].join("\n")
+    );
+
+    expect(() => loadConfig({ cwd, userConfigPath })).toThrow(ConfigValidationError);
+  });
+
+  it("validates governance egress and contextual permission rule config", () => {
+    const cwd = makeTempDir();
+    const userConfigPath = join(cwd, "fairy.yaml");
+    writeFileSync(
+      userConfigPath,
+      [
+        "governance:",
+        "  egress:",
+        "    external_tools: [\"web.*\", \"shell.run\"]",
+        "    personal_allowed_tools: [\"internal.export\"]",
+        "permissions:",
+        "  ask_timeout_s: 3",
+        "  rules:",
+        "    - tool: \"fs.read\"",
+        "      channel_trust: untrusted",
+        "      untrusted_content: true",
+        "      provenance: \"web:*\"",
+        "      decision: deny"
+      ].join("\n")
+    );
+
+    expect(loadConfig({ cwd, userConfigPath }).config).toMatchObject({
+      governance: {
+        egress: {
+          external_tools: ["web.*", "shell.run"],
+          personal_allowed_tools: ["internal.export"]
+        }
+      },
+      permissions: {
+        rules: [expect.objectContaining({
+          channel_trust: "untrusted",
+          provenance: "web:*",
+          untrusted_content: true
+        })]
+      }
+    });
+  });
 });

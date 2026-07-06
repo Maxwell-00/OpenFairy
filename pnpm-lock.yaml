@@ -41,6 +41,9 @@ importers:
       '@fairy/config':
         specifier: workspace:*
         version: link:../../packages/config
+      '@fairy/kernel':
+        specifier: workspace:*
+        version: link:../../packages/kernel
       '@fairy/memory':
         specifier: workspace:*
         version: link:../../packages/memory
@@ -134,6 +137,9 @@ importers:
       '@fairy/config':
         specifier: workspace:*
         version: link:../config
+      '@fairy/kernel':
+        specifier: workspace:*
+        version: link:../kernel
       '@fairy/memory':
         specifier: workspace:*
         version: link:../memory

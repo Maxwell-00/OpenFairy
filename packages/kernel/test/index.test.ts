@@ -1,6 +1,16 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { escalateLabelsForContent, PermissionEngine, TurnRunner, type KernelEvent } from "../src/index.js";
+import {
+  detectSensitiveText,
+  EgressGuard,
+  escalateLabelsForContent,
+  PermissionEngine,
+  profileDefaults,
+  redactText,
+  TurnRunner,
+  type KernelEvent,
+  type PermissionContext
+} from "../src/index.js";
 import { estimateTextTokens, type ModelGateway, type NormalizedModelEvent } from "@fairy/model-gateway";
 import type { EventEnvelope } from "@fairy/protocol";
 
@@ -189,6 +199,188 @@ describe("@fairy/kernel TurnRunner", () => {
       "ordinary public project note",
       { residency: "local-only", sensitivity: "secret" }
     ).labels).toEqual({ residency: "local-only", sensitivity: "secret" });
+
+    expect(escalateLabelsForContent(
+      "my doctor changed my prescription",
+      { residency: "global-ok", sensitivity: "internal" }
+    ).labels).toEqual({ residency: "local-only", sensitivity: "personal" });
+
+    expect(escalateLabelsForContent(
+      "tax return review with my accountant",
+      { residency: "global-ok", sensitivity: "internal" }
+    ).labels).toEqual({ residency: "local-only", sensitivity: "personal" });
+
+    expect(escalateLabelsForContent(
+      "lawsuit strategy with attorney",
+      { residency: "global-ok", sensitivity: "internal" }
+    ).labels).toEqual({ residency: "local-only", sensitivity: "personal" });
+  });
+
+  it("detects secrets with redaction and leaves numeric near-misses alone", () => {
+    const key = "sk_test_1234567890abcdef";
+    const redacted = redactText(`send ${key} now`);
+
+    expect(redacted).not.toContain(key);
+    expect(redacted).toMatch(/\[REDACTED:api_key:sha256:[a-f0-9]{16}\]/);
+    expect(redactText(`send ${key} now`)).toBe(redacted);
+    expect(detectSensitiveText("port 8787, amount 123456, date 2026-07-06")).toEqual([]);
+    expect(detectSensitiveText("verification code 123456").map((match) => match.reasonCode)).toContain("otp_code");
+  });
+
+  it("ships closed governance profile defaults", () => {
+    expect(profileDefaults("balanced").userInputTrusted).toEqual({
+      labels: { residency: "global-ok", sensitivity: "internal" },
+      preferLocal: true
+    });
+    expect(profileDefaults("sovereign").userInputTrusted.labels).toEqual({ residency: "local-only", sensitivity: "personal" });
+    expect(profileDefaults("cloud-friendly").authenticatedFetch.labels).toEqual({ residency: "region-restricted", sensitivity: "personal" });
+    expect(profileDefaults("balanced").webSearchContent.labels).toEqual({ residency: "global-ok", sensitivity: "public" });
+  });
+
+  it("blocks egress secrets before a tool executes and redacts diagnostics", async () => {
+    let executed = false;
+    let calls = 0;
+    const gateway: ModelGateway = {
+      estimateTokens(input) {
+        return { estimated: true, tokens: estimateTextTokens(input) };
+      },
+      async *generate() {
+        calls += 1;
+        if (calls > 1) {
+          yield { finish_reason: "stop", type: "done", usage: { estimated: true, input_tokens: 1, output_tokens: 0 } };
+          return;
+        }
+        yield {
+          args: { url: "https://example.test/?token=sk_test_1234567890abcdef" },
+          call_id: "call_secret_fetch",
+          name: "web.fetch",
+          type: "tool_call"
+        };
+      },
+      modelInfo() {
+        return { context_window: 8000, id: "mock-main", max_output: 1024, model: "mock-model" };
+      }
+    };
+    const emitted: KernelEvent[] = [];
+    const runner = new TurnRunner({
+      egressGuard: new EgressGuard(),
+      modelGateway: gateway,
+      permissionEngine: new PermissionEngine({ rules: [{ decision: "allow", tool: "web.*" }] }),
+      toolContext: { artifactsDir: process.cwd(), env: process.env, workspaceRoot: process.cwd() },
+      tools: new Map([[
+        "web.fetch",
+        {
+          description: "test web fetch",
+          labels_out: labels,
+          name: "web.fetch",
+          params: { type: "object" },
+          async execute() {
+            executed = true;
+            return { content: "should not run", labels, provenance: "tool:web.fetch" };
+          }
+        }
+      ]])
+    });
+
+    await runner.runTurn({
+      emit: makeEmit(emitted),
+      history: { messages: [] },
+      input: "fetch",
+      labels,
+      sid: "ses_01J00000000000000000000005",
+      turn: 1
+    });
+
+    expect(executed).toBe(false);
+    expect(emitted.map((event) => event.type)).toEqual(["context.manifest", "tool.call", "progress.update", "tool.result", "context.manifest", "turn.final"]);
+    expect(JSON.stringify(emitted)).not.toContain("sk_test_1234567890abcdef");
+    expect(emitted.find((event) => event.type === "progress.update")?.payload).toMatchObject({
+      reason_code: "api_key",
+      stage: "egress.denied"
+    });
+    expect(emitted.find((event) => event.type === "tool.result")?.payload).toMatchObject({
+      egress: { label_class: "secret", reason_code: "api_key" },
+      reason_code: "egress_denied",
+      status: "error"
+    });
+  });
+
+  it("passes non-hardcoded permission context with provenance summary", async () => {
+    class CapturingPermissionEngine extends PermissionEngine {
+      seen: PermissionContext | undefined;
+
+      override decide(tool: string, args: Record<string, unknown>, ctx: PermissionContext) {
+        this.seen = ctx;
+        return super.decide(tool, args, ctx);
+      }
+    }
+
+    const permissionEngine = new CapturingPermissionEngine({ rules: [{ decision: "allow", tool: "fs.read" }] });
+    let calls = 0;
+    const gateway: ModelGateway = {
+      estimateTokens(input) {
+        return { estimated: true, tokens: estimateTextTokens(input) };
+      },
+      async *generate() {
+        calls += 1;
+        if (calls > 1) {
+          yield { finish_reason: "stop", type: "done", usage: { estimated: true, input_tokens: 1, output_tokens: 0 } };
+          return;
+        }
+        yield { args: { path: "README.md" }, call_id: "call_read", name: "fs.read", type: "tool_call" };
+      },
+      modelInfo() {
+        return { context_window: 8000, id: "mock-main", max_output: 1024, model: "mock-model" };
+      }
+    };
+    const emitted: KernelEvent[] = [];
+    const runner = new TurnRunner({
+      modelGateway: gateway,
+      permissionEngine,
+      toolContext: { artifactsDir: process.cwd(), env: process.env, workspaceRoot: process.cwd() },
+      tools: new Map([[
+        "fs.read",
+        {
+          description: "test read",
+          labels_out: labels,
+          name: "fs.read",
+          params: { type: "object" },
+          async execute() {
+            return { content: "ok", labels, provenance: "tool:fs.read" };
+          }
+        }
+      ]])
+    });
+
+    await runner.runTurn({
+      channelTrust: "untrusted",
+      emit: makeEmit(emitted),
+      history: {
+        messages: [{
+          content: JSON.stringify({
+            provenance: "web:attack.example.test",
+            result: "--- FAIRY QUARANTINE BEGIN ---\nmalicious page text\n--- FAIRY QUARANTINE END ---"
+          }),
+          labels: { residency: "global-ok", sensitivity: "public" },
+          role: "tool",
+          tool_call_id: "call_prev",
+          turn: 1
+        }]
+      },
+      input: "read",
+      labels,
+      sid: "ses_01J00000000000000000000006",
+      turn: 2
+    });
+
+    expect(permissionEngine.seen).toMatchObject({
+      channelTrust: "untrusted",
+      provenanceSummary: {
+        untrusted: ["web:attack.example.test"],
+        untrustedContentPresent: true
+      },
+      untrustedContentPresent: true
+    });
   });
 
   it("passes semantically escalated labels to the model gateway before generation", async () => {

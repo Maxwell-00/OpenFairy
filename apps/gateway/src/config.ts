@@ -1,5 +1,5 @@
 import { defaultDataDir, loadConfig } from "@fairy/config";
-import type { ContextConfig, PermissionRule } from "@fairy/kernel";
+import type { ContextConfig, EgressGuardConfig, PermissionRule } from "@fairy/kernel";
 import { join, resolve } from "node:path";
 
 export interface GatewayCliOptions {
@@ -15,6 +15,7 @@ export interface GatewayRuntimeConfig {
   readonly config: Record<string, unknown>;
   readonly contextConfig: ContextConfig;
   readonly dataDir: string;
+  readonly egressGuardConfig: EgressGuardConfig;
   readonly host: "127.0.0.1";
   readonly maxToolIterations: number;
   readonly permissionRules: readonly PermissionRule[];
@@ -86,11 +87,28 @@ const readPermissionRules = (config: Record<string, unknown>): PermissionRule[] 
       return [];
     }
     return [{
+      ...(rule.channel_trust === "trusted" || rule.channel_trust === "untrusted" ? { channelTrust: rule.channel_trust } : {}),
       decision,
       ...(typeof rule.path === "string" ? { path: rule.path } : {}),
-      tool: rule.tool
+      ...(typeof rule.provenance === "string" ? { provenance: rule.provenance } : {}),
+      tool: rule.tool,
+      ...(typeof rule.untrusted_content === "boolean" ? { untrustedContent: rule.untrusted_content } : {})
     }];
   });
+};
+
+const readStringArray = (value: unknown): string[] =>
+  Array.isArray(value) ? value.filter((item): item is string => typeof item === "string" && item.length > 0) : [];
+
+const readEgressGuardConfig = (config: Record<string, unknown>): EgressGuardConfig => {
+  const governance = readBlock(config, "governance");
+  const egress = isRecord(governance.egress) ? governance.egress : {};
+  const externalTools = readStringArray(egress.external_tools);
+  const personalAllowedTools = readStringArray(egress.personal_allowed_tools);
+  return {
+    ...(externalTools.length > 0 ? { externalTools } : {}),
+    ...(personalAllowedTools.length > 0 ? { personalAllowedTools } : {})
+  };
 };
 
 const readWorkspaceRoot = (config: Record<string, unknown>, cwd: string): string => {
@@ -172,6 +190,7 @@ export const loadGatewayConfig = (
     config: loaded.config,
     contextConfig: readContextConfig(loaded.config),
     dataDir,
+    egressGuardConfig: readEgressGuardConfig(loaded.config),
     host: "127.0.0.1",
     maxToolIterations: readMaxToolIterations(loaded.config),
     permissionRules: readPermissionRules(loaded.config),

@@ -1,4 +1,5 @@
 import { defaultDataDir } from "@fairy/config";
+import { redactDiagnostics, redactText } from "@fairy/kernel";
 import { validateEvent, type EventEnvelope } from "@fairy/protocol";
 import { readFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
@@ -87,6 +88,13 @@ const payloadText = (payload: unknown): string => {
 const short = (value: string, max = 100): string =>
   value.length <= max ? value : `${value.slice(0, max)}...`;
 
+const diagnosticEventTypes = new Set(["approval.request", "approval.resolved", "audit.appended", "error", "progress.update", "tool.call", "tool.result"]);
+
+const redactedEventForJson = (event: EventEnvelope): EventEnvelope =>
+  diagnosticEventTypes.has(event.type)
+    ? { ...event, payload: redactDiagnostics(event.payload) }
+    : event;
+
 const renderChronological = (events: readonly EventEnvelope[]): string[] => {
   const lines: string[] = [];
   const deltas = new Map<number, string>();
@@ -99,42 +107,44 @@ const renderChronological = (events: readonly EventEnvelope[]): string[] => {
       continue;
     }
     if (event.type === "turn.input") {
-      lines.push(`turn ${event.turn} > ${short(payloadText(event.payload))}`);
+      lines.push(`turn ${event.turn} > ${short(redactText(payloadText(event.payload)))}`);
     } else if (event.type === "tool.call" && isRecord(event.payload)) {
       lines.push(`turn ${event.turn} tool.call ${String(event.payload.tool ?? "?")} ${String(event.payload.call_id ?? "")}`);
     } else if (event.type === "tool.result" && isRecord(event.payload)) {
-      lines.push(`turn ${event.turn} tool.result ${String(event.payload.call_id ?? "?")} ${String(event.payload.status ?? "?")} ${String(event.payload.provenance ?? "")}`);
+      const egress = isRecord(event.payload.egress) ? event.payload.egress : undefined;
+      const reason = egress && typeof egress.reason_code === "string" ? ` egress.denied ${egress.reason_code}` : "";
+      lines.push(`turn ${event.turn} tool.result ${String(event.payload.call_id ?? "?")} ${String(event.payload.status ?? "?")} ${String(event.payload.provenance ?? "")}${reason}`);
     } else if (event.type === "approval.request" && isRecord(event.payload)) {
-      lines.push(`turn ${event.turn} approval.request ${short(String(event.payload.summary ?? ""))}`);
+      lines.push(`turn ${event.turn} approval.request ${short(redactText(String(event.payload.summary ?? "")))}`);
     } else if (event.type === "approval.resolved" && isRecord(event.payload)) {
       lines.push(`turn ${event.turn} approval.resolved ${String(event.payload.decision ?? "?")}`);
     } else if (event.type === "route.denied" && isRecord(event.payload)) {
       const clearance = isRecord(event.payload.required_clearance)
         ? `${String(event.payload.required_clearance.sensitivity ?? "?")}/${String(event.payload.required_clearance.residency ?? "?")}`
         : "?";
-      lines.push(`turn ${event.turn} route.denied ${String(event.payload.role ?? "?")} ${clearance} ${short(String(event.payload.reason ?? ""))}`);
+      lines.push(`turn ${event.turn} route.denied ${String(event.payload.role ?? "?")} ${clearance} ${short(redactText(String(event.payload.reason ?? "")))}`);
     } else if (event.type === "memory.gate.decision" && isRecord(event.payload)) {
-      lines.push(`turn ${event.turn} memory.gate.decision phase=${String(event.payload.phase ?? "?")} ${String(event.payload.decision ?? "?")} ${String(event.payload.memory_id ?? "?")} ${short(String(event.payload.reason ?? ""))}`);
+      lines.push(`turn ${event.turn} memory.gate.decision phase=${String(event.payload.phase ?? "?")} ${String(event.payload.decision ?? "?")} ${String(event.payload.memory_id ?? "?")} ${short(redactText(String(event.payload.reason ?? "")))}`);
     } else if (event.type === "memory.written" && isRecord(event.payload)) {
       lines.push(`turn ${event.turn} memory.written ${String(event.payload.memory_id ?? "?")} ${String(event.payload.tier ?? "?")}`);
     } else if (event.type === "memory.deleted" && isRecord(event.payload)) {
-      lines.push(`turn ${event.turn} memory.deleted ${String(event.payload.memory_id ?? "?")} ${short(String(event.payload.reason ?? ""))}`);
+      lines.push(`turn ${event.turn} memory.deleted ${String(event.payload.memory_id ?? "?")} ${short(redactText(String(event.payload.reason ?? "")))}`);
     } else if (event.type === "snapshot.created" && isRecord(event.payload)) {
       lines.push(`turn ${event.turn} snapshot.created ${String(event.payload.snapshot_ref ?? "?")} ${short(String(event.payload.url ?? ""))}`);
     } else if (event.type === "citation.recorded" && isRecord(event.payload)) {
       const source = isRecord(event.payload.source) ? event.payload.source : {};
-      lines.push(`turn ${event.turn} citation.recorded ${String(source.snapshot_ref ?? "?")} ${String(event.payload.grade ?? "?")} ${short(String(event.payload.claim ?? ""))}`);
+      lines.push(`turn ${event.turn} citation.recorded ${String(source.snapshot_ref ?? "?")} ${String(event.payload.grade ?? "?")} ${short(redactText(String(event.payload.claim ?? "")))}`);
     } else if (event.type === "sourceset.reviewed" && isRecord(event.payload)) {
       const sources = Array.isArray(event.payload.sources) ? event.payload.sources.length : 0;
       const warnings = Array.isArray(event.payload.warnings) ? event.payload.warnings.join(",") : "";
       lines.push(`turn ${event.turn} sourceset.reviewed ${String(event.payload.decision ?? "?")} sources=${sources}${warnings ? ` warnings=${short(warnings)}` : ""}`);
     } else if (event.type === "turn.final") {
       const streamed = deltas.get(event.turn);
-      lines.push(`turn ${event.turn} < ${short(streamed || payloadText(event.payload))}`);
+      lines.push(`turn ${event.turn} < ${short(redactText(streamed || payloadText(event.payload)))}`);
     } else if (event.type === "turn.interrupted" && isRecord(event.payload)) {
       lines.push(`turn ${event.turn} interrupted ${String(event.payload.reason ?? "?")}`);
     } else if (event.type === "error" && isRecord(event.payload)) {
-      lines.push(`turn ${event.turn} error ${String(event.payload.class ?? "Error")}: ${String(event.payload.message ?? "")}`);
+      lines.push(`turn ${event.turn} error ${String(event.payload.class ?? "Error")}: ${redactText(String(event.payload.message ?? ""))}`);
     } else if (event.type === "session.created") {
       lines.push(`session ${event.sid} created`);
     } else if (event.type === "session.resumed") {
@@ -177,7 +187,7 @@ const renderManifests = (events: readonly EventEnvelope[]): string[] => {
 const renderTurn = (events: readonly EventEnvelope[], turn: number): string[] =>
   events
     .filter((event) => event.turn === turn)
-    .map((event) => `${event.id} ${event.type} ${JSON.stringify(event.payload)}`);
+    .map((event) => `${event.id} ${event.type} ${JSON.stringify(redactDiagnostics(event.payload))}`);
 
 export const renderReplay = (result: ReplayReadResult, options: Pick<ReplayOptions, "json" | "manifests" | "turn">): string => {
   if (options.json) {
@@ -188,7 +198,7 @@ export const renderReplay = (result: ReplayReadResult, options: Pick<ReplayOptio
         : result.events;
     return [
       ...result.warnings.map((warning) => JSON.stringify({ type: "warning", warning })),
-      ...events.map((event) => JSON.stringify(event))
+      ...events.map((event) => JSON.stringify(redactedEventForJson(event)))
     ].join("\n");
   }
 

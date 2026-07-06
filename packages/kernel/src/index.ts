@@ -23,12 +23,42 @@ import { mkdir, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { assemblePrompt, type ContextConfig } from "./context.js";
-import { escalateLabelsForContent } from "./governance.js";
+import {
+  EgressGuard,
+  escalateLabelsForContent,
+  provenanceSummaryFromMessages,
+  redactDiagnostics,
+  redactText,
+  sensitiveContextFromMessages,
+  type EgressDecision,
+  type EgressGuardConfig,
+  type PermissionProvenanceSummary
+} from "./governance.js";
 
 export { assemblePrompt } from "./context.js";
 export type { AssembledPrompt, ContextConfig, ContextManifestPayload, ContextZoneName, ReductionStage } from "./context.js";
-export { escalateLabelsForContent } from "./governance.js";
-export type { EscalationResult, LabelEscalation } from "./governance.js";
+export {
+  detectSensitiveText,
+  EgressGuard,
+  escalateLabelsForContent,
+  profileDefaults,
+  provenanceSummaryFromMessages,
+  redactDiagnostics,
+  redactText,
+  sensitiveContextFromMessages,
+  sensitiveFingerprint
+} from "./governance.js";
+export type {
+  EgressDecision,
+  EgressGuardConfig,
+  EscalationResult,
+  GovernanceProfile,
+  GovernanceProfileDefaults,
+  LabelEscalation,
+  PermissionProvenanceSummary,
+  SensitiveContextItem,
+  SensitiveMatch
+} from "./governance.js";
 
 export const defaultSystemPrompt =
   "You are Fairy, a helpful bilingual (Chinese/English) AI companion. Be concise, capable, and honest.";
@@ -71,16 +101,22 @@ export type PermissionDecision = "allow" | "ask" | "deny";
 export type ApprovalDecision = "once" | "session" | "deny";
 
 export interface PermissionRule {
+  readonly channelTrust?: "trusted" | "untrusted";
   readonly tool: string;
   readonly path?: string;
+  readonly provenance?: string;
   readonly decision: PermissionDecision;
+  readonly untrustedContent?: boolean;
 }
 
 export interface PermissionContext {
   readonly channelTrust: "trusted" | "untrusted";
   readonly mode: "chat" | "plan" | "loop" | "workflow";
+  readonly provenanceSummary: PermissionProvenanceSummary;
+  readonly sandboxProfile: "safe" | "dev" | "trusted";
   readonly sid: `ses_${string}`;
   readonly turn: number;
+  readonly untrustedContentPresent: boolean;
   readonly workspaceRoot: string;
 }
 
@@ -110,6 +146,8 @@ export interface TurnRunnerOptions {
   readonly artifactsDir?: string;
   readonly auditLog?: AuditLog;
   readonly contextConfig?: Partial<ContextConfig>;
+  readonly egressGuard?: EgressGuard;
+  readonly egressGuardConfig?: EgressGuardConfig;
   readonly maxToolIterations?: number;
   readonly memoryGate?: MemoryGate;
   readonly memoryStore?: MemoryStore;
@@ -122,6 +160,7 @@ export interface TurnRunnerOptions {
 }
 
 export interface RunTurnOptions {
+  readonly channelTrust?: "trusted" | "untrusted";
   readonly sid: `ses_${string}`;
   readonly turn: number;
   readonly input: string;
@@ -173,10 +212,33 @@ const ruleMatches = (rule: PermissionRule, tool: string, args: Record<string, un
   if (!globToRegExp(rule.tool).test(tool)) {
     return false;
   }
+  // Additional context dimensions are checked by PermissionEngine.decide, where the
+  // full permission context is available.
   if (!rule.path) {
     return true;
   }
   return typeof args.path === "string" && globToRegExp(rule.path).test(args.path);
+};
+
+const contextualRuleMatches = (
+  rule: PermissionRule,
+  tool: string,
+  args: Record<string, unknown>,
+  ctx: PermissionContext
+): boolean => {
+  if (!ruleMatches(rule, tool, args)) {
+    return false;
+  }
+  if (rule.channelTrust && rule.channelTrust !== ctx.channelTrust) {
+    return false;
+  }
+  if (rule.untrustedContent !== undefined && rule.untrustedContent !== ctx.untrustedContentPresent) {
+    return false;
+  }
+  if (rule.provenance && !ctx.provenanceSummary.recent.some((item) => globToRegExp(rule.provenance!).test(item))) {
+    return false;
+  }
+  return true;
 };
 
 const combineUsage = (left: UsageSnapshot | undefined, right: UsageSnapshot): UsageSnapshot => ({
@@ -246,7 +308,7 @@ export class AuditLog {
       entry.tool ?? null,
       entry.decision ?? null,
       entry.actor ?? null,
-      entry.details === undefined ? null : JSON.stringify(entry.details)
+      entry.details === undefined ? null : JSON.stringify(redactDiagnostics(entry.details))
     );
   }
 
@@ -284,7 +346,7 @@ export class PermissionEngine {
       return "allow";
     }
 
-    return this.#rules.find((rule) => ruleMatches(rule, tool, args))?.decision ?? "ask";
+    return this.#rules.find((rule) => contextualRuleMatches(rule, tool, args, ctx))?.decision ?? "ask";
   }
 
   grantSession(sid: string, tool: string): void {
@@ -297,6 +359,7 @@ export class TurnRunner {
   readonly #artifactsDir: string | undefined;
   readonly #auditLog: AuditLog | undefined;
   readonly #contextConfig: ContextConfig;
+  readonly #egressGuard: EgressGuard;
   readonly #maxToolIterations: number;
   readonly #memoryGate: MemoryGate;
   readonly #memoryStore: MemoryStore | undefined;
@@ -317,6 +380,7 @@ export class TurnRunner {
       ...(options.contextConfig?.memoryDigestBudget !== undefined ? { memoryDigestBudget: options.contextConfig.memoryDigestBudget } : {}),
       reduceAt: options.contextConfig?.reduceAt ?? 0.8
     };
+    this.#egressGuard = options.egressGuard ?? new EgressGuard(options.egressGuardConfig);
     this.#maxToolIterations = options.maxToolIterations ?? 16;
     this.#memoryGate = options.memoryGate ?? new MemoryGate();
     this.#memoryStore = options.memoryStore;
@@ -563,7 +627,7 @@ export class TurnRunner {
         });
 
         for (const call of toolCalls) {
-          const toolResult = await this.#handleToolCall(call, options, active, assembled.effectiveLabels);
+          const toolResult = await this.#handleToolCall(call, options, active, assembled.effectiveLabels, assembled.messages);
           turnMessages.push({
             content: resultToContext(call, toolResult.contextPayload),
             labels: labelsFromUnknown(toolResult.contextPayload.labels, assembled.effectiveLabels),
@@ -592,7 +656,7 @@ export class TurnRunner {
             auth: providerError?.auth ?? false,
             class: "ProviderError",
             context_overflow: providerError?.context_overflow ?? false,
-            message: error instanceof Error ? error.message : String(error),
+            message: redactText(error instanceof Error ? error.message : String(error)),
             rate_limited: providerError?.rate_limited ?? false,
             retryable: providerError?.retryable ?? false
           },
@@ -668,7 +732,7 @@ export class TurnRunner {
         labels,
         payload: {
           class: "MemoryProjectionError",
-          message: error instanceof Error ? error.message : String(error),
+          message: redactText(error instanceof Error ? error.message : String(error)),
           memory_id: decision.memory_id,
           retryable: false
         },
@@ -697,7 +761,7 @@ export class TurnRunner {
         ? this.#modelGateway.canRoute("main", routeLabels, options.routingHints).ok
         : true;
       const gate = evaluateRetrievalGate(candidate, {
-        channelTrust: "trusted",
+        channelTrust: options.channelTrust ?? "trusted",
         mode: "chat",
         requestLabels: currentLabels,
         routeAllowed,
@@ -732,19 +796,62 @@ export class TurnRunner {
     call: ToolCall,
     options: RunTurnOptions,
     active: ActiveTurn,
-    currentLabels: Labels
+    currentLabels: Labels,
+    assembledMessages: readonly ChatMessage[]
   ): Promise<{ contextPayload: Record<string, unknown> }> {
     const tool = this.#tools.get(call.name);
-    const permission = this.#permissionEngine.decide(call.name, call.args, {
-      channelTrust: "trusted",
+    const provenanceSummary = provenanceSummaryFromMessages(assembledMessages);
+    const permissionContext: PermissionContext = {
+      channelTrust: options.channelTrust ?? "trusted",
       mode: "chat",
+      provenanceSummary,
+      sandboxProfile: "safe",
       sid: options.sid,
       turn: options.turn,
+      untrustedContentPresent: provenanceSummary.untrustedContentPresent,
       workspaceRoot: this.#toolContext?.workspaceRoot ?? process.cwd()
+    };
+    const egress = this.#egressGuard.evaluate(call.name, call.args, {
+      currentLabels,
+      sensitiveContext: sensitiveContextFromMessages(assembledMessages)
     });
+    if (!egress.ok) {
+      const redactedCall = { ...call, args: egress.redactedArgs as Record<string, unknown> };
+      await this.#emitToolCall(redactedCall, options, currentLabels, true);
+      this.#auditLog?.record({
+        decision: "deny",
+        details: this.#egressAuditDetails(call, egress, permissionContext),
+        op: "egress.denied",
+        sid: options.sid,
+        tool: call.name,
+        turn: options.turn
+      });
+      await options.emit({
+        labels: currentLabels,
+        payload: {
+          call_id: call.call_id,
+          detail: `blocked outbound ${egress.labelClass} content`,
+          fingerprints: egress.matches.map((match) => match.fingerprint),
+          reason_code: egress.reasonCode,
+          stage: "egress.denied",
+          tool: call.name
+        },
+        type: "progress.update"
+      });
+      return this.#emitToolError(redactedCall, options, new PolicyError("egress denied: outbound tool arguments were blocked"), true, {
+        egress: {
+          fingerprints: egress.matches.map((match) => match.fingerprint),
+          label_class: egress.labelClass,
+          reason_code: egress.reasonCode
+        },
+        reason_code: "egress_denied"
+      });
+    }
+
+    const permission = this.#permissionEngine.decide(call.name, call.args, permissionContext);
     this.#auditLog?.record({
       decision: permission,
-      details: call.args,
+      details: { args: call.args, context: permissionContext },
       op: "permission.decide",
       sid: options.sid,
       tool: call.name,
@@ -766,15 +873,7 @@ export class TurnRunner {
       policyError = new PolicyError(`permission denied for ${call.name}`);
     }
 
-    await options.emit({
-      labels: currentLabels,
-      payload: {
-        args: call.args,
-        call_id: call.call_id,
-        tool: call.name
-      },
-      type: "tool.call"
-    });
+    await this.#emitToolCall(call, options, currentLabels);
 
     if (!tool) {
       return this.#emitToolError(call, options, new ToolError(`unknown tool ${call.name}`));
@@ -840,13 +939,13 @@ export class TurnRunner {
         options: ["once", "session", "deny"],
         risk_class: call.name === "shell.run" ? "high" : "medium",
         scope: "call",
-        summary: `${call.name} ${JSON.stringify(call.args)}`
+        summary: `${call.name} ${JSON.stringify(redactDiagnostics(call.args))}`
       },
       type: "approval.request"
     });
     this.#auditLog?.record({
       decision: "ask",
-      details: { args: call.args, request_id: request.id },
+      details: { args: redactDiagnostics(call.args), request_id: request.id },
       op: "approval.request",
       sid: options.sid,
       tool: call.name,
@@ -909,6 +1008,35 @@ export class TurnRunner {
     return this.#toolContext;
   }
 
+  #egressAuditDetails(call: ToolCall, decision: Extract<EgressDecision, { ok: false }>, ctx: PermissionContext): Record<string, unknown> {
+    return {
+      args: decision.redactedArgs,
+      call_id: call.call_id,
+      context: ctx,
+      fingerprints: decision.matches.map((match) => match.fingerprint),
+      label_class: decision.labelClass,
+      reason_code: decision.reasonCode
+    };
+  }
+
+  async #emitToolCall(
+    call: ToolCall,
+    options: RunTurnOptions,
+    labels: Labels,
+    argsRedacted = false
+  ): Promise<void> {
+    await options.emit({
+      labels,
+      payload: {
+        args: redactDiagnostics(call.args),
+        ...(argsRedacted ? { args_redacted: true } : {}),
+        call_id: call.call_id,
+        tool: call.name
+      },
+      type: "tool.call"
+    });
+  }
+
   async #emitToolResult(
     call: ToolCall,
     options: RunTurnOptions,
@@ -951,13 +1079,15 @@ export class TurnRunner {
     call: ToolCall,
     options: RunTurnOptions,
     error: Error,
-    deniedByPolicy = false
+    deniedByPolicy = false,
+    extra: Record<string, unknown> = {}
   ): Promise<{ contextPayload: Record<string, unknown> }> {
     const labels: Labels = { residency: "global-ok", sensitivity: "internal" };
     const payload = {
       call_id: call.call_id,
       denied_by_policy: deniedByPolicy,
-      error: { class: error.name, message: error.message },
+      error: { class: error.name, message: redactText(error.message) },
+      ...extra,
       labels,
       provenance: `tool:${call.name}`,
       status: "error"

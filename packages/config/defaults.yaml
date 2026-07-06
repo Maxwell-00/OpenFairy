@@ -31,6 +31,9 @@ search:
 governance:
   profile: balanced
   home_regions: [cn]
+  egress:
+    external_tools: ["web.*", "shell.run"]
+    personal_allowed_tools: []
   categories:
     credentials:
       sensitivity: secret

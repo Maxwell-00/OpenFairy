@@ -15,6 +15,7 @@
   },
   "dependencies": {
     "@fairy/config": "workspace:*",
+    "@fairy/kernel": "workspace:*",
     "@fairy/memory": "workspace:*",
     "@fairy/model-gateway": "workspace:*",
     "@fairy/protocol": "workspace:*",

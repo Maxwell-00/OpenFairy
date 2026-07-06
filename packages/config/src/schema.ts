@@ -113,9 +113,12 @@ export const configSchema = {
             type: "object",
             additionalProperties: true,
             properties: {
+              channel_trust: { type: "string", enum: ["trusted", "untrusted"] },
               decision: { type: "string", enum: ["allow", "ask", "deny"] },
               path: { type: "string", minLength: 1 },
-              tool: { type: "string", minLength: 1 }
+              provenance: { type: "string", minLength: 1 },
+              tool: { type: "string", minLength: 1 },
+              untrusted_content: { type: "boolean" }
             },
             required: ["tool", "decision"]
           }
@@ -164,6 +167,14 @@ export const configSchema = {
       properties: {
         profile: { type: "string", enum: ["balanced", "sovereign", "cloud-friendly"] },
         home_regions: { type: "array", items: { type: "string", minLength: 1 } },
+        egress: {
+          type: "object",
+          additionalProperties: true,
+          properties: {
+            external_tools: { type: "array", items: { type: "string", minLength: 1 } },
+            personal_allowed_tools: { type: "array", items: { type: "string", minLength: 1 } }
+          }
+        },
         categories: {
           type: "object",
           additionalProperties: {

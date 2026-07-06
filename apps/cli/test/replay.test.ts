@@ -185,6 +185,48 @@ describe("fairy replay", () => {
         turn: 3,
         type: "sourceset.reviewed",
         v: 1
+      },
+      {
+        actor: "tool",
+        id: "evt_01J00000000000000000000011",
+        labels: { residency: "global-ok", sensitivity: "internal" },
+        payload: {
+          args: { url: "https://example.test/?token=[REDACTED:api_key:sha256:abc123]" },
+          args_redacted: true,
+          call_id: "call_egress",
+          tool: "web.fetch"
+        },
+        provenance: "agent",
+        sid,
+        ts: "2026-07-02T10:00:00.010Z",
+        turn: 4,
+        type: "tool.call",
+        v: 1
+      },
+      {
+        actor: "tool",
+        id: "evt_01J00000000000000000000012",
+        labels: { residency: "global-ok", sensitivity: "internal" },
+        payload: {
+          call_id: "call_egress",
+          denied_by_policy: true,
+          egress: {
+            fingerprints: ["sha256:abc123"],
+            label_class: "secret",
+            reason_code: "api_key"
+          },
+          error: { class: "PolicyError", message: "egress denied: outbound tool arguments were blocked" },
+          labels: { residency: "global-ok", sensitivity: "internal" },
+          provenance: "tool:web.fetch",
+          reason_code: "egress_denied",
+          status: "error"
+        },
+        provenance: "agent",
+        sid,
+        ts: "2026-07-02T10:00:00.011Z",
+        turn: 4,
+        type: "tool.result",
+        v: 1
       }
     ];
     await writeFile(join(sessionDir, "log.jsonl"), events.map((event) => JSON.stringify(event)).join("\n"), "utf8");
@@ -201,12 +243,20 @@ describe("fairy replay", () => {
     expect(rendered).toContain("snapshot.created snap_abc");
     expect(rendered).toContain("citation.recorded snap_abc official Fairy memory is rebuildable.");
     expect(rendered).toContain("sourceset.reviewed needs_more_sources sources=1 warnings=single_source_family");
+    expect(rendered).toContain("tool.result call_egress error tool:web.fetch egress.denied api_key");
+    expect(rendered).not.toContain("sk_test_1234567890abcdef");
     expect(json).toContain("\"type\":\"route.denied\"");
     expect(json).toContain("\"type\":\"snapshot.created\"");
     expect(json).toContain("\"type\":\"citation.recorded\"");
     expect(json).toContain("\"type\":\"sourceset.reviewed\"");
+    expect(json).toContain("\"reason_code\":\"egress_denied\"");
     expect(json).toContain("\"decision\":\"deny\"");
     expect(json).toContain("\"required_clearance\"");
     expect(json).toContain("\"memory_id\":\"mem_safe\"");
+
+    const jsonEvents = json.split("\n").map((line) => JSON.parse(line) as { payload?: unknown; type: string });
+    expect(JSON.stringify(jsonEvents.find((event) => event.type === "turn.input")?.payload)).toContain("sk_test_1234567890abcdef");
+    const diagnosticEvents = jsonEvents.filter((event) => ["error", "progress.update", "tool.call", "tool.result"].includes(event.type));
+    expect(JSON.stringify(diagnosticEvents)).not.toContain("sk_test_1234567890abcdef");
   });
 });
