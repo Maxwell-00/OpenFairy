@@ -74,7 +74,7 @@ Used by research, memory evidence, and any sourced claim:
 
 ```jsonc
 { "claim": "…", "source": {"url", "title", "snapshot_ref", "span": {"start","end"}},
-  "grade": "primary|official|news|blog|forum|unknown", "retrieved_at": "…" }
+  "grade": "primary|official|news|blog|forum|sns|unknown", "retrieved_at": "…" }
 ```
 
 Renderers turn these into footnotes (text), spoken attributions ("据 Reuters…" — voice), or hover cards (desktop). A claim without a resolvable snapshot span fails the citation-precision eval (specs/evals.md).

@@ -73,6 +73,7 @@ Before adding research behavior, preserve or add regression tests proving:
 - Fake API-key remember still denies and does not create a MemoryStore row.
 - Retrieval gate still does not leak denied memory text.
 - Memory digest labels still participate in route clearance.
+- Fetched/source content labels compose into effective prompt labels (max sensitivity, residency intersection) BEFORE route clearance — the same rule memory digest labels obey (M2-01/02, data-governance §3). Research must not weaken or bypass it.
 - Kernel provider-special-case guard remains green.
 - No `docs-zh/` edits.
 
@@ -135,6 +136,7 @@ Acceptance:
 - Unit tests for plan decomposition, zh/en expansion, recency class, budget caps, and deterministic IDs.
 - No model-gateway dependency from `packages/research`.
 - No model call from query planning.
+- Budget exhaustion and fetch/timeout/robots/HTTP failures surface only through existing channels: `progress.update {stage: "research.budget_exhausted" | "research.fetch_failed", detail, ...}` and/or fields on the three registered research events (`snapshot.created.payload.fetch_error`, `sourceset.reviewed.payload.warnings[]`). No new event type is introduced (protocol §1/§2).
 
 ### 2. Research tool namespace
 
@@ -164,6 +166,7 @@ Acceptance:
 - E2E: mock model calls `research.plan` then `research.search`; events are visible in replay.
 - E2E: research tools do not create a second loop or bypass the normal permission/tool path.
 - `tool.result` provenance and labels are asserted.
+- E2E (governance composition): a mock authenticated-page snapshot labeled `personal / local-only` enters the working set as a research tool result; assert the turn's effective labels become >= `personal / local-only`; assert the under-cleared primary is denied (denied candidate in `model_trace` / `route.denied`) with zero provider request bytes; assert a cleared local fallback produces the final answer. Code test, not owner-only — mirrors the M2-02 route-gate check.
 
 ### 3. Mock research providers for CI
 
@@ -179,6 +182,7 @@ Required behavior:
   - official/source-quality variants,
   - injection payload pages.
 - Mock fetch returns deterministic page bodies, titles, timestamps, content types, and labels.
+- At least one seeded source is reachable from both a zh and an en subquery and shares the same `canonical_url` / `independence_key`, so `research.zh-en-parity` can assert real cross-locale overlap rather than a trivially-true or unsatisfiable check.
 
 Acceptance:
 
@@ -211,6 +215,7 @@ Required behavior:
   - `mime`,
   - `cleaning_method`,
   - optional `fetch_error`.
+- `snapshot_id` is derived deterministically from `content_hash` (e.g. `snap_<content_hash[:20]>`): identical cleaned content yields the same `snapshot_id` (content-addressed). Cache key = `canonical_url` + `content_hash`. `citation.recorded.source.snapshot_ref` resolves to a stored `snapshot_id` and stays stable across re-fetch and replay.
 - Re-fetch within TTL hits cache.
 - Paywalls and fetch denials are surfaced honestly; never bypass paywalls.
 - Deny-listed domains are not fetched.
@@ -263,13 +268,14 @@ Required behavior:
     "snapshot_ref": "...",
     "span": { "start": 0, "end": 100 }
   },
-  "grade": "primary|official|news|blog|forum|unknown",
+  "grade": "primary|official|news|blog|forum|sns|unknown",
   "retrieved_at": "..."
 }
 ```
 
 - Claims without resolvable snapshot spans must fail citation precision tests.
 - Do not emit bare URLs as sufficient evidence.
+- `grade` equals the source's grade (no lossy remap); the citation grade enum accepts the full 7-value source taxonomy incl. `sns`. (Reviewer has reconciled `packages/protocol/schemas/citation.recorded.v1.json` and protocol §6 to include `sns`.)
 
 Acceptance:
 
@@ -311,7 +317,9 @@ Required behavior:
   4. Hidden/HTML comment instruction.
   5. Chinese-language prompt injection.
 - Fetched content must be wrapped as quarantined untrusted content.
-- While untrusted research content is in the working set, high-risk tool calls remain blocked/ask according to existing permission rules.
+- Fetched content is wrapped as quarantined untrusted content with `web:<domain>` provenance (sandbox-security §4.1-4.2, already shipped for `web.fetch`); the instruction-firewall rule (content inside is data, never instructions) applies.
+- The M2 injection defense under test is exactly: provenance tagging + instruction firewall / quarantine framing + this corpus. The e2e asserts the firewall property — page text may be quoted/cited as content, but its instructions never become system/developer/user instructions and never drive a tool call, provider request, citation, or memory write.
+- Capability narrowing on untrusted-content presence (sandbox-security §4.3) is an M5 deliverable (ROADMAP) and is out of scope here; the e2e must not assume high-risk tools auto-flip to `ask` from mere presence. NOTE (code reality): the kernel tool-call path currently hardcodes `channelTrust:"trusted"` and passes no instruction provenance (`packages/kernel/src/index.ts`), so provenance-driven `deny-escalate` is inert until wired. If this task routes fetched-content provenance into the permission decision, test it; otherwise record in the work report that provenance-driven escalation remains a named carry-in, and do not let the injection suite imply an escalation the kernel does not perform.
 - Denied injection-triggered actions must be visible in events/audit without leaking secrets.
 
 Acceptance:
@@ -409,6 +417,7 @@ In `tasks/M2-03-work.md`, propose exact docs edits for reviewer application:
 - Do not implement dream-cycle consolidation.
 - Do not implement embeddings/vector search/sqlite-vec/LanceDB.
 - Do not implement browser automation/computer-use.
+- Do not add any new canonical event type; the only research events are the three already registered in protocol §2 (`snapshot.created`, `citation.recorded`, `sourceset.reviewed`).
 - Do not add MCP/hooks.
 - Do not add vendor SDKs.
 - Do not use real API keys or real web calls in CI.

@@ -31,6 +31,7 @@ Zones 1–5 form the **stable prefix**: byte-identical across turns of a session
 - **Deterministic serialization.** Stable key order in JSON, stable message ordering; same session state ⇒ same prompt bytes.
 - **Per-model accounting.** Token counts via the model gateway's tokenizer service (exact where available, calibrated estimate otherwise); budgets recomputed when the role router switches models (a fallback switch can shrink the window mid-session — the ladder handles it).
 - **Errors stay.** Failed tool calls and their errors remain in history (Manus: models steer away from repeated failures only if they can see them). They compress last.
+- **Memory digest is gate-admitted and label-bearing.** Zone 4 is populated only by MemoryGate-admitted records (specs/memory §4a); the digest carries the max/intersection of admitted-record labels, and those labels join the effective prompt labels **before** route clearance (data-governance §3) — a `personal/local-only` memory forces a local-cleared route or a visible `route.denied`. Digest budget: config `context.memory_digest_budget` (default 600 tokens; *implemented M2-02*).
 
 ## 3. Reduction ladder (FR-10)
 

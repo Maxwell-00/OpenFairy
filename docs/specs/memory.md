@@ -69,7 +69,7 @@ admit(record, ctx) where ctx = {channel_trust, workspace, mode, task_class, labe
 
 Gate decisions (admit/deny + rule) are `memory.gate.decision` events — auditable, and the leakage eval suite asserts on them. Denials are silent to the model (the digest simply omits) — the gate must not become an oracle.
 
-*Implementation status: M2-01 shipped the gate in **admission-only** mode (explicit-remember candidates: secret→deny, personal→hold, internal→allow; no retrieval, no stores, no embeddings, no prompt injection — memory zone stayed a placeholder). Retrieval-side gating with `phase: retrieval` arrives with MemoryStore v1 (M2-02).*
+*Implementation status: M2-01 shipped the gate in **admission-only** mode (explicit-remember candidates: secret→deny, personal→hold, internal→allow; no retrieval, no stores, no embeddings). **M2-02 shipped MemoryStore v1 + retrieval-side gating (`phase: retrieval`):** the store is a rebuildable SQLite projection over session JSONL (`memory.written`/`superseded`/`deleted`), never a second source of truth; secret records are rejected at projection insert (both `insert()` and event projection); retrieval denials carry reason code + record id but never the record text; admitted digest labels join the effective prompt labels before route clearance (context-engine §1, data-governance §3). Retrieval reason codes: `admit`, `below_relevance_floor`, `deleted_or_superseded`, `label_clearance_denied`, `scope_mismatch`. Delete is hard-delete + tombstone; rebuild keeps tombstoned ids deleted. CLI: `fairy memory list|search|show|delete|rebuild`. Vector retrieval stays deferred to the ROADMAP M2 sqlite-vec-vs-LanceDB decision gate.*
 
 ### 4b. Evidence pull-through
 

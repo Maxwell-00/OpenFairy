@@ -52,6 +52,7 @@
             "news",
             "blog",
             "forum",
+            "sns",
             "unknown"
           ],
           "type": "string"
