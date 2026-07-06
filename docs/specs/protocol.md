@@ -33,7 +33,7 @@ All events use the envelope of ARCHITECTURE §6 (`v, id, sid, turn, ts, actor, t
 | Loop | `loop.iteration.started` · `loop.iteration.completed` · `loop.stopped` | Budgets snapshot in payload |
 | Workflow | `workflow.checkpoint` · `workflow.run.updated` · `workflow.approval.parked` | Checkpoint = durable-execution unit |
 | Memory | `memory.written` · `memory.superseded` · `memory.deleted` · `memory.gate.decision` | Gate decisions are auditable events (specs/memory §4a). `gate.decision.payload.decision ∈ allow \| deny \| hold`; `payload.phase ∈ admission \| retrieval` (additive since M2-02 — one event type, two enforcement points). Retrieval denials carry reason code + record id but **never denied record text** for `personal+` records |
-| Research | `citation.recorded` · `snapshot.created` · `sourceset.reviewed` | See specs/research.md |
+| Research | `citation.recorded` · `snapshot.created` · `sourceset.reviewed` | See specs/research.md. *Live since M2-03:* `snapshot.created` carries content-addressed `snapshot_ref`/`hash`, labels, and optional `fetch_error`; `sourceset.reviewed` requires ≥ 1 source (empty source set ⇒ plain tool result, no event) and carries `warnings[]`; budget/fetch failures reuse these fields or `progress.update` — **no new research event types**. `citation.recorded.payload.grade` accepts the full source taxonomy incl. `sns` |
 | Speech | `speech.asr.partial` · `speech.asr.final` · `speech.tts.chunk` · `speech.mark` | Relationship to binary frames: §5 |
 | Affect | `affect.updated` | With cause summary |
 | Artifact | `artifact.created` | `{path, hash, mime, labels, origin}` |
@@ -77,7 +77,7 @@ Used by research, memory evidence, and any sourced claim:
   "grade": "primary|official|news|blog|forum|sns|unknown", "retrieved_at": "…" }
 ```
 
-Renderers turn these into footnotes (text), spoken attributions ("据 Reuters…" — voice), or hover cards (desktop). A claim without a resolvable snapshot span fails the citation-precision eval (specs/evals.md).
+Renderers turn these into footnotes (text), spoken attributions ("据 Reuters…" — voice), or hover cards (desktop). A claim without a resolvable snapshot span fails the citation-precision eval (specs/evals.md). `grade` equals the source's grade — no lossy remap; the enum is the full 7-value source taxonomy (incl. `sns`, reconciled at M2-03).
 
 ## 7. Client operations (WS) — normative since M0-02
 

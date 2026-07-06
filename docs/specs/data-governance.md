@@ -56,6 +56,8 @@ A single default table can't serve both "daily usability" and "psychological saf
 
 `region-restricted(home)` = the user's configured home-region set. Per-source overrides remain available under any profile; profiles only set defaults, they are not modes with special semantics.
 
+*Research label defaults enforced since M2-03: public web/search content defaults `public / global-ok`; authenticated/private page fetches default `personal / local-only` or stricter (mock provider fixtures carry these labels; snapshots and research tool results inherit them and compose into effective prompt labels before route clearance — §3).*
+
 ## 2. Provider clearance
 
 Model registry entries (model-gateway §2) gain:
@@ -70,7 +72,7 @@ data_clearance: { max_sensitivity: personal, residency: [global-ok], regions: [u
 
 | Point | Behavior |
 |---|---|
-| **Role router** | Before dispatch: max label of assembled context vs. target clearance (filter), then `routing_hints` reorder surviving candidates. Violation → try fallback chain member with clearance → else refuse with visible `route.denied` event ("this needs your local model; it's offline"). Never silent downgrade of content, never silent upgrade of provider. *Enforced since M2-01: effective labels derive over the whole assembled prompt (history + tool results included); a denied provider receives **zero request bytes**; skipped candidates recorded in `model_trace`/progress; `regions ⊆ home_regions` set check + profile validation live in config.* |
+| **Role router** | Before dispatch: max label of assembled context vs. target clearance (filter), then `routing_hints` reorder surviving candidates. Violation → try fallback chain member with clearance → else refuse with visible `route.denied` event ("this needs your local model; it's offline"). Never silent downgrade of content, never silent upgrade of provider. *Enforced since M2-01: effective labels derive over the whole assembled prompt (history + tool results included); a denied provider receives **zero request bytes**; skipped candidates recorded in `model_trace`/progress; `regions ⊆ home_regions` set check + profile validation live in config. Since M2-03, research fetched/source labels (snapshots and `research.*` tool results) join effective prompt labels the same way memory digests do: gateway E2E asserts an authenticated `personal / local-only` snapshot raises effective labels mid-turn, denies the under-cleared primary (zero further request bytes), and completes on a cleared local fallback.* |
 | **Memory retrieval (MemoryGate)** | Admission conditioned on labels × channel trust (memory spec §4a). *Enforced since M2-02: retrieval gate runs with `phase: retrieval`; admitted memory labels join the effective prompt labels before model route clearance; an under-cleared route denies retrieval silently to the model (digest omits) and audits via `memory.gate.decision`; denials carry reason + record id, never `personal+` record text.* |
 | **Egress guard** | Outbound tool args scanned for `personal+` content and secret patterns (sandbox-security §4.4) |
 | **Telemetry/logs** | `personal+` content never enters traces or error reports; label-aware redaction middleware |

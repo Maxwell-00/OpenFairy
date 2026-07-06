@@ -96,10 +96,12 @@ Required behavior:
   - future-proof hook point for external delivery/export tools.
 - The guard scans outbound args for:
   - secret patterns: API keys, tokens, bearer headers, passwords, OTP-like codes,
+    - OTP-like detection must be **context-anchored**: it fires only with a nearby anchor term (`code`, `OTP`, `verification`, `验证码`, or similar) or a structured secret shape. A bare 4–8 digit number (date, port, amount, PIN-shaped noise) must never escalate or block by itself. The near-miss corpus must cover this.
   - `personal+` content when a label-bearing source is available,
   - exact high-risk strings from current turn/tool-result/memory/research context when tagged `personal` or `secret`.
 - Secret content is always blocked.
 - `personal` content may leave only through a destination/tool whose clearance/policy allows it; otherwise block or require approval according to config.
+- Config surface rule: any new egress/tool-clearance config MUST extend the existing config loader + validation path (`defaults.yaml` / `fairy.yaml`). Codex may propose the YAML shape, but it must be validated like existing config, documented in the work report Decisions section, and the reviewer may reject the shape. No side-channel config: no separate config files, env-var switches, or hardcoded policy tables.
 - Blocking must happen before the tool process/network call is made.
 - Denials must be visible through existing event types only:
   - `tool.result` error payload for the denied call,
@@ -162,6 +164,7 @@ Required behavior:
   - use it for rules that are deterministic and directly testable;
   - keep broad "untrusted content present ⇒ all high-risk tools flip" as M5 unless the implementation is precise and explicitly tested.
 - Existing safe CLI/local trusted behavior must not regress.
+- If provenance-driven rules require new permission-rule config, the Deliverable 1 config surface rule applies identically: extend the existing config loader + validation, document the shape in the work report Decisions section, reviewer may reject. No side-channel config.
 
 Acceptance:
 
