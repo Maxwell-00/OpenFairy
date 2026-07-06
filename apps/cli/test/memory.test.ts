@@ -5,6 +5,7 @@ import { join, resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 
 const repoRoot = resolve(new URL("../../..", import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, "$1"));
+const CLI_MEMORY_E2E_TIMEOUT_MS = 60_000;
 
 const runFairy = (args: readonly string[]): string => {
   const result = spawnSync(process.execPath, ["--import", "tsx", "apps/cli/src/bin/fairy.ts", ...args], {
@@ -14,6 +15,13 @@ const runFairy = (args: readonly string[]): string => {
     timeout: 30000,
     windowsHide: true
   });
+  if (result.error) {
+    throw new Error([
+      `fairy ${args.join(" ")} failed: ${result.error.message}`,
+      `stdout:\n${result.stdout ?? ""}`,
+      `stderr:\n${result.stderr ?? ""}`
+    ].join("\n"));
+  }
   expect(result.status, result.stderr).toBe(0);
   return result.stdout.trim();
 };
@@ -78,5 +86,5 @@ describe("fairy memory CLI", () => {
     });
     expect(JSON.parse(runFairy(["memory", "rebuild", "--data-dir", dataDir, "--json"]))).toEqual({ records: 0, tombstones: 1 });
     expect(JSON.parse(runFairy(["memory", "search", "shell", "--data-dir", dataDir, "--json"]))).toEqual({ memories: [] });
-  });
+  }, CLI_MEMORY_E2E_TIMEOUT_MS);
 });
