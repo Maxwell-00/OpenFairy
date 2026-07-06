@@ -72,7 +72,7 @@ Tail highlights:
 - `packages/tools-std`: 4 passed, 3 skipped.
 - `apps/cli`: 6 passed.
 - `packages/kernel`: 11 passed.
-- `packages/testing`: 32 passed, 1 skipped.
+- `packages/testing`: 33 passed, 1 skipped.
 
 Named suites observed:
 
@@ -81,6 +81,7 @@ Named suites observed:
 - `research.citation-precision`
 - `research.zh-en-parity`
 - `injection.research-v0`
+- gateway E2E: `keeps research injection pages quarantined through the TurnRunner tool loop`
 
 ```powershell
 pnpm dep-check
@@ -158,6 +159,8 @@ Injection quarantine semantics:
 - Fetched content is wrapped as quarantined, untrusted page data.
 - Research events and tool results carry provenance such as `tool:research.*` and `web:<domain>`.
 - The M2 injection defense under test is provenance tagging plus instruction-firewall/quarantine framing.
+- Gateway E2E now scripts `research.fetch` for the seeded `tool-exfil` and zh-language injection pages, captures provider request bodies, and asserts malicious page text appears only in quarantined `tool` messages, never in system/developer/user content.
+- The same E2E asserts no `memory.written`, no instruction-driven `citation.recorded`, replay visibility for the turn, and no `SECRET_TOKEN` outside quarantined tool-result content.
 - The current kernel permission path still hardcodes trusted channel context for tool permission checks, so provenance-driven permission escalation remains a carry-in rather than an asserted M2 behavior.
 
 Tool loop and routing:
