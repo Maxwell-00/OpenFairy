@@ -8,7 +8,7 @@ import {
   type UsageSnapshot
 } from "@fairy/model-gateway";
 import { deriveMemoryLabels, evaluateRetrievalGate, MemoryGate, proposeMemoryCandidate, renderMemoryDigest, type MemoryLabels, type MemoryStore, type ScoredMemoryRecord } from "@fairy/memory";
-import type { EventEnvelope, Labels } from "@fairy/protocol";
+import type { EventEnvelope, Labels, Provenance } from "@fairy/protocol";
 import {
   PolicyError,
   ToolError,
@@ -40,11 +40,14 @@ export type KernelEventType =
   | "approval.request"
   | "approval.resolved"
   | "artifact.created"
+  | "citation.recorded"
   | "context.manifest"
   | "memory.gate.decision"
   | "memory.written"
   | "progress.update"
   | "route.denied"
+  | "snapshot.created"
+  | "sourceset.reviewed"
   | "turn.delta"
   | "reasoning.delta"
   | "tool.call"
@@ -55,6 +58,7 @@ export type KernelEventType =
 
 export interface KernelEvent {
   readonly labels?: Labels;
+  readonly provenance?: Provenance;
   readonly type: KernelEventType;
   readonly payload: Record<string, unknown>;
 }
@@ -155,6 +159,7 @@ const defaultPermissions: PermissionRule[] = [
   { decision: "allow", tool: "fs.*" },
   { decision: "ask", tool: "shell.run" },
   { decision: "allow", tool: "web.*" },
+  { decision: "allow", tool: "research.*" },
   { decision: "ask", tool: "*" }
 ];
 
@@ -930,6 +935,14 @@ export class TurnRunner {
       payload.result = result.content ?? result.artifact_ref ?? "";
     }
 
+    for (const event of result.events ?? []) {
+      await options.emit({
+        ...(event.labels ? { labels: event.labels } : {}),
+        ...(event.provenance ? { provenance: event.provenance as Provenance } : {}),
+        payload: event.payload,
+        type: event.type
+      });
+    }
     await options.emit({ labels: result.labels, payload, type: "tool.result" });
     return { contextPayload: payload };
   }

@@ -129,6 +129,62 @@ describe("fairy replay", () => {
         turn: 3,
         type: "memory.deleted",
         v: 1
+      },
+      {
+        actor: "tool",
+        id: "evt_01J00000000000000000000008",
+        labels: { residency: "global-ok", sensitivity: "public" },
+        payload: {
+          hash: "sha256:abc",
+          retrieved_at: "2026-07-02T10:00:00.007Z",
+          snapshot_ref: "snap_abc",
+          url: "https://docs.openfairy.test/research/memory-store"
+        },
+        provenance: "web:docs.openfairy.test",
+        sid,
+        ts: "2026-07-02T10:00:00.007Z",
+        turn: 3,
+        type: "snapshot.created",
+        v: 1
+      },
+      {
+        actor: "tool",
+        id: "evt_01J00000000000000000000009",
+        labels: { residency: "global-ok", sensitivity: "public" },
+        payload: {
+          claim: "Fairy memory is rebuildable.",
+          grade: "official",
+          retrieved_at: "2026-07-02T10:00:00.007Z",
+          source: {
+            snapshot_ref: "snap_abc",
+            span: { start: 0, end: 80 },
+            title: "OpenFairy MemoryStore Notes",
+            url: "https://docs.openfairy.test/research/memory-store"
+          }
+        },
+        provenance: "web:docs.openfairy.test",
+        sid,
+        ts: "2026-07-02T10:00:00.008Z",
+        turn: 3,
+        type: "citation.recorded",
+        v: 1
+      },
+      {
+        actor: "tool",
+        id: "evt_01J00000000000000000000010",
+        labels: { residency: "global-ok", sensitivity: "public" },
+        payload: {
+          decision: "needs_more_sources",
+          review_id: "review_abc",
+          sources: [{ grade: "official", independence_key: "docs.openfairy.test", url: "https://docs.openfairy.test/research/memory-store" }],
+          warnings: ["single_source_family"]
+        },
+        provenance: "tool:research.sources",
+        sid,
+        ts: "2026-07-02T10:00:00.009Z",
+        turn: 3,
+        type: "sourceset.reviewed",
+        v: 1
       }
     ];
     await writeFile(join(sessionDir, "log.jsonl"), events.map((event) => JSON.stringify(event)).join("\n"), "utf8");
@@ -142,7 +198,13 @@ describe("fairy replay", () => {
     expect(rendered).toContain("route.denied main secret/local-only");
     expect(rendered).toContain("memory.written mem_safe semantic");
     expect(rendered).toContain("memory.deleted mem_safe user_deleted");
+    expect(rendered).toContain("snapshot.created snap_abc");
+    expect(rendered).toContain("citation.recorded snap_abc official Fairy memory is rebuildable.");
+    expect(rendered).toContain("sourceset.reviewed needs_more_sources sources=1 warnings=single_source_family");
     expect(json).toContain("\"type\":\"route.denied\"");
+    expect(json).toContain("\"type\":\"snapshot.created\"");
+    expect(json).toContain("\"type\":\"citation.recorded\"");
+    expect(json).toContain("\"type\":\"sourceset.reviewed\"");
     expect(json).toContain("\"decision\":\"deny\"");
     expect(json).toContain("\"required_clearance\"");
     expect(json).toContain("\"memory_id\":\"mem_safe\"");

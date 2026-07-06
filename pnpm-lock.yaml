@@ -47,6 +47,9 @@ importers:
       '@fairy/protocol':
         specifier: workspace:*
         version: link:../../packages/protocol
+      '@fairy/research':
+        specifier: workspace:*
+        version: link:../../packages/research
       ws:
         specifier: ^8.18.3
         version: 8.21.0
@@ -140,6 +143,9 @@ importers:
       '@fairy/protocol':
         specifier: workspace:*
         version: link:../protocol
+      '@fairy/research':
+        specifier: workspace:*
+        version: link:../research
       ws:
         specifier: ^8.18.3
         version: 8.21.0
@@ -150,6 +156,9 @@ importers:
 
   packages/tools-std:
     dependencies:
+      '@fairy/research':
+        specifier: workspace:*
+        version: link:../research
       '@mozilla/readability':
         specifier: ^0.6.0
         version: 0.6.0

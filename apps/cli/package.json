@@ -16,6 +16,7 @@
     "@fairy/config": "workspace:*",
     "@fairy/memory": "workspace:*",
     "@fairy/protocol": "workspace:*",
+    "@fairy/research": "workspace:*",
     "ws": "^8.18.3"
   },
   "devDependencies": {

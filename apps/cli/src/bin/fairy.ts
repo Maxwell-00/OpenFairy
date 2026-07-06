@@ -2,6 +2,7 @@
 import { runDoctor } from "../doctor.js";
 import { runAudit, runChat, runSessions } from "../chat.js";
 import { runMemory } from "../memory.js";
+import { runResearch } from "../research.js";
 import { runReplay } from "../replay.js";
 
 const [command, ...args] = process.argv.slice(2);
@@ -37,5 +38,10 @@ if (command === "memory") {
   process.exit(0);
 }
 
-console.error("Usage: fairy <doctor|chat|sessions|audit|replay|memory>");
+if (command === "research") {
+  await runResearch(args);
+  process.exit(0);
+}
+
+console.error("Usage: fairy <doctor|chat|sessions|audit|replay|memory|research>");
 process.exit(1);

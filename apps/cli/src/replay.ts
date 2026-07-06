@@ -119,6 +119,15 @@ const renderChronological = (events: readonly EventEnvelope[]): string[] => {
       lines.push(`turn ${event.turn} memory.written ${String(event.payload.memory_id ?? "?")} ${String(event.payload.tier ?? "?")}`);
     } else if (event.type === "memory.deleted" && isRecord(event.payload)) {
       lines.push(`turn ${event.turn} memory.deleted ${String(event.payload.memory_id ?? "?")} ${short(String(event.payload.reason ?? ""))}`);
+    } else if (event.type === "snapshot.created" && isRecord(event.payload)) {
+      lines.push(`turn ${event.turn} snapshot.created ${String(event.payload.snapshot_ref ?? "?")} ${short(String(event.payload.url ?? ""))}`);
+    } else if (event.type === "citation.recorded" && isRecord(event.payload)) {
+      const source = isRecord(event.payload.source) ? event.payload.source : {};
+      lines.push(`turn ${event.turn} citation.recorded ${String(source.snapshot_ref ?? "?")} ${String(event.payload.grade ?? "?")} ${short(String(event.payload.claim ?? ""))}`);
+    } else if (event.type === "sourceset.reviewed" && isRecord(event.payload)) {
+      const sources = Array.isArray(event.payload.sources) ? event.payload.sources.length : 0;
+      const warnings = Array.isArray(event.payload.warnings) ? event.payload.warnings.join(",") : "";
+      lines.push(`turn ${event.turn} sourceset.reviewed ${String(event.payload.decision ?? "?")} sources=${sources}${warnings ? ` warnings=${short(warnings)}` : ""}`);
     } else if (event.type === "turn.final") {
       const streamed = deltas.get(event.turn);
       lines.push(`turn ${event.turn} < ${short(streamed || payloadText(event.payload))}`);

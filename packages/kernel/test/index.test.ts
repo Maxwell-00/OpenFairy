@@ -223,4 +223,83 @@ describe("@fairy/kernel TurnRunner", () => {
       label_escalations: [expect.objectContaining({ category: "credentials" })]
     });
   });
+
+  it("emits tool side events before the canonical tool.result", async () => {
+    let calls = 0;
+    const gateway: ModelGateway = {
+      estimateTokens(input) {
+        return { estimated: true, tokens: estimateTextTokens(input) };
+      },
+      async *generate() {
+        calls += 1;
+        if (calls === 1) {
+          yield { args: {}, call_id: "call_research", name: "research.fetch", type: "tool_call" };
+          return;
+        }
+        yield { finish_reason: "stop", type: "done", usage: { estimated: true, input_tokens: 1, output_tokens: 0 } };
+      },
+      modelInfo() {
+        return { context_window: 8000, id: "mock-main", max_output: 1024, model: "mock-model" };
+      }
+    };
+    const emitted: KernelEvent[] = [];
+    const runner = new TurnRunner({
+      modelGateway: gateway,
+      permissionEngine: new PermissionEngine({ rules: [{ decision: "allow", tool: "research.*" }] }),
+      toolContext: { artifactsDir: process.cwd(), env: process.env, workspaceRoot: process.cwd() },
+      tools: new Map([[
+        "research.fetch",
+        {
+          description: "test research fetch",
+          labels_out: labels,
+          name: "research.fetch",
+          params: { type: "object" },
+          async execute() {
+            return {
+              content: "quarantined text",
+              events: [{
+                labels,
+                payload: {
+                  hash: "sha256:abc",
+                  retrieved_at: "2026-07-02T10:00:00.000Z",
+                  snapshot_ref: "snap_abc",
+                  url: "https://docs.openfairy.test/research/memory-store"
+                },
+                provenance: "web:docs.openfairy.test",
+                type: "snapshot.created" as const
+              }],
+              labels,
+              provenance: "tool:research.fetch"
+            };
+          }
+        }
+      ]])
+    });
+
+    await runner.runTurn({
+      emit: makeEmit(emitted),
+      history: { messages: [] },
+      input: "research",
+      labels,
+      sid: "ses_01J00000000000000000000004",
+      turn: 1
+    });
+
+    expect(emitted.map((event) => event.type)).toEqual([
+      "context.manifest",
+      "tool.call",
+      "snapshot.created",
+      "tool.result",
+      "context.manifest",
+      "turn.final"
+    ]);
+    expect(emitted[2]).toMatchObject({
+      provenance: "web:docs.openfairy.test",
+      type: "snapshot.created"
+    });
+    expect(emitted[3]).toMatchObject({
+      payload: { provenance: "tool:research.fetch", status: "ok" },
+      type: "tool.result"
+    });
+  });
 });

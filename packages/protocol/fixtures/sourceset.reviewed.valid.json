@@ -1,5 +1,5 @@
 {
-  "actor": "agent",
+  "actor": "tool",
   "id": "evt_01J00000000000000000000025",
   "labels": {
     "residency": "global-ok",
@@ -10,12 +10,18 @@
     "review_id": "review-1",
     "sources": [
       {
+        "duplicate_count": 2,
         "grade": "official",
-        "url": "https://example.test"
+        "id": "src_abc",
+        "independence_key": "docs.openfairy.test",
+        "url": "https://docs.openfairy.test/research/memory-store"
       }
+    ],
+    "warnings": [
+      "single_source_family"
     ]
   },
-  "provenance": "web:example.test",
+  "provenance": "tool:research.sources",
   "sid": "ses_01J00000000000000000000000",
   "ts": "2026-07-02T10:00:00.000Z",
   "turn": 1,

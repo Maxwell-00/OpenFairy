@@ -187,6 +187,9 @@ const actorForKernelEvent = (type: KernelEventType): Actor => {
   if (type === "tool.call" || type === "tool.result") {
     return "tool";
   }
+  if (type === "citation.recorded" || type === "snapshot.created" || type === "sourceset.reviewed") {
+    return "tool";
+  }
   if (type === "approval.request" || type === "approval.resolved" || type === "artifact.created" || type === "context.manifest" || type === "error" || type === "memory.gate.decision" || type === "memory.written" || type === "progress.update" || type === "route.denied" || type === "turn.interrupted") {
     return "system";
   }
@@ -672,7 +675,7 @@ export class MinimalGateway {
           actor: actorForKernelEvent(event.type),
           ...(event.labels ? { labels: event.labels } : {}),
           payload: event.payload,
-          provenance: "agent",
+          provenance: event.provenance ?? "agent",
           sid,
           turn,
           type: event.type

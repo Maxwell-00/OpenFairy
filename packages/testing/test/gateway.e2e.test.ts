@@ -9,6 +9,7 @@ import WebSocket from "ws";
 
 import { validateEvent, validateFrame, type EventEnvelope } from "@fairy/protocol";
 import { MemoryStore } from "@fairy/memory";
+import { MockResearchProvider, ResearchStore } from "@fairy/research";
 import {
   acceptIncomingEvent,
   assertM1TurnCompletes,
@@ -1249,6 +1250,158 @@ describe("gateway M1 e2e", () => {
       await stopGateway(gateway);
     }
   });
+
+  it("runs research tools through the normal tool loop and renders replay", async () => {
+    const temp = await mkdtemp(join(tmpdir(), "fairy-gateway-research-"));
+    const precompute = new ResearchStore(join(temp, "precompute"));
+    const precomputed = await precompute.fetchSnapshot("https://docs.openfairy.test/research/memory-store", new MockResearchProvider());
+    provider = await MockOpenAIChatServer.start();
+    provider.enqueueScript({
+      toolCalls: [{ id: "call_plan", name: "research.plan", args: { intent: "compare local memory with external services" } }]
+    });
+    provider.enqueueScript({
+      toolCalls: [{ id: "call_search", name: "research.search", args: { query: "compare local memory with external services" } }]
+    });
+    provider.enqueueScript({
+      toolCalls: [{ id: "call_fetch", name: "research.fetch", args: { url_or_source_id: "https://docs.openfairy.test/research/memory-store" } }]
+    });
+    provider.enqueueScript({
+      toolCalls: [{
+        id: "call_cite",
+        name: "research.cite",
+        args: {
+          claim: "Fairy memory is rebuildable.",
+          snapshot_id: precomputed.snapshot.snapshot_id,
+          span: { start: 0, end: 80 }
+        }
+      }]
+    });
+    provider.enqueueScript({
+      toolCalls: [{ id: "call_sources", name: "research.sources", args: {} }]
+    });
+    provider.enqueueScript({ text: ["research complete"] });
+
+    const dataDir = join(temp, "data");
+    const configPath = join(temp, "fairy.yaml");
+    const token = "research-token";
+    writeConfig(configPath, dataDir, token, provider.url);
+    const gateway = startGateway(configPath);
+
+    try {
+      const port = await waitForGateway(gateway);
+      const client = await MockFairyClient.connect({ token, url: `ws://127.0.0.1:${port}` });
+      const created = await client.createSession("research");
+      const turnEvents = await sendTurnInputWithTimeout(client, created.sid, {
+        content: [{ kind: "text", text: "research local memory with citations" }]
+      }, 60000);
+      client.close();
+
+      expect(turnEvents.filter((event) => event.type === "tool.call").map((event) => isPayloadRecord(event) ? event.payload.tool : undefined)).toEqual([
+        "research.plan",
+        "research.search",
+        "research.fetch",
+        "research.cite",
+        "research.sources"
+      ]);
+      expect(turnEvents.some((event) => event.type === "snapshot.created")).toBe(true);
+      expect(turnEvents.some((event) => event.type === "citation.recorded")).toBe(true);
+      expect(turnEvents.some((event) => event.type === "sourceset.reviewed")).toBe(true);
+      expect(turnEvents.find((event) => event.type === "tool.result" && isPayloadRecord(event) && event.payload.call_id === "call_fetch")).toMatchObject({
+        labels: { residency: "global-ok", sensitivity: "public" },
+        payload: { provenance: "tool:research.fetch", status: "ok" }
+      });
+
+      const replay = spawnSync(process.execPath, [
+        "--import",
+        "tsx",
+        "apps/cli/src/bin/fairy.ts",
+        "replay",
+        created.sid,
+        "--data-dir",
+        dataDir
+      ], {
+        cwd: repoRoot,
+        encoding: "utf8",
+        env: { ...process.env, CI: "true" },
+        timeout: 30000,
+        windowsHide: true
+      });
+      expect(replay.status, replay.stderr).toBe(0);
+      expect(replay.stdout).toContain("snapshot.created");
+      expect(replay.stdout).toContain("citation.recorded");
+      expect(replay.stdout).toContain("sourceset.reviewed");
+      assertSchemaValidStream(client.events());
+    } finally {
+      await stopGateway(gateway);
+    }
+  }, 90_000);
+
+  it("composes authenticated research snapshot labels before route clearance", async () => {
+    provider = await MockOpenAIChatServer.start();
+    provider.enqueueScript({
+      toolCalls: [{ id: "call_private_fetch", name: "research.fetch", args: { url_or_source_id: "https://auth.local.test/private-research-note" } }]
+    });
+    const fallback = await MockOpenAIChatServer.start({
+      text: ["local fallback ok"],
+      usage: { completion_tokens: 3, prompt_tokens: 4, total_tokens: 7 }
+    });
+    const temp = await mkdtemp(join(tmpdir(), "fairy-gateway-research-governance-"));
+    const dataDir = join(temp, "data");
+    const configPath = join(temp, "fairy.yaml");
+    const token = "research-governance-token";
+    writeConfig(configPath, dataDir, token, provider.url, {
+      extraModels: [
+        "  - id: mock-local",
+        "    transport: openai-chat",
+        `    base_url: ${JSON.stringify(fallback.url)}`,
+        "    model: mock-model",
+        "    data_clearance:",
+        "      max_sensitivity: secret",
+        "      residency: [local-only]"
+      ],
+      mainRole: [
+        "    model: mock-main",
+        "    fallback: [mock-local]"
+      ]
+    });
+    const gateway = startGateway(configPath);
+
+    try {
+      const port = await waitForGateway(gateway);
+      const client = await MockFairyClient.connect({ token, url: `ws://127.0.0.1:${port}` });
+      const created = await client.createSession("research governance");
+      const turnEvents = await sendTurnInputWithTimeout(client, created.sid, {
+        content: [{ kind: "text", text: "fetch private research note and answer locally" }]
+      }, 60000);
+      client.close();
+
+      expect(provider.requests).toBe(1);
+      expect(fallback.requests).toBe(1);
+      expect(turnEvents.find((event) => event.type === "snapshot.created")).toMatchObject({
+        labels: { residency: "local-only", sensitivity: "personal" }
+      });
+      expect(turnEvents.find((event) => event.type === "tool.result" && isPayloadRecord(event) && event.payload.call_id === "call_private_fetch")).toMatchObject({
+        labels: { residency: "local-only", sensitivity: "personal" }
+      });
+      expect([...turnEvents].reverse().find((event) => event.type === "context.manifest")?.payload).toMatchObject({
+        effective_labels: { residency: "local-only", sensitivity: "personal" }
+      });
+      expect(turnEvents.find((event) => event.type === "progress.update" && isPayloadRecord(event) && event.payload.stage === "route-denied")?.payload).toMatchObject({
+        model_id: "mock-main"
+      });
+      expect(turnEvents.at(-1)?.payload).toMatchObject({
+        content: [{ kind: "text", text: "local fallback ok" }],
+        model_trace: {
+          denied_candidates: [expect.objectContaining({ model_id: "mock-main" })],
+          model_id: "mock-local"
+        }
+      });
+      assertSchemaValidStream(client.events());
+    } finally {
+      await stopGateway(gateway);
+      await fallback.stop();
+    }
+  }, 90_000);
 
   it.skipIf(!hasDocker())("asks once for shell.run, stores a session grant, and audits execution", async () => {
     provider = await MockOpenAIChatServer.start();

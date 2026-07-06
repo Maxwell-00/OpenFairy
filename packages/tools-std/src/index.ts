@@ -1,4 +1,16 @@
 import { Readability } from "@mozilla/readability";
+import {
+  citationEventPayload,
+  createResearchPlan,
+  MockResearchProvider,
+  quarantineContent,
+  ResearchStore,
+  snapshotEventPayload,
+  sourcesetEventPayload,
+  type ResearchLabels,
+  type ResearchPlan,
+  type ResearchSource
+} from "@fairy/research";
 import { parseHTML } from "linkedom";
 import { spawn, spawnSync } from "node:child_process";
 import { mkdir, readFile, readdir, realpath, stat, writeFile } from "node:fs/promises";
@@ -23,9 +35,17 @@ export interface ToolExecutionContext {
   readonly workspaceRoot: string;
 }
 
+export interface ToolSideEvent {
+  readonly type: "citation.recorded" | "progress.update" | "snapshot.created" | "sourceset.reviewed";
+  readonly labels?: ToolLabels;
+  readonly payload: Record<string, unknown>;
+  readonly provenance?: string;
+}
+
 export interface ToolExecutionResult {
   readonly content?: string;
   readonly artifact_ref?: string;
+  readonly events?: readonly ToolSideEvent[];
   readonly labels: ToolLabels;
   readonly metadata?: Record<string, unknown>;
   readonly provenance: string;
@@ -139,6 +159,16 @@ const jsonSchemaObject = (properties: Record<string, unknown>, required: string[
   required,
   type: "object"
 });
+
+const labelsJoin = (labels: readonly ResearchLabels[]): ToolLabels => {
+  const sensitivityRank: Record<ToolLabels["sensitivity"], number> = { public: 0, internal: 1, personal: 2, secret: 3 };
+  const residencyRank: Record<ToolLabels["residency"], number> = { "global-ok": 0, "region-restricted": 1, "local-only": 2 };
+  const residencyByRank = ["global-ok", "region-restricted", "local-only"] as const;
+  return labels.reduce<ToolLabels>((acc, item) => ({
+    residency: residencyByRank[Math.max(residencyRank[acc.residency], residencyRank[item.residency])] ?? "local-only",
+    sensitivity: sensitivityRank[item.sensitivity] > sensitivityRank[acc.sensitivity] ? item.sensitivity : acc.sensitivity
+  }), publicLabels);
+};
 
 const quarantine = (source: string, content: string): string =>
   [
@@ -402,6 +432,196 @@ const createWebSearchTool = (config: Record<string, unknown> | undefined, env: N
   }
 });
 
+const readStringArray = (value: unknown): string[] =>
+  Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : [];
+
+const researchStoreOptions = (config: Record<string, unknown> | undefined): { denyDomains: string[]; ttl?: string } => {
+  const research = readBlock(config, "research");
+  const domains = readBlock(research, "domains");
+  const snapshots = readBlock(research, "snapshots");
+  return {
+    denyDomains: readStringArray(domains.deny),
+    ...(typeof snapshots.ttl === "string" ? { ttl: snapshots.ttl } : {})
+  };
+};
+
+const isResearchPlan = (value: unknown): value is ResearchPlan =>
+  isRecord(value) &&
+  typeof value.id === "string" &&
+  typeof value.intent === "string" &&
+  (value.depth === "quick" || value.depth === "standard" || value.depth === "deep") &&
+  Array.isArray(value.subqueries) &&
+  isRecord(value.budgets);
+
+const sourceDomain = (url: string): string => new URL(url).hostname;
+
+const sourceForFetchArg = async (store: ResearchStore, value: string): Promise<string | ResearchSource> => {
+  const sources = await store.listSources();
+  const source = sources.find((candidate) =>
+    candidate.id === value ||
+    candidate.url === value ||
+    candidate.canonical_url === value
+  );
+  return source ?? value;
+};
+
+const createResearchTools = (options: StandardToolOptions): RegisteredTool[] => {
+  const provider = new MockResearchProvider();
+  const store = new ResearchStore(options.artifactsDir, researchStoreOptions(options.config));
+
+  const researchPlanTool: RegisteredTool = {
+    description: "Create a deterministic bounded research plan without calling a model.",
+    labels_out: publicLabels,
+    name: "research.plan",
+    params: jsonSchemaObject({
+      depth: { enum: ["quick", "standard", "deep"], type: "string" },
+      intent: { type: "string" },
+      user_locale: { enum: ["en", "zh", "mixed"], type: "string" }
+    }, ["intent"]),
+    async execute(args) {
+      const depth = args.depth === "quick" || args.depth === "standard" || args.depth === "deep" ? args.depth : undefined;
+      const userLocale = args.user_locale === "en" || args.user_locale === "zh" || args.user_locale === "mixed" ? args.user_locale : undefined;
+      const plan = createResearchPlan(stringArg(args, "intent"), {
+        ...(depth ? { depth } : {}),
+        ...(userLocale ? { userLocale } : {})
+      });
+      return {
+        content: JSON.stringify(plan, null, 2),
+        labels: publicLabels,
+        metadata: { plan_id: plan.id },
+        provenance: "tool:research.plan"
+      };
+    }
+  };
+
+  const researchSearchTool: RegisteredTool = {
+    description: "Run deterministic mock research search and normalize a deduped source set.",
+    labels_out: publicLabels,
+    name: "research.search",
+    params: jsonSchemaObject({
+      plan_or_query: {},
+      query: { type: "string" }
+    }),
+    async execute(args) {
+      const raw = args.plan_or_query ?? args.query;
+      const planOrQuery = isResearchPlan(raw) ? raw : typeof raw === "string" ? raw : stringArg(args, "query");
+      const result = await store.search(planOrQuery, provider);
+      return {
+        content: JSON.stringify(result, null, 2),
+        events: result.warnings.map((warning) => ({
+          labels: publicLabels,
+          payload: { detail: warning, stage: warning.startsWith("research.budget_exhausted") ? "research.budget_exhausted" : "research.search_warning" },
+          provenance: "tool:research.search",
+          type: "progress.update" as const
+        })),
+        labels: publicLabels,
+        metadata: { plan_id: result.plan.id, source_count: result.sources.length },
+        provenance: "tool:research.search"
+      };
+    }
+  };
+
+  const researchFetchTool: RegisteredTool = {
+    description: "Fetch a research source into an immutable snapshot and return quarantined untrusted text.",
+    labels_out: publicLabels,
+    name: "research.fetch",
+    params: jsonSchemaObject({
+      url_or_source_id: { type: "string" }
+    }, ["url_or_source_id"]),
+    async execute(args) {
+      const target = await sourceForFetchArg(store, stringArg(args, "url_or_source_id"));
+      const { cache_hit: cacheHit, snapshot } = await store.fetchSnapshot(target, provider);
+      const domain = sourceDomain(snapshot.canonical_url);
+      return {
+        content: quarantineContent(`web:${domain}`, snapshot.fetch_error ? `Fetch failed: ${snapshot.fetch_error}` : snapshot.text),
+        events: [{
+          labels: snapshot.labels,
+          payload: { ...snapshotEventPayload(snapshot), cache_hit: cacheHit },
+          provenance: `web:${domain}`,
+          type: "snapshot.created"
+        }],
+        labels: snapshot.labels,
+        metadata: {
+          cache_hit: cacheHit,
+          content_provenance: `web:${domain}`,
+          snapshot_id: snapshot.snapshot_id,
+          untrusted: true
+        },
+        provenance: "tool:research.fetch"
+      };
+    }
+  };
+
+  const researchCiteTool: RegisteredTool = {
+    description: "Record a claim citation backed by a stored snapshot span.",
+    labels_out: publicLabels,
+    name: "research.cite",
+    params: jsonSchemaObject({
+      claim: { type: "string" },
+      snapshot_id: { type: "string" },
+      span: {
+        additionalProperties: false,
+        properties: {
+          end: { type: "integer" },
+          start: { type: "integer" }
+        },
+        required: ["start", "end"],
+        type: "object"
+      }
+    }, ["claim", "snapshot_id", "span"]),
+    async execute(args) {
+      const span = isRecord(args.span) ? args.span : {};
+      const citation = await store.cite(stringArg(args, "claim"), stringArg(args, "snapshot_id"), {
+        end: typeof span.end === "number" ? span.end : -1,
+        start: typeof span.start === "number" ? span.start : -1
+      });
+      const snapshot = await store.getSnapshot(citation.source.snapshot_ref);
+      const domain = sourceDomain(citation.source.url);
+      return {
+        content: JSON.stringify(citation, null, 2),
+        events: [{
+          labels: snapshot?.labels ?? publicLabels,
+          payload: citationEventPayload(citation),
+          provenance: `web:${domain}`,
+          type: "citation.recorded"
+        }],
+        labels: snapshot?.labels ?? publicLabels,
+        metadata: { snapshot_id: citation.source.snapshot_ref },
+        provenance: "tool:research.cite"
+      };
+    }
+  };
+
+  const researchSourcesTool: RegisteredTool = {
+    description: "Return and review the current deduped research source set.",
+    labels_out: publicLabels,
+    name: "research.sources",
+    params: jsonSchemaObject({}),
+    async execute() {
+      const sources = await store.listSources();
+      const review = store.reviewSources(sources);
+      const labels = labelsJoin(sources.map((source) => source.labels));
+      const events = sources.length > 0
+        ? [{
+            labels,
+            payload: sourcesetEventPayload(review),
+            provenance: "tool:research.sources",
+            type: "sourceset.reviewed" as const
+          }]
+        : [];
+      return {
+        content: JSON.stringify({ review, sources }, null, 2),
+        events,
+        labels,
+        metadata: { source_count: sources.length, warnings: review.warnings },
+        provenance: "tool:research.sources"
+      };
+    }
+  };
+
+  return [researchPlanTool, researchSearchTool, researchFetchTool, researchCiteTool, researchSourcesTool];
+};
+
 export const createStandardToolRegistry = (options: StandardToolOptions): ToolRegistry => {
   const sandbox = readBlock(options.config, "sandbox");
   const tools = new Map<string, RegisteredTool>();
@@ -414,6 +634,9 @@ export const createStandardToolRegistry = (options: StandardToolOptions): ToolRe
   register(fsListTool);
   register(webFetchTool);
   register(createWebSearchTool(options.config, options.env ?? process.env));
+  for (const tool of createResearchTools(options)) {
+    register(tool);
+  }
 
   if (hasDocker()) {
     const image = typeof sandbox.image === "string" ? sandbox.image : "node:22-slim";

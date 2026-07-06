@@ -1,17 +1,30 @@
 {
-  "actor": "agent",
+  "actor": "tool",
   "id": "evt_01J00000000000000000000024",
   "labels": {
     "residency": "global-ok",
     "sensitivity": "internal"
   },
   "payload": {
+    "cache_hit": false,
+    "canonical_url": "https://docs.openfairy.test/research/memory-store",
+    "cleaning_method": "mock-readability-v1",
+    "content_hash": "sha256:abc",
+    "engine": "mock-research",
+    "grade": "official",
     "hash": "sha256:abc",
+    "labels": {
+      "residency": "global-ok",
+      "sensitivity": "public"
+    },
+    "mime": "text/html",
     "retrieved_at": "2026-07-02T10:00:00.000Z",
-    "snapshot_ref": "snap-1",
-    "url": "https://example.test"
+    "snapshot_ref": "snap_abc",
+    "source_id": "src_abc",
+    "title": "OpenFairy MemoryStore Notes",
+    "url": "https://docs.openfairy.test/research/memory-store"
   },
-  "provenance": "web:example.test",
+  "provenance": "web:docs.openfairy.test",
   "sid": "ses_01J00000000000000000000000",
   "ts": "2026-07-02T10:00:00.000Z",
   "turn": 1,
