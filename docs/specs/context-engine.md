@@ -15,7 +15,7 @@ Every prompt is assembled from ordered **zones**, each with a budget (absolute t
 | # | Zone | Content | Budget (default) | Reduction class |
 |---|---|---|---|---|
 | 1 | System | Capabilities, rules, output contracts | fixed ~1.5k | never |
-| 2 | Persona + affect | Persona core + compact mood state line | fixed ~800 | never |
+| 2 | Persona + affect | Persona core + compact mood state line. *Implemented M2-05: populated from the loaded persona pack + one affect line; disabled persona renders a minimal plain-assistant zone; `context.manifest.zones[]` accounts `persona` tokens* | fixed ~800 | never |
 | 3 | Tool schemas | All registered tools (stable set, see §4) | fixed | mask, don't remove |
 | 4 | Memory digest | Working blocks + gate-admitted retrieval digest (specs/memory §4a) | ~1.5k | shrink digest first |
 | 5 | Skills index | Skill names + one-liners (bodies load on demand) | ~400 | fixed |
@@ -60,4 +60,4 @@ Subagents get fresh contexts built from: their role prompt + a **task brief** co
 
 ## 6. Observability
 
-Every assembled prompt logs a **context manifest** event. Normative payload as of M1-03: `{zones: [{name, tokens, estimated}], budget, window, output_reserve, projected_tokens, reduction_stages_applied, prefix_hash, model}` — `projected_tokens` includes the output reserve (prompt-only projection overflows during generation), and `prefix_hash` covers the stable prefix (system + tools zones), so it should be constant across a session's turns. Tokens-by-provenance is a later addition. Manifests are observational only and never enter prompt assembly. The replay debugger (`fairy replay --manifests`) renders them as a per-turn table — context bugs become visible instead of vibes. Ledger correlation of cache-hit rates with cost per provider arrives with the ledger (M4).
+Every assembled prompt logs a **context manifest** event. Normative payload as of M1-03: `{zones: [{name, tokens, estimated}], budget, window, output_reserve, projected_tokens, reduction_stages_applied, prefix_hash, model}` — `projected_tokens` includes the output reserve (prompt-only projection overflows during generation), and `prefix_hash` covers the stable prefix (system + tools zones; since M2-05 also the persona/affect zone — an affect state change intentionally changes the hash, tests assert stability across turns while affect state is unchanged), so it should be constant across a session's turns absent an affect update. Tokens-by-provenance is a later addition. Manifests are observational only and never enter prompt assembly. The replay debugger (`fairy replay --manifests`) renders them as a per-turn table — context bugs become visible instead of vibes. Ledger correlation of cache-hit rates with cost per provider arrives with the ledger (M4).

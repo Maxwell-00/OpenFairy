@@ -60,6 +60,8 @@ A single default table can't serve both "daily usability" and "psychological saf
 
 *Profiles enforced since M2-04: `governance.profile` is a closed enum (`balanced | sovereign | cloud-friendly`) — invalid names fail config validation; per-profile default tables ship in code and are unit-tested as golden tables; a provider claiming `region-restricted` without declaring `regions` fails validation (§4).*
 
+*Persona/affect labels since M2-05: persona pack content is label-bearing prompt content defaulting `internal / global-ok`; it joins effective prompt labels (max/intersection) and can raise but never lower user/history/tool/memory/research labels. Persona/affect state is style-only — it is never read by route clearance, permission decisions, MemoryGate, or the egress guard (test-gated by `substance.invariance`).*
+
 ## 2. Provider clearance
 
 Model registry entries (model-gateway §2) gain:

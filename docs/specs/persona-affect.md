@@ -61,7 +61,7 @@ A small, deterministic state machine — **not** model-improvised mood.
 | Long productive session | arousal − (winds down) |
 | Idle days then return | small warm spike (recognition) |
 
-**Update rule:** `state ← clamp(bounds, decay_toward(baseline, dt) + Σ bounded_deltas)`. Deltas are config constants; an optional LLM appraisal assist may *propose* deltas but the engine clamps and applies them — the model cannot set its own mood arbitrarily. Every change emits `affect.updated` (auditable; `/affect` shows current state and why).
+**Update rule:** `state ← clamp(bounds, decay_toward(baseline, dt) + Σ bounded_deltas)`. Deltas are config constants; an optional LLM appraisal assist may *propose* deltas but the engine clamps and applies them — the model cannot set its own mood arbitrarily. Every change emits `affect.updated` (auditable; `/affect` shows current state and why). *v1 (M2-05) ships with **no** LLM appraisal assist at all: appraisal inputs are user text + mechanical turn outcomes (clean completion, thanks, repeated tool failures, provider outage/route denial, distress markers, idle decay), evaluated once at turn boundary. Model output never feeds affect state.*
 
 ## 3. Expression mapping — where affect is allowed to act
 
@@ -93,3 +93,14 @@ The memory system feeds persona depth: inside jokes and callback references (epi
 - **Substance invariance:** same tasks run at mood extremes must produce semantically equivalent answers (diff-judge; any factual divergence = failure).
 - **Tone regression:** golden transcripts for signature moments (greeting after absence, post-failure terseness, quiet-hours brevity).
 - **Cringe review:** periodic human review of sampled outputs — wit that lands as annoying gets style-guide fixes, not model blame.
+
+## 7. Implementation status — M2-05 (Persona Pack v1 + Affect Engine v1)
+
+*Shipped: default pack at `extensions/personas/fairy/` (persona.yaml, PERSONA.md, style/zh.md, style/en.md, ack-bank.yaml — content/config only, no executable hooks); loader in `packages/kernel/src/persona.ts` supporting id/name/languages/disclosure/style summary/labels/affect baseline+bounds/optional voice style-map and ack bank as data.*
+
+- **Affect Engine v1 is fully deterministic** (§2 status note): state `{valence, arousal, stance ∈ warm|neutral|dry, energy, updated_at}` clamped to persona bounds, updated at turn boundary only, emitting registered `affect.updated` (required `cause`; the schema's `focused`/`playful` stances are a registered superset the v1 engine does not emit). v1 state is in-memory per session; the JSONL `affect.updated` stream is the auditable/rebuildable record — no second source of truth.
+- **Style-only, test-gated:** `substance.invariance` (deterministic, PR-tier) diffs tool calls, permission decisions, route decisions, and factual payload across affect extremes; `persona.consistency` covers style markers + distress humor suppression. Persona/affect state is never read by PermissionEngine, route clearance, egress guard, or MemoryGate.
+- **Labels:** persona content defaults `internal / global-ok`, joins effective prompt labels (max/intersection) and can never lower user/tool/history/memory labels.
+- **Off switches (§5.3) implemented:** `persona: none` / `persona.enabled=false` ⇒ plain assistant zone; `affect.enabled=false` ⇒ frozen baseline, no `affect.updated`. Config keys (`persona.id/enabled/root`, `affect.enabled`) live in the standard config loader/schema.
+- **Safety rails (§5) test-enforced:** disclosure inspectable via `fairy persona inspect --json`; current state via `fairy affect --json`; deterministic banned-corpus tests for guilt-over-absence, suffering claims, shutdown discouragement, dependency-seeking (zh + en); distress ⇒ warm stance + humor suppression; persona/affect never writes memory.
+- **Prompt integration:** compact persona+affect zone in the stable prefix (no second-precision timestamps); `context.manifest` accounts persona zone tokens and stays observational (context-engine spec).
