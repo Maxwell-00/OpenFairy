@@ -1,0 +1,1 @@
+﻿{"bounds":{"arousal":[-1,1],"valence":[-1,1]},"current":{"arousal":0,"cause":"plain baseline","energy":"medium","stance":"neutral","updated_at":"1970-01-01T00:00:00.000Z","valence":0},"enabled":false,"last_cause":"plain baseline","persona_enabled":false,"persona_id":"none","source":{"kind":"baseline"}}

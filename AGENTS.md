@@ -1,6 +1,6 @@
 # CLAUDE.md — Fairy
 
-Personal AI companion (ZZZ-Fairy-inspired): resident gateway, any OpenAI-compatible LLM as the brain, memory, low-latency voice, sandboxed execution, bounded persona. Single owner (Chidi), zh/en bilingual.
+Personal AI companion (ZZZ-Fairy-inspired): resident gateway, any OpenAI-compatible LLM as the brain, memory, low-latency voice, sandboxed execution, bounded persona. Single owner (Maxwell), zh/en bilingual.
 
 > **If you are the reviewer Claude in a Cowork conversation** (gating briefs, countersigning reviews, owning docs): read [REVIEWER-HANDBOOK.md](REVIEWER-HANDBOOK.md) before doing anything else — it carries the accumulated review method, environment landmines, and standing rules.
 

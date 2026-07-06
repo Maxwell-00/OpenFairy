@@ -1,0 +1,1 @@
+﻿{"bounds":{"arousal":[-0.7,0.7],"valence":[-0.6,0.8]},"current":{"arousal":-0.1,"cause":"baseline","energy":"low","stance":"dry","updated_at":"1970-01-01T00:00:00.000Z","valence":0.15},"enabled":true,"last_cause":"baseline","persona_enabled":true,"persona_id":"fairy","source":{"kind":"baseline"}}
