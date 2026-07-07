@@ -1,4 +1,5 @@
 import {
+  defaultRequestLabels,
   ProviderError,
   type ChatMessage,
   type ModelGateway,
@@ -22,7 +23,28 @@ import { mkdirSync } from "node:fs";
 import { mkdir, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
-import { assemblePrompt, type ContextConfig } from "./context.js";
+import { assemblePrompt, type AssembledPrompt, type ContextConfig, type ReductionStage } from "./context.js";
+import {
+  buildCompactionRequest,
+  compactionSystemPrompt,
+  countReductionPlaceholders,
+  defaultCompactionPolicy,
+  l4SourceMessages,
+  projectL4History,
+  projectL5History,
+  protectedRecentTurnsForCompaction,
+  serializeCompactionArtifact,
+  shouldTriggerL4,
+  shouldTriggerL5,
+  validateL4CompactionOutput,
+  validateL5CompactionOutput,
+  type CompactionOutput,
+  type CompactionRequestShape,
+  type CompactionSourceRange,
+  type CompactionStage,
+  type L4CompactionOutput,
+  type L5CompactionOutput
+} from "./compaction.js";
 import {
   EgressGuard,
   escalateLabelsForContent,
@@ -64,6 +86,22 @@ export {
   readPersonaSettings,
   renderPersonaAffectZone
 } from "./persona.js";
+export {
+  buildCompactionRequest,
+  compactionSystemPrompt,
+  countReductionPlaceholders,
+  defaultCompactionPolicy,
+  l4SourceMessages,
+  projectL4History,
+  projectL5History,
+  protectedRecentTurnsForCompaction,
+  renderL4SummaryMessage,
+  renderL5HandoffMessage,
+  shouldTriggerL4,
+  shouldTriggerL5,
+  validateL4CompactionOutput,
+  validateL5CompactionOutput
+} from "./compaction.js";
 export type {
   EgressDecision,
   EgressGuardConfig,
@@ -104,6 +142,7 @@ export type KernelEventType =
   | "memory.written"
   | "progress.update"
   | "route.denied"
+  | "session.compacted"
   | "snapshot.created"
   | "sourceset.reviewed"
   | "turn.delta"
@@ -305,6 +344,29 @@ const labelsFromUnknown = (value: unknown, fallback: Labels): Labels => {
 const publicSafeRouteDeniedText =
   "I can't send this turn to the configured model because the prompt labels exceed the provider clearance. Configure a cleared local/fallback model or explicitly declassify the content.";
 
+interface PromptAssemblyInput {
+  readonly currentLabels: RequestLabels;
+  readonly currentTurnMessages: readonly ChatMessage[];
+  readonly definitions: readonly ToolDefinition[];
+  readonly memoryDigest?: {
+    readonly content: string;
+    readonly labels?: RequestLabels;
+  };
+  readonly options: RunTurnOptions;
+  readonly personaZone?: {
+    readonly content: string;
+    readonly labels?: RequestLabels;
+  };
+}
+
+interface CompactionAttempt<T extends CompactionOutput> {
+  readonly artifactRef: string;
+  readonly labels: RequestLabels;
+  readonly output: T;
+  readonly request: CompactionRequestShape;
+  readonly sourceRange: CompactionSourceRange;
+}
+
 export class AuditLog {
   readonly #db: DatabaseSync;
 
@@ -414,6 +476,10 @@ export class TurnRunner {
     this.#artifactsDir = options.artifactsDir;
     this.#auditLog = options.auditLog;
     this.#contextConfig = {
+      compactionRole: options.contextConfig?.compactionRole ?? "summarizer",
+      l4PlaceholderThreshold: options.contextConfig?.l4PlaceholderThreshold ?? 6,
+      l4TargetTokens: options.contextConfig?.l4TargetTokens ?? 800,
+      l5TargetTokens: options.contextConfig?.l5TargetTokens ?? 1200,
       minRecentTurns: options.contextConfig?.minRecentTurns ?? 4,
       ...(options.contextConfig?.outputReserve !== undefined ? { outputReserve: options.contextConfig.outputReserve } : {}),
       ...(options.contextConfig?.memoryDigestBudget !== undefined ? { memoryDigestBudget: options.contextConfig.memoryDigestBudget } : {}),
@@ -526,19 +592,13 @@ export class TurnRunner {
               personaEnabled: this.#personaRuntime.enabled
             })
           : undefined;
-        const assembled = assemblePrompt({
-          config: this.#contextConfig,
+        const assembled = await this.#assemblePromptForTurn(active, {
           currentLabels,
-          currentInput: options.input,
           currentTurnMessages: turnMessages,
-          history: options.history.messages,
+          definitions,
           ...(memoryDigest ? { memoryDigest } : {}),
-          model: this.#modelGateway.modelInfo("main"),
-          modelGateway: this.#modelGateway,
-          ...(personaZone ? { personaZone } : {}),
-          systemPrompt: this.#systemPrompt,
-          ...(definitions.length > 0 ? { toolSafetyPrompt: toolSafetySystemPrompt } : {}),
-          tools: definitions
+          options,
+          ...(personaZone ? { personaZone } : {})
         });
         await options.emit({
           labels: assembled.effectiveLabels,
@@ -752,6 +812,273 @@ export class TurnRunner {
       ...(totalUsage ? { usage: totalUsage } : {}),
       ...(interrupted ? { finish_reason: "cancelled" as const } : {})
     };
+  }
+
+  async #assemblePromptForTurn(
+    active: ActiveTurn,
+    input: PromptAssemblyInput
+  ): Promise<AssembledPrompt> {
+    const basePrompt = {
+      config: this.#contextConfig,
+      currentLabels: input.currentLabels,
+      currentInput: input.options.input,
+      currentTurnMessages: input.currentTurnMessages,
+      history: input.options.history.messages,
+      ...(input.memoryDigest ? { memoryDigest: input.memoryDigest } : {}),
+      model: this.#modelGateway.modelInfo("main"),
+      modelGateway: this.#modelGateway,
+      ...(input.personaZone ? { personaZone: input.personaZone } : {}),
+      systemPrompt: this.#systemPrompt,
+      ...(input.definitions.length > 0 ? { toolSafetyPrompt: toolSafetySystemPrompt } : {}),
+      tools: input.definitions
+    };
+
+    const baseline = assemblePrompt(basePrompt);
+    const policy = defaultCompactionPolicy(this.#contextConfig);
+    const placeholderCount = countReductionPlaceholders(baseline.messages);
+    if (!shouldTriggerL4({
+      budget: baseline.manifest.budget,
+      placeholderCount,
+      projectedTokens: baseline.manifest.projected_tokens,
+      threshold: policy.l4PlaceholderThreshold
+    })) {
+      return baseline;
+    }
+
+    const protectedTurns = protectedRecentTurnsForCompaction(input.options.history.messages, this.#contextConfig.minRecentTurns);
+    const l4Sources = l4SourceMessages(input.options.history.messages, protectedTurns);
+    if (l4Sources.length === 0) {
+      return baseline;
+    }
+
+    const l4 = await this.#tryCompactionStage<L4CompactionOutput>("L4", {
+      active,
+      currentLabels: input.currentLabels,
+      currentInput: input.options.input,
+      history: input.options.history.messages,
+      options: input.options,
+      sourceMessages: l4Sources,
+      targetTokens: policy.l4TargetTokens
+    });
+    if (!l4) {
+      return baseline;
+    }
+
+    const l4History = projectL4History({
+      history: input.options.history.messages,
+      labels: l4.labels,
+      output: l4.output,
+      protectedTurns,
+      sourceRange: l4.sourceRange,
+      summaryRef: l4.artifactRef
+    });
+    const l4Stages = this.#mergeStages(baseline.manifest.reduction_stages_applied, ["L4"]);
+    const l4Assembled = assemblePrompt({
+      ...basePrompt,
+      compactionRefs: [l4.artifactRef],
+      history: l4History,
+      preAppliedStages: l4Stages
+    });
+    if (!shouldTriggerL5({
+      budget: l4Assembled.manifest.budget,
+      projectedTokens: l4Assembled.manifest.projected_tokens
+    })) {
+      return l4Assembled;
+    }
+
+    const l5 = await this.#tryCompactionStage<L5CompactionOutput>("L5", {
+      active,
+      currentLabels: input.currentLabels,
+      currentInput: input.options.input,
+      history: input.options.history.messages,
+      options: input.options,
+      sourceMessages: input.options.history.messages,
+      targetTokens: policy.l5TargetTokens
+    });
+    if (!l5) {
+      return l4Assembled;
+    }
+
+    const l5History = projectL5History({
+      history: input.options.history.messages,
+      labels: l5.labels,
+      output: l5.output,
+      protectedTurns,
+      sourceRange: l5.sourceRange,
+      summaryRef: l5.artifactRef
+    });
+    return assemblePrompt({
+      ...basePrompt,
+      compactionRefs: [l4.artifactRef, l5.artifactRef],
+      history: l5History,
+      preAppliedStages: this.#mergeStages(l4Stages, ["L5"])
+    });
+  }
+
+  #mergeStages(left: readonly ReductionStage[], right: readonly ReductionStage[]): ReductionStage[] {
+    return [...new Set<ReductionStage>([...left, ...right])];
+  }
+
+  async #tryCompactionStage<T extends CompactionOutput>(
+    stage: CompactionStage,
+    input: {
+      readonly active: ActiveTurn;
+      readonly currentLabels: RequestLabels;
+      readonly currentInput: string;
+      readonly history: readonly ChatMessage[];
+      readonly options: RunTurnOptions;
+      readonly sourceMessages: readonly ChatMessage[];
+      readonly targetTokens: number;
+    }
+  ): Promise<CompactionAttempt<T> | undefined> {
+    const policy = defaultCompactionPolicy(this.#contextConfig);
+    const request = buildCompactionRequest({
+      currentInput: input.currentInput,
+      currentLabels: input.currentLabels,
+      history: input.history,
+      sourceMessages: input.sourceMessages,
+      stage,
+      targetTokens: input.targetTokens
+    });
+    const messages: ChatMessage[] = [
+      { content: compactionSystemPrompt(stage), labels: defaultRequestLabels, role: "system" },
+      { content: JSON.stringify(request), labels: request.labels, role: "user" }
+    ];
+
+    let raw = "";
+    try {
+      for await (const event of this.#modelGateway.generate(
+        policy.compactionRole,
+        {
+          labels: request.labels,
+          messages,
+          ...(input.options.routingHints ? { routing_hints: input.options.routingHints } : {})
+        },
+        { abort: input.active.controller.signal }
+      )) {
+        if (event.type === "text") {
+          raw += event.text;
+          continue;
+        }
+        if (event.type === "progress") {
+          await input.options.emit({
+            labels: request.labels,
+            payload: {
+              ...event.payload,
+              compaction_stage: stage
+            },
+            type: "progress.update"
+          });
+          continue;
+        }
+        if (event.type === "route_denied") {
+          await input.options.emit({
+            labels: request.labels,
+            payload: event.payload,
+            type: "route.denied"
+          });
+          return undefined;
+        }
+        if (event.type === "tool_call") {
+          await this.#emitCompactionSkip(input.options, request.labels, stage, "tool_call_from_compactor");
+          return undefined;
+        }
+      }
+    } catch (error) {
+      await this.#emitCompactionSkip(input.options, request.labels, stage, error instanceof Error ? error.message : String(error));
+      return undefined;
+    }
+
+    const validation = stage === "L4"
+      ? validateL4CompactionOutput(raw)
+      : validateL5CompactionOutput(raw);
+    if (!validation.ok) {
+      await this.#emitCompactionSkip(input.options, request.labels, stage, validation.reason);
+      return undefined;
+    }
+
+    const output = validation.output as T;
+    const artifact = await this.#writeCompactionArtifact(stage, request, output, input.options);
+    if (!artifact) {
+      return undefined;
+    }
+
+    if (stage === "L5") {
+      await input.options.emit({
+        labels: request.labels,
+        payload: {
+          range: {
+            end_turn: request.source_range.end_turn,
+            start_turn: request.source_range.start_turn
+          },
+          stage,
+          summary_ref: artifact.path
+        },
+        type: "session.compacted"
+      });
+    }
+
+    return {
+      artifactRef: artifact.path,
+      labels: request.labels,
+      output,
+      request,
+      sourceRange: request.source_range
+    };
+  }
+
+  async #emitCompactionSkip(
+    options: RunTurnOptions,
+    labels: RequestLabels,
+    stage: CompactionStage,
+    reason: string
+  ): Promise<void> {
+    await options.emit({
+      labels,
+      payload: {
+        detail: `context ${stage} compaction skipped: ${redactText(reason)}`,
+        reason: redactText(reason),
+        stage: "context.compaction.skipped"
+      },
+      type: "progress.update"
+    });
+  }
+
+  async #writeCompactionArtifact(
+    stage: CompactionStage,
+    request: CompactionRequestShape,
+    output: CompactionOutput,
+    options: RunTurnOptions
+  ): Promise<{ hash: string; path: string } | undefined> {
+    if (!this.#artifactsDir) {
+      await this.#emitCompactionSkip(options, request.labels, stage, "artifact directory is not configured");
+      return undefined;
+    }
+    const content = serializeCompactionArtifact({
+      labels: request.labels,
+      output,
+      request,
+      stage
+    });
+    const hash = createHash("sha256").update(content).digest("hex");
+    const path = join(this.#artifactsDir, "context", `${stage.toLowerCase()}-${hash}.json`);
+    await mkdir(dirname(path), { recursive: true });
+    await writeFile(path, content, "utf8");
+    await options.emit({
+      labels: request.labels,
+      payload: {
+        hash,
+        kind: `context.compaction.${stage.toLowerCase()}`,
+        labels: request.labels,
+        mime: "application/json",
+        origin: "context.compaction",
+        path,
+        source_range: request.source_range,
+        stage
+      },
+      type: "artifact.created"
+    });
+    return { hash, path };
   }
 
   #affectSessionFor(sid: string, override?: AffectState): AffectSession {

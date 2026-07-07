@@ -18,6 +18,12 @@ describe("loadConfig", () => {
     const loaded = loadConfig({ cwd, userConfigPath: join(cwd, "missing-user.yaml") });
 
     expect(loaded.config).toMatchObject({
+      context: {
+        compaction_role: "summarizer",
+        l4_placeholder_threshold: 6,
+        l4_target_tokens: 800,
+        l5_target_tokens: 1200
+      },
       models: [],
       roles: {},
       gateway: { port: 8787, auth: { token: "dev-token" } },
@@ -283,6 +289,39 @@ describe("loadConfig", () => {
       ].join("\n")
     );
 
+    expect(() => loadConfig({ cwd, userConfigPath })).toThrow(ConfigValidationError);
+  });
+
+  it("validates context compaction config", () => {
+    const cwd = makeTempDir();
+    const userConfigPath = join(cwd, "fairy.yaml");
+    writeFileSync(
+      userConfigPath,
+      [
+        "context:",
+        "  l4_placeholder_threshold: 3",
+        "  l4_target_tokens: 400",
+        "  l5_target_tokens: 900",
+        "  compaction_role: summarizer"
+      ].join("\n")
+    );
+
+    expect(loadConfig({ cwd, userConfigPath }).config).toMatchObject({
+      context: {
+        compaction_role: "summarizer",
+        l4_placeholder_threshold: 3,
+        l4_target_tokens: 400,
+        l5_target_tokens: 900
+      }
+    });
+
+    writeFileSync(
+      userConfigPath,
+      [
+        "context:",
+        "  l4_placeholder_threshold: 0"
+      ].join("\n")
+    );
     expect(() => loadConfig({ cwd, userConfigPath })).toThrow(ConfigValidationError);
   });
 });

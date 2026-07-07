@@ -133,7 +133,11 @@ export const configSchema = {
         reduce_at: { type: "number", exclusiveMinimum: 0, maximum: 1 },
         output_reserve: { type: "integer", minimum: 1 },
         memory_digest_budget: { type: "integer", minimum: 1 },
-        min_recent_turns: { type: "integer", minimum: 0 }
+        min_recent_turns: { type: "integer", minimum: 0 },
+        l4_placeholder_threshold: { type: "integer", minimum: 1 },
+        l4_target_tokens: { type: "integer", minimum: 1 },
+        l5_target_tokens: { type: "integer", minimum: 1 },
+        compaction_role: { type: "string", minLength: 1 }
       },
       required: ["reduce_at", "min_recent_turns"]
     },

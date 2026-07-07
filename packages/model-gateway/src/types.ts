@@ -1,7 +1,10 @@
 export interface ChatMessage {
   readonly role: "system" | "user" | "assistant" | "tool";
   readonly content: string;
+  readonly event_id?: string;
   readonly labels?: RequestLabels;
+  readonly pinned?: boolean;
+  readonly provenance?: string;
   readonly routing_hints?: RoutingHints;
   readonly turn?: number;
   readonly tool_call_id?: string;

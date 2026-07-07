@@ -414,7 +414,7 @@ export class MinimalGateway {
       state.turnCount += 1;
       const text = payloadText(event.payload);
       if (text) {
-        state.history.push({ content: text, labels: event.labels, role: "user", turn: event.turn });
+        state.history.push({ content: text, event_id: event.id, labels: event.labels, provenance: event.provenance, role: "user", turn: event.turn });
       }
       return;
     }
@@ -426,7 +426,9 @@ export class MinimalGateway {
       if (callId && tool) {
         state.history.push({
           content: "",
+          event_id: event.id,
           labels: event.labels,
+          provenance: event.provenance,
           role: "assistant",
           tool_calls: [{ arguments: args, id: callId, name: tool }],
           turn: event.turn
@@ -438,9 +440,12 @@ export class MinimalGateway {
     if (event.type === "tool.result" && isRecord(event.payload)) {
       const callId = typeof event.payload.call_id === "string" ? event.payload.call_id : undefined;
       if (callId) {
+        const provenance = typeof event.payload.provenance === "string" ? event.payload.provenance : event.provenance;
         state.history.push({
           content: stablePayload(event.payload),
+          event_id: event.id,
           labels: event.labels,
+          provenance,
           role: "tool",
           tool_call_id: callId,
           turn: event.turn
@@ -452,7 +457,7 @@ export class MinimalGateway {
     if (event.type === "turn.final") {
       const text = payloadText(event.payload);
       if (text) {
-        state.history.push({ content: text, labels: event.labels, role: "assistant", turn: event.turn });
+        state.history.push({ content: text, event_id: event.id, labels: event.labels, provenance: event.provenance, role: "assistant", turn: event.turn });
       }
     }
   }

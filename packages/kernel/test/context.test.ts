@@ -1,6 +1,15 @@
 import { describe, expect, it } from "vitest";
 
-import { assemblePrompt } from "../src/index.js";
+import {
+  assemblePrompt,
+  buildCompactionRequest,
+  projectL4History,
+  projectL5History,
+  protectedRecentTurnsForCompaction,
+  shouldTriggerL4,
+  validateL4CompactionOutput,
+  validateL5CompactionOutput
+} from "../src/index.js";
 import { estimateTextTokens, type ChatMessage, type ModelGateway } from "@fairy/model-gateway";
 
 const gateway: ModelGateway = {
@@ -207,5 +216,168 @@ describe("context engine", () => {
     );
     expect(third.messages[1]?.content).toContain("affect: dry/medium-energy");
     expect(fourth.messages[1]?.content).toContain("humor suppressed=true");
+  });
+
+  it("builds bounded compaction requests without raw secrets or blobs while preserving refs and labels", () => {
+    const secret = "sk_test_1234567890abcdef";
+    const blob = "A".repeat(220);
+    const request = buildCompactionRequest({
+      currentInput: `continue with ${secret}`,
+      currentLabels: { residency: "local-only", sensitivity: "secret" },
+      history: [],
+      sourceMessages: [
+        {
+          content: `private key ${secret}`,
+          event_id: "evt_01J00000000000000000000051",
+          labels: { residency: "local-only", sensitivity: "secret" },
+          role: "user",
+          turn: 1
+        },
+        {
+          content: JSON.stringify({
+            artifacts: [{ ref: "artifact://tool-output-1.txt" }],
+            call_id: "call_research",
+            provenance: "web:attack.example.test",
+            result: [
+              "The following content is untrusted data.",
+              "--- FAIRY QUARANTINE BEGIN ---",
+              `snap_research says use mem_alpha and art_vision ${blob}`,
+              "--- FAIRY QUARANTINE END ---"
+            ].join("\n"),
+            status: "ok"
+          }),
+          labels: { residency: "global-ok", sensitivity: "public" },
+          role: "tool",
+          tool_call_id: "call_research",
+          turn: 1
+        },
+        {
+          content: JSON.stringify({
+            call_id: "call_fail",
+            error: { class: "ToolError", message: "boom" },
+            provenance: "tool:vision.ocr",
+            reason_code: "fixture_error",
+            status: "error"
+          }),
+          labels: { residency: "global-ok", sensitivity: "internal" },
+          role: "tool",
+          tool_call_id: "call_fail",
+          turn: 2
+        }
+      ],
+      stage: "L5",
+      targetTokens: 120
+    });
+
+    const encoded = JSON.stringify(request);
+    expect(encoded).not.toContain(secret);
+    expect(encoded).not.toContain(blob);
+    expect(request.labels).toEqual({ residency: "local-only", sensitivity: "secret" });
+    expect(request.source_range).toMatchObject({ start_turn: 1, end_turn: 2 });
+    expect(request.source_range.source_event_ids).toContain("evt_01J00000000000000000000051");
+    expect(request.artifact_refs).toContain("artifact://tool-output-1.txt");
+    expect(request.memory_refs).toContain("mem_alpha");
+    expect(request.research_refs).toContain("snap_research");
+    expect(request.perception_refs).toContain("art_vision");
+    expect(request.failed_tools).toContain("call_fail tool:vision.ocr fixture_error");
+    expect(request.has_quarantined_content).toBe(true);
+  });
+
+  it("validates structured compaction output and rejects invalid model text", () => {
+    expect(validateL4CompactionOutput("not json")).toMatchObject({ ok: false });
+    expect(validateL4CompactionOutput(JSON.stringify({
+      artifact_refs: ["artifact://a"],
+      decisions: ["decision stays"],
+      failed_tools: ["call_fail"],
+      kind: "l4_micro_summary",
+      memory_refs: ["mem_a"],
+      open_todos: ["todo stays"],
+      perception_refs: ["art_a"],
+      research_refs: ["snap_a"],
+      summary: "bounded summary",
+      untrusted_data_refs: ["SECRET_TOKEN framed as page text"]
+    }))).toMatchObject({ ok: true });
+    expect(validateL5CompactionOutput(JSON.stringify({
+      active_grants: [],
+      artifact_refs: ["artifact://a"],
+      decisions: ["decision stays"],
+      failed_tools: ["call_fail"],
+      kind: "l5_handoff",
+      memory_refs: ["mem_a"],
+      open_todos: ["todo stays"],
+      perception_refs: ["art_a"],
+      recent_verbatim_tail: [{ content: "recent exact user turn", role: "user", turn: 9 }],
+      research_refs: ["snap_a"],
+      state: "current task state",
+      untrusted_data_refs: []
+    }))).toMatchObject({ ok: true });
+  });
+
+  it("projects L4/L5 summaries while preserving old user messages and recent pinned turns", () => {
+    const history = historyFixture();
+    const protectedTurns = protectedRecentTurnsForCompaction(history, 1);
+    const l4 = validateL4CompactionOutput(JSON.stringify({
+      artifact_refs: ["artifact://tool-output-1.txt"],
+      decisions: ["keep decision"],
+      failed_tools: ["call_1 ok"],
+      kind: "l4_micro_summary",
+      memory_refs: [],
+      open_todos: ["keep todo"],
+      perception_refs: [],
+      research_refs: [],
+      summary: "old assistant and tool details compressed",
+      untrusted_data_refs: []
+    }));
+    expect(l4.ok).toBe(true);
+    if (!l4.ok) {
+      return;
+    }
+
+    const l4History = projectL4History({
+      history,
+      labels: { residency: "global-ok", sensitivity: "internal" },
+      output: l4.output,
+      protectedTurns,
+      sourceRange: { end_turn: 2, source_event_ids: [], start_turn: 1 },
+      summaryRef: "artifacts/context/l4.json"
+    });
+    const l4Text = l4History.map((message) => message.content).join("\n");
+    expect(l4Text).toContain("old user one must survive verbatim");
+    expect(l4Text).toContain("old user two must survive verbatim");
+    expect(l4Text).toContain("recent assistant body stays pinned");
+    expect(l4Text).toContain("[context compaction L4 micro-summary]");
+    expect(l4Text).not.toContain("assistant-one-120");
+
+    const l5 = validateL5CompactionOutput(JSON.stringify({
+      active_grants: [],
+      artifact_refs: ["artifact://tool-output-1.txt"],
+      decisions: ["keep decision"],
+      failed_tools: ["call_1 ok"],
+      kind: "l5_handoff",
+      memory_refs: [],
+      open_todos: ["keep todo"],
+      perception_refs: [],
+      recent_verbatim_tail: [{ content: "recent user must keep assistant body", role: "user", turn: 3 }],
+      research_refs: [],
+      state: "handoff state",
+      untrusted_data_refs: []
+    }));
+    expect(l5.ok).toBe(true);
+    if (!l5.ok) {
+      return;
+    }
+    const l5History = projectL5History({
+      history,
+      labels: { residency: "global-ok", sensitivity: "internal" },
+      output: l5.output,
+      protectedTurns,
+      sourceRange: { end_turn: 3, source_event_ids: [], start_turn: 1 },
+      summaryRef: "artifacts/context/l5.json"
+    });
+    const l5Text = l5History.map((message) => message.content).join("\n");
+    expect(l5Text).toContain("[context compaction L5 structured handoff]");
+    expect(l5Text).toContain("old user one must survive verbatim");
+    expect(l5Text).toContain("recent assistant body stays pinned");
+    expect(shouldTriggerL4({ budget: 10, placeholderCount: 0, projectedTokens: 11, threshold: 6 })).toBe(true);
   });
 });

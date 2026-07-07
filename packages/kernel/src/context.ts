@@ -5,6 +5,10 @@ export type ContextZoneName = "system" | "persona" | "tools" | "memory" | "skill
 export type ReductionStage = "L1" | "L2" | "L3" | "L4" | "L5";
 
 export interface ContextConfig {
+  readonly compactionRole?: string;
+  readonly l4PlaceholderThreshold?: number;
+  readonly l4TargetTokens?: number;
+  readonly l5TargetTokens?: number;
   readonly memoryDigestBudget?: number;
   readonly minRecentTurns: number;
   readonly outputReserve?: number;
@@ -25,6 +29,7 @@ export interface ContextManifestPayload {
 
 export interface AssemblePromptOptions {
   readonly config: ContextConfig;
+  readonly compactionRefs?: readonly string[];
   readonly currentLabels?: RequestLabels;
   readonly currentTurnMessages?: readonly ChatMessage[];
   readonly currentInput: string;
@@ -39,6 +44,7 @@ export interface AssemblePromptOptions {
     readonly content: string;
     readonly labels?: RequestLabels;
   };
+  readonly preAppliedStages?: readonly ReductionStage[];
   readonly systemPrompt: string;
   readonly toolSafetyPrompt?: string;
   readonly tools: readonly ToolDefinition[];
@@ -88,6 +94,8 @@ const parseToolContext = (message: ChatMessage): Record<string, unknown> | undef
   }
 };
 
+const isPinnedMessage = (message: ChatMessage): boolean => message.pinned === true;
+
 const containsL1Artifact = (messages: readonly ChatMessage[]): boolean =>
   messages.some((message) => {
     const parsed = parseToolContext(message);
@@ -97,7 +105,7 @@ const containsL1Artifact = (messages: readonly ChatMessage[]): boolean =>
   });
 
 const isToolBodyCandidate = (message: ChatMessage, protectedTurns: ReadonlySet<number>, fallbackTurn: number): boolean =>
-  message.role === "tool" && !protectedTurns.has(turnOf(message, fallbackTurn));
+  message.role === "tool" && !isPinnedMessage(message) && !protectedTurns.has(turnOf(message, fallbackTurn));
 
 const artifactRefFrom = (parsed: Record<string, unknown> | undefined): string | undefined => {
   const result = parsed?.result;
@@ -170,13 +178,15 @@ const snipOldTurns = (
       continue;
     }
 
+    const pinnedMessages = turnMessages.filter(isPinnedMessage);
     const userMessages = turnMessages.filter((message) => message.role === "user");
-    const reducible = turnMessages.filter((message) => message.role !== "user");
+    const reducible = turnMessages.filter((message) => message.role !== "user" && !isPinnedMessage(message));
     if (reducible.length === 0) {
       output.push(...turnMessages);
       continue;
     }
     changed = true;
+    output.push(...pinnedMessages);
     output.push(...userMessages);
     const before = estimate(modelGateway, reducible);
     const users = userMessages.map((message) => `"${userText(message)}"`).join("; ") || "(no user text)";
@@ -219,7 +229,7 @@ export const assemblePrompt = (options: AssemblePromptOptions): AssembledPrompt 
   const outputReserve = options.config.outputReserve ?? options.model.max_output ?? 4096;
   const window = options.model.context_window;
   const budget = Math.max(1, Math.floor(window * options.config.reduceAt));
-  const stages = new Set<ReductionStage>();
+  const stages = new Set<ReductionStage>(options.preAppliedStages ?? []);
 
   const currentTurnMessages = options.currentTurnMessages?.map((message) => ({ ...message })) ?? [];
   let history = options.history.map((message) => ({ ...message }));
@@ -278,6 +288,7 @@ export const assemblePrompt = (options: AssemblePromptOptions): AssembledPrompt 
       projected_tokens: projected,
       reduction_stages_applied: [...stages],
       effective_labels: effectiveLabels,
+      ...(options.compactionRefs && options.compactionRefs.length > 0 ? { compaction_refs: options.compactionRefs } : {}),
       window,
       zones
     },

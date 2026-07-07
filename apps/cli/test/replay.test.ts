@@ -438,4 +438,87 @@ describe("fairy replay", () => {
     expect(json).toContain("\"type\":\"affect.updated\"");
     expect(json).toContain("\"updated_at\":\"2026-07-02T10:00:00.000Z\"");
   });
+
+  it("renders compaction artifacts, session.compacted, and L4/L5 manifest stages", async () => {
+    const dataDir = join(tmpdir(), `fairy-replay-compaction-${Date.now()}`);
+    const sid = "ses_01J00000000000000000000000";
+    const sessionDir = join(dataDir, "sessions", sid);
+    await mkdir(sessionDir, { recursive: true });
+    const events = [
+      {
+        actor: "system",
+        id: "evt_01J00000000000000000000041",
+        labels: { residency: "global-ok", sensitivity: "internal" },
+        payload: {
+          budget: 400,
+          model: "mock-model",
+          output_reserve: 80,
+          prefix_hash: "sha256:compaction",
+          projected_tokens: 380,
+          reduction_stages_applied: ["L1", "L4", "L5"],
+          window: 800,
+          zones: [
+            { estimated: true, name: "system", tokens: 12 },
+            { estimated: true, name: "tools", tokens: 0 },
+            { estimated: true, name: "persona", tokens: 0 },
+            { estimated: true, name: "memory", tokens: 0 },
+            { estimated: true, name: "history", tokens: 320 },
+            { estimated: true, name: "input", tokens: 8 }
+          ]
+        },
+        provenance: "agent",
+        sid,
+        ts: "2026-07-02T10:00:00.000Z",
+        turn: 7,
+        type: "context.manifest",
+        v: 1
+      },
+      {
+        actor: "system",
+        id: "evt_01J00000000000000000000042",
+        labels: { residency: "global-ok", sensitivity: "internal" },
+        payload: {
+          hash: "sha256:l5",
+          kind: "context.compaction.l5",
+          labels: { residency: "global-ok", sensitivity: "internal" },
+          mime: "application/json",
+          origin: "context.compaction",
+          path: "artifacts/context/l5.json"
+        },
+        provenance: "agent",
+        sid,
+        ts: "2026-07-02T10:00:00.001Z",
+        turn: 7,
+        type: "artifact.created",
+        v: 1
+      },
+      {
+        actor: "agent",
+        id: "evt_01J00000000000000000000043",
+        labels: { residency: "global-ok", sensitivity: "internal" },
+        payload: {
+          range: { end_turn: 6, start_turn: 1 },
+          summary_ref: "artifacts/context/l5.json"
+        },
+        provenance: "agent",
+        sid,
+        ts: "2026-07-02T10:00:00.002Z",
+        turn: 7,
+        type: "session.compacted",
+        v: 1
+      }
+    ];
+    await writeFile(join(sessionDir, "log.jsonl"), events.map((event) => JSON.stringify(event)).join("\n"), "utf8");
+
+    const result = await readReplayLog({ dataDir, sid });
+    const rendered = renderReplay(result, { json: false, manifests: false });
+    const manifests = renderReplay(result, { json: false, manifests: true });
+    const json = renderReplay(result, { json: true, manifests: false });
+
+    expect(rendered).toContain("artifact.created artifacts/context/l5.json context.compaction.l5 application/json internal/global-ok sha256:l5");
+    expect(rendered).toContain("session.compacted turns=1-6 artifacts/context/l5.json");
+    expect(manifests).toContain("L1,L4,L5");
+    expect(json).toContain("\"type\":\"session.compacted\"");
+    expect(json).toContain("\"summary_ref\":\"artifacts/context/l5.json\"");
+  });
 });

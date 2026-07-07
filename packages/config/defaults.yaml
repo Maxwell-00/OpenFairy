@@ -27,6 +27,10 @@ context:
   reduce_at: 0.8
   min_recent_turns: 4
   memory_digest_budget: 600
+  l4_placeholder_threshold: 6
+  l4_target_tokens: 800
+  l5_target_tokens: 1200
+  compaction_role: summarizer
 persona:
   id: fairy
   enabled: true

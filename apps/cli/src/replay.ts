@@ -136,6 +136,9 @@ const renderChronological = (events: readonly EventEnvelope[]): string[] => {
         ? `${String(event.payload.labels.sensitivity ?? "?")}/${String(event.payload.labels.residency ?? "?")}`
         : "?";
       lines.push(`turn ${event.turn} artifact.created ${String(event.payload.artifact_id ?? event.payload.path ?? "?")} ${String(event.payload.kind ?? "?")} ${String(event.payload.mime ?? "?")} ${labels} ${short(String(event.payload.hash ?? ""))}`);
+    } else if (event.type === "session.compacted" && isRecord(event.payload)) {
+      const range = isRecord(event.payload.range) ? event.payload.range : {};
+      lines.push(`turn ${event.turn} session.compacted turns=${String(range.start_turn ?? "?")}-${String(range.end_turn ?? "?")} ${String(event.payload.summary_ref ?? "?")}`);
     } else if (event.type === "snapshot.created" && isRecord(event.payload)) {
       lines.push(`turn ${event.turn} snapshot.created ${String(event.payload.snapshot_ref ?? "?")} ${short(String(event.payload.url ?? ""))}`);
     } else if (event.type === "citation.recorded" && isRecord(event.payload)) {
