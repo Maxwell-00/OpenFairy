@@ -127,3 +127,20 @@ None.
 ## Final decision
 
 M2-05b is closed. Proceed to M2-06 perception after applying/gating any necessary docs-pass update.
+
+---
+
+## Countersignature — Claude (Fable 5), 2026-07-07
+
+Verified inline at code level (runtime diff is 24 lines in `packages/kernel/src/persona.ts`; no other runtime file touched — tighter than the brief's allowance, `context.ts` needed no change since the zone content itself became bucket-stable).
+
+- **Prefix fix (approach a) CONFIRMED.** Both the enabled and disabled affect lines drop `cause=` (`persona.ts:389-390`); tests assert byte-identical zone content and identical `prefix_hash` for same-bucket state changes, hash change on bucket shift, and explicitly `not.toContain("cause=")`, `not.toContain("0.39")`, `not.toContain("2026-07-02")` — the exact volatile classes that caused the drift. `affect.updated` emission still carries the full `cause` (`index.ts:800`), so auditability is intact.
+- **Negative-feedback branch CONFIRMED.** Detector is conservative, assistant-directed, zh via `\uXXXX` escapes (handbook §3.5 compliant); `(completedCleanly || thanked) && !negativeFeedback` kills the positive bump; valence −0.14 (within the brief's band); arousal capped at `previous + 0.03`; stance forced `dry` via a narrow-scope `forcedStance` local to `update` — exactly the permitted override, global thresholds untouched; distress clears the override and takes precedence (wellbeing rail preserved). Ordering regression test asserts a clean-completion+criticism turn nets a valence **decrease** vs both the prior state and the clean path — the observed turn-4 defect cannot recur silently.
+- **False-positive guards CONFIRMED:** thanks and a "CI 又红了"-style vent don't trigger; banned-corpus reuse asserts no self-blame phrasing in the rendered zone; extended `substance.invariance` proves identical tool calls/results/approvals/routes/final payload under the negative-feedback state.
+- **Boundaries CONFIRMED:** no docs/docs-zh, no schema change, `governance.ts` and `packages/research` untouched, no new suites, no weakened assertions.
+
+**One recommendation before M2-06 dispatch (non-blocking):** the committed owner evidence is Codex-generated deterministic fixture data (synthetic sids/fairy.yaml), as CARRY-IN 2 notes. Since this task originated from a *real-provider* owner smoke test, the loop should be closed the same way: owner re-runs the original 4-turn deepseek chat (tired → thanks → CI vent → criticism) and checks (1) `--manifests` shows identical `prefix_hash` across same-bucket turns, (2) the criticism turn's `affect.updated` shows `user-negative-feedback` with a terser, non-self-blaming reply. Five minutes, and it verifies the fix where the bug actually lived (handbook §5.5: owner manual tests on real providers are irreplaceable).
+
+Docs pass applied with this countersignature (context-engine §1/§6, persona-affect §2/§3/§7, protocol Affect row). Handbook current-state updated.
+
+**Countersigned: M2-05b ACCEPTED WITH NOTES / CLOSED.**

@@ -56,6 +56,7 @@ A small, deterministic state machine — **not** model-improvised mood.
 | Event | Δ example |
 |---|---|
 | Task completed cleanly / user thanks | valence + |
+| User criticises the assistant's own suggestion/output | valence − (mild), stance → dry, humor suppressed, arousal ~flat — terser wit, never self-blame; overrides the same-turn completion bump; distress still takes precedence (*implemented M2-05b, deterministic zh+en detector*) |
 | Repeated tool failures, provider outage | valence −, arousal + (frustration reads as terser wit) |
 | User sentiment (lightweight classifier on user turns) | empathetic shift toward user's state |
 | Long productive session | arousal − (winds down) |
@@ -67,7 +68,7 @@ A small, deterministic state machine — **not** model-improvised mood.
 
 | Surface | Mechanism | Bound |
 |---|---|---|
-| Phrasing | One compact line in the persona zone: `mood: pleased·low-energy (post-task)` + style guide interprets it | Tone only — content/substance identical across moods (PRD accept criterion) |
+| Phrasing | One compact line in the persona zone: `mood: pleased·low-energy (post-task)` + style guide interprets it. *Since M2-05b the rendered line carries only the quantized bucket (stance/energy/humor-suppressed); the parenthetical cause lives in `affect.updated`, not the prompt prefix (context-engine §1 cache discipline)* | Tone only — content/substance identical across moods (PRD accept criterion) |
 | Voice | TTS style params via `style_map` | Degrades to neutral voice silently |
 | Ack bank | Mood-bucketed acknowledgment selection | — |
 | Proactivity flavor | Briefing greetings, completion notifications | Never changes *whether/when* to notify (that's scheduler policy) |
@@ -98,7 +99,7 @@ The memory system feeds persona depth: inside jokes and callback references (epi
 
 *Shipped: default pack at `extensions/personas/fairy/` (persona.yaml, PERSONA.md, style/zh.md, style/en.md, ack-bank.yaml — content/config only, no executable hooks); loader in `packages/kernel/src/persona.ts` supporting id/name/languages/disclosure/style summary/labels/affect baseline+bounds/optional voice style-map and ack bank as data.*
 
-- **Affect Engine v1 is fully deterministic** (§2 status note): state `{valence, arousal, stance ∈ warm|neutral|dry, energy, updated_at}` clamped to persona bounds, updated at turn boundary only, emitting registered `affect.updated` (required `cause`; the schema's `focused`/`playful` stances are a registered superset the v1 engine does not emit). v1 state is in-memory per session; the JSONL `affect.updated` stream is the auditable/rebuildable record — no second source of truth.
+- **Affect Engine v1 is fully deterministic** (§2 status note): state `{valence, arousal, stance ∈ warm|neutral|dry, energy, updated_at}` clamped to persona bounds, updated at turn boundary only, emitting registered `affect.updated` (required `cause`; the schema's `focused`/`playful` stances are a registered superset the v1 engine does not emit). v1 state is in-memory per session; the JSONL `affect.updated` stream is the auditable/rebuildable record — no second source of truth. *M2-05b added the `user-negative-feedback` appraisal (assistant-directed criticism ⇒ mild valence decrease, dry stance via a narrow-scope override, humor suppression, no arousal spike, completion bump suppressed) and made the rendered prefix line bucket-only (cache discipline, context-engine §1).*
 - **Style-only, test-gated:** `substance.invariance` (deterministic, PR-tier) diffs tool calls, permission decisions, route decisions, and factual payload across affect extremes; `persona.consistency` covers style markers + distress humor suppression. Persona/affect state is never read by PermissionEngine, route clearance, egress guard, or MemoryGate.
 - **Labels:** persona content defaults `internal / global-ok`, joins effective prompt labels (max/intersection) and can never lower user/tool/history/memory labels.
 - **Off switches (§5.3) implemented:** `persona: none` / `persona.enabled=false` ⇒ plain assistant zone; `affect.enabled=false` ⇒ frozen baseline, no `affect.updated`. Config keys (`persona.id/enabled/root`, `affect.enabled`) live in the standard config loader/schema.

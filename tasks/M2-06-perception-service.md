@@ -86,23 +86,13 @@ Before adding perception behavior, preserve or add regression tests proving:
 - No vendor SDK is added.
 - No `docs/` or `docs-zh/` edits.
 
-Carried-over hygiene (failed M2-05 acceptance item — mandatory this time):
-
-- `packages/kernel/src/governance.ts` still contains a mojibake alternative (a double-encoded remnant of the simplified-Chinese OTP anchor) inside the four OTP regexes: two in `credentialPatterns` (~lines 22-23) and two `otp_code` entries in the sensitive-pattern list (~lines 193-194). Each alternation currently reads `...|code|<CJK simplified>|<CJK traditional>|<mojibake>)`. Delete the fourth (mojibake) alternative and its preceding `|` in all four regexes so each alternation ends with the traditional-Chinese term directly followed by `)`. Delete bytes only; do not retype the regexes.
-- Verify with this ASCII-only command (do NOT paste raw CJK into any terminal — that is exactly how the M2-05 check silently failed):
-
-```powershell
-node -e "const s=require('fs').readFileSync('packages/kernel/src/governance.ts','utf8');const tw='\u9a57\u8b49\u78bc';const closed=(s.split(tw+')').length-1);const open=s.includes(tw+'|');if(closed!==4||open){console.error('FAIL: OTP alternation not clean; occurrences ending with )='+closed+', trailing-pipe remnant='+open);process.exit(1)}console.log('PASS: OTP anchor alternation clean (4/4)')"
-```
-
-- Paste the command's output verbatim into the work report.
+Carried-over hygiene: the `governance.ts` mojibake cleanup previously mandated here is now owned by `tasks/M2-05c-encoding-hygiene.md`, which runs BEFORE this task. Do not touch `packages/kernel/src/governance.ts` in M2-06. Rebase this task onto the M2-05c (and M2-05b) delivery commits.
 
 Acceptance:
 
-- Existing M2 test suites remain green.
+- Existing M2 test suites remain green (including the M2-05c encoding guard in `pnpm lint`).
 - `pnpm dep-check` remains green.
 - `git diff --name-only -- docs docs-zh` has no output.
-- The mojibake verification command above prints PASS, and existing OTP/egress unit tests are unchanged and green.
 
 ### 1. Artifact registration for perception inputs
 
