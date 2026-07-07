@@ -1,6 +1,7 @@
 import { AuditLog, escalateLabelsForContent, PermissionEngine, profileDefaults, TurnRunner, type KernelEventType, type TurnRunnerHistory } from "@fairy/kernel";
 import { MemoryStore } from "@fairy/memory";
-import { createModelGateway, type ChatMessage, type RoutingHints } from "@fairy/model-gateway";
+import { createModelGateway, deriveLabels, type ChatMessage, type RoutingHints } from "@fairy/model-gateway";
+import { ArtifactRegistry, type ArtifactRecord } from "@fairy/perception";
 import {
   createEventId,
   createSessionId,
@@ -97,18 +98,105 @@ const routingHintsFrom = (value: unknown): RoutingHints | undefined => {
   return typeof value.prefer_local === "boolean" ? { prefer_local: value.prefer_local } : {};
 };
 
-const textFromContent = (content: unknown): string => {
-  if (!Array.isArray(content)) {
-    return "";
+const short = (value: string, max = 700): string =>
+  value.length <= max ? value : `${value.slice(0, max)}...`;
+
+const artifactRefFromPart = (part: Record<string, unknown>): string | undefined => {
+  for (const key of ["ref", "artifact_id", "artifact_id_or_path", "path"]) {
+    const value = part[key];
+    if (typeof value === "string" && value.length > 0) {
+      return value;
+    }
   }
-  return content
-    .map((part) => (isRecord(part) && part.kind === "text" && typeof part.text === "string" ? part.text : ""))
+  return undefined;
+};
+
+const labelsFromPart = (part: Record<string, unknown>): Labels | undefined =>
+  isLabels(part.labels) ? part.labels : undefined;
+
+const artifactBlock = (part: Record<string, unknown>, artifact?: ArtifactRecord): string => {
+  const ref = artifactRefFromPart(part) ?? artifact?.artifact_id ?? "?";
+  const labels = labelsFromPart(part) ?? artifact?.labels;
+  const mime = typeof part.mime === "string" ? part.mime : artifact?.mime;
+  const provenance = typeof part.provenance === "string" ? part.provenance : artifact?.origin;
+  const description = typeof part.description === "string" ? part.description : undefined;
+  const ocrExcerpt = typeof part.ocr_excerpt === "string" ? part.ocr_excerpt : undefined;
+  return [
+    "[artifact]",
+    `ref: ${ref}`,
+    ...(artifact ? [`artifact_id: ${artifact.artifact_id}`, `hash: ${artifact.hash}`, `path: ${artifact.path}`] : []),
+    ...(mime ? [`mime: ${mime}`] : []),
+    ...(labels ? [`labels: ${labels.sensitivity}/${labels.residency}`] : []),
+    ...(provenance ? [`provenance: ${provenance}`] : []),
+    ...(description ? [`description: ${short(description)}`] : []),
+    ...(ocrExcerpt ? [`ocr_excerpt: ${short(ocrExcerpt)}`] : []),
+    "[/artifact]"
+  ].join("\n");
+};
+
+const renderContentSync = (content: unknown): { labels: Labels[]; text: string } => {
+  if (!Array.isArray(content)) {
+    return { labels: [], text: "" };
+  }
+  const labels: Labels[] = [];
+  const text = content
+    .map((part) => {
+      if (!isRecord(part)) {
+        return "";
+      }
+      const partLabels = labelsFromPart(part);
+      if (partLabels) {
+        labels.push(partLabels);
+      }
+      if (part.kind === "text" && typeof part.text === "string") {
+        return part.text;
+      }
+      if (part.kind === "artifact" && artifactRefFromPart(part)) {
+        return artifactBlock(part);
+      }
+      return "";
+    })
     .filter((part) => part.length > 0)
     .join("\n");
+  return { labels, text };
+};
+
+const renderContent = async (content: unknown, registry: ArtifactRegistry): Promise<{ labels: Labels[]; text: string }> => {
+  if (!Array.isArray(content)) {
+    return { labels: [], text: "" };
+  }
+  const labels: Labels[] = [];
+  const blocks: string[] = [];
+  for (const part of content) {
+    if (!isRecord(part)) {
+      continue;
+    }
+    const partLabels = labelsFromPart(part);
+    if (partLabels) {
+      labels.push(partLabels);
+    }
+    if (part.kind === "text" && typeof part.text === "string") {
+      blocks.push(part.text);
+      continue;
+    }
+    if (part.kind !== "artifact") {
+      continue;
+    }
+    const ref = artifactRefFromPart(part);
+    if (!ref) {
+      continue;
+    }
+    const artifact = await registry.get(ref).catch(() => undefined);
+    if (artifact) {
+      labels.push(artifact.labels);
+    }
+    blocks.push(artifactBlock(part, artifact));
+  }
+  return { labels, text: blocks.join("\n") };
 };
 
 const payloadText = (payload: unknown): string =>
-  isRecord(payload) ? textFromContent(payload.content) : "";
+  isRecord(payload) ? renderContentSync(payload.content).text : "";
 
 const governanceProfile = (config: Record<string, unknown>): "balanced" | "sovereign" | "cloud-friendly" => {
   const governance = config.governance;
@@ -641,13 +729,19 @@ export class MinimalGateway {
       return;
     }
 
-    const text = payloadText(payload);
+    const rendered = await renderContent(payload.content, new ArtifactRegistry(this.#config.artifactsDir));
+    const text = rendered.text;
     if (!text) {
-      this.#sendOpError(socket, "turn.input", "turn.input content must include at least one text part.", { sid });
+      this.#sendOpError(socket, "turn.input", "turn.input content must include at least one text or artifact part.", { sid });
       return;
     }
 
-    const labelEscalation = escalateLabelsForContent(text, inputLabels ?? this.#defaultLabels());
+    const baseLabels = inputLabels ?? this.#defaultLabels();
+    const contentLabels = deriveLabels([
+      { labels: baseLabels },
+      ...rendered.labels.map((labels) => ({ labels }))
+    ], baseLabels);
+    const labelEscalation = escalateLabelsForContent(text, contentLabels);
     const labels = labelEscalation.labels;
     const channelTrust = channelTrustFromPayload(payload);
     const history: TurnRunnerHistory = { messages: [...state.history] };

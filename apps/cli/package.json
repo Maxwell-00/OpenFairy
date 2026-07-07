@@ -16,6 +16,7 @@
     "@fairy/config": "workspace:*",
     "@fairy/kernel": "workspace:*",
     "@fairy/memory": "workspace:*",
+    "@fairy/perception": "workspace:*",
     "@fairy/protocol": "workspace:*",
     "@fairy/research": "workspace:*",
     "ws": "^8.18.3"

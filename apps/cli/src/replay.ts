@@ -131,6 +131,11 @@ const renderChronological = (events: readonly EventEnvelope[]): string[] => {
       lines.push(`turn ${event.turn} memory.written ${String(event.payload.memory_id ?? "?")} ${String(event.payload.tier ?? "?")}`);
     } else if (event.type === "memory.deleted" && isRecord(event.payload)) {
       lines.push(`turn ${event.turn} memory.deleted ${String(event.payload.memory_id ?? "?")} ${short(redactText(String(event.payload.reason ?? "")))}`);
+    } else if (event.type === "artifact.created" && isRecord(event.payload)) {
+      const labels = isRecord(event.payload.labels)
+        ? `${String(event.payload.labels.sensitivity ?? "?")}/${String(event.payload.labels.residency ?? "?")}`
+        : "?";
+      lines.push(`turn ${event.turn} artifact.created ${String(event.payload.artifact_id ?? event.payload.path ?? "?")} ${String(event.payload.kind ?? "?")} ${String(event.payload.mime ?? "?")} ${labels} ${short(String(event.payload.hash ?? ""))}`);
     } else if (event.type === "snapshot.created" && isRecord(event.payload)) {
       lines.push(`turn ${event.turn} snapshot.created ${String(event.payload.snapshot_ref ?? "?")} ${short(String(event.payload.url ?? ""))}`);
     } else if (event.type === "citation.recorded" && isRecord(event.payload)) {

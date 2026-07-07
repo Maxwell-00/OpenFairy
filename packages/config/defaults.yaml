@@ -19,6 +19,8 @@ permissions:
       decision: allow
     - tool: "research.*"
       decision: allow
+    - tool: "vision.*"
+      decision: allow
     - tool: "*"
       decision: ask
 context:

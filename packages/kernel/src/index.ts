@@ -234,6 +234,7 @@ const defaultPermissions: PermissionRule[] = [
   { decision: "ask", tool: "shell.run" },
   { decision: "allow", tool: "web.*" },
   { decision: "allow", tool: "research.*" },
+  { decision: "allow", tool: "vision.*" },
   { decision: "ask", tool: "*" }
 ];
 
@@ -1180,10 +1181,16 @@ export class TurnRunner {
       provenance: result.provenance,
       status: "ok"
     };
+    if (result.metadata) {
+      payload.metadata = result.metadata;
+    }
+    if (result.artifact_ref) {
+      payload.artifacts = [{ ref: result.artifact_ref }];
+    }
 
     if (result.content && Buffer.byteLength(result.content, "utf8") > 32 * 1024) {
       const artifact = await this.#spillArtifact(call.name, result.content, result.labels, options);
-      payload.artifacts = [{ hash: artifact.hash, mime: "text/plain", ref: artifact.path }];
+      payload.artifacts = [...(Array.isArray(payload.artifacts) ? payload.artifacts : []), { hash: artifact.hash, mime: "text/plain", ref: artifact.path }];
       payload.result = {
         artifact_ref: artifact.path,
         head: result.content.slice(0, 16 * 1024),

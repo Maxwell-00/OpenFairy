@@ -19,6 +19,7 @@
     "@fairy/kernel": "workspace:*",
     "@fairy/memory": "workspace:*",
     "@fairy/model-gateway": "workspace:*",
+    "@fairy/perception": "workspace:*",
     "@fairy/protocol": "workspace:*",
     "@fairy/tools-std": "workspace:*",
     "ws": "^8.18.3"

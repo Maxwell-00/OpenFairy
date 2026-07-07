@@ -1,3 +1,4 @@
+export { parseArtifactOptions, runArtifacts } from "./artifacts.js";
 export { parseAuditOptions, parseChatOptions, parseSessionsOptions, runAudit, runChat, runSessions } from "./chat.js";
 export { isNodeVersionOk, runDoctor } from "./doctor.js";
 export { parseMemoryOptions, runMemory } from "./memory.js";

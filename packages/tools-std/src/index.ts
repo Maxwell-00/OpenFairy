@@ -1,5 +1,15 @@
 import { Readability } from "@mozilla/readability";
 import {
+  artifactEventPayload,
+  ArtifactRegistry,
+  compactPerceptionText,
+  detectMime,
+  MockPerceptionProvider,
+  mockPerceptionFixtures,
+  quarantinePerceptionText,
+  type ArtifactRecord
+} from "@fairy/perception";
+import {
   citationEventPayload,
   createResearchPlan,
   MockResearchProvider,
@@ -36,7 +46,7 @@ export interface ToolExecutionContext {
 }
 
 export interface ToolSideEvent {
-  readonly type: "citation.recorded" | "progress.update" | "snapshot.created" | "sourceset.reviewed";
+  readonly type: "artifact.created" | "citation.recorded" | "progress.update" | "snapshot.created" | "sourceset.reviewed";
   readonly labels?: ToolLabels;
   readonly payload: Record<string, unknown>;
   readonly provenance?: string;
@@ -169,6 +179,11 @@ const labelsJoin = (labels: readonly ResearchLabels[]): ToolLabels => {
     sensitivity: sensitivityRank[item.sensitivity] > sensitivityRank[acc.sensitivity] ? item.sensitivity : acc.sensitivity
   }), publicLabels);
 };
+
+const isToolLabels = (value: unknown): value is ToolLabels =>
+  isRecord(value) &&
+  (value.sensitivity === "public" || value.sensitivity === "internal" || value.sensitivity === "personal" || value.sensitivity === "secret") &&
+  (value.residency === "local-only" || value.residency === "region-restricted" || value.residency === "global-ok");
 
 const quarantine = (source: string, content: string): string =>
   [
@@ -622,6 +637,136 @@ const createResearchTools = (options: StandardToolOptions): RegisteredTool[] => 
   return [researchPlanTool, researchSearchTool, researchFetchTool, researchCiteTool, researchSourcesTool];
 };
 
+const artifactCreatedSideEvent = (record: ArtifactRecord, provenance: string): ToolSideEvent => ({
+  labels: record.labels,
+  payload: artifactEventPayload(record),
+  provenance,
+  type: "artifact.created"
+});
+
+const maybeFixtureKey = (ref: string): string | undefined => {
+  const key = ref.startsWith("fixture:") ? ref.slice("fixture:".length) : ref;
+  return Object.hasOwn(mockPerceptionFixtures, key) ? key : undefined;
+};
+
+const labelsArg = (args: Record<string, unknown>): ToolLabels =>
+  isToolLabels(args.labels) ? args.labels : internalLabels;
+
+const resolvePerceptionArtifact = async (
+  args: Record<string, unknown>,
+  ctx: ToolExecutionContext,
+  registry: ArtifactRegistry,
+  provenance: string
+): Promise<{ artifact: ArtifactRecord; events: ToolSideEvent[] }> => {
+  const ref = stringArg(args, "artifact_id_or_path");
+  const fixtureKey = maybeFixtureKey(ref);
+  if (fixtureKey) {
+    const registered = await registry.registerFixture(fixtureKey);
+    return {
+      artifact: registered.record,
+      events: registered.created ? [artifactCreatedSideEvent(registered.record, provenance)] : []
+    };
+  }
+
+  const existing = await registry.get(ref);
+  if (existing) {
+    return { artifact: existing, events: [] };
+  }
+
+  const path = await canonicalExistingWorkspacePath(ctx.workspaceRoot, ref);
+  const content = await readFile(path);
+  const registered = await registry.register({
+    content,
+    labels: labelsArg(args),
+    metadata: { source_path: relative(ctx.workspaceRoot, path).replace(/\\/g, "/") },
+    mime: typeof args.mime === "string" ? args.mime : detectMime(path),
+    origin: "user:artifact-path",
+    sourceFilename: basename(path)
+  });
+  return {
+    artifact: registered.record,
+    events: registered.created ? [artifactCreatedSideEvent(registered.record, provenance)] : []
+  };
+};
+
+const createVisionTools = (): RegisteredTool[] => {
+  const provider = new MockPerceptionProvider();
+
+  const executeVision = async (
+    args: Record<string, unknown>,
+    ctx: ToolExecutionContext,
+    type: "describe" | "ocr"
+  ): Promise<ToolExecutionResult> => {
+    const provenance = type === "describe" ? "tool:vision.describe" : "tool:vision.ocr";
+    const registry = new ArtifactRegistry(ctx.artifactsDir);
+    const { artifact, events } = await resolvePerceptionArtifact(args, ctx, registry, provenance);
+    const output = type === "describe"
+      ? await provider.describe(artifact, typeof args.question === "string" ? { question: args.question } : {})
+      : await provider.ocr(artifact, typeof args.region === "string" ? { region: args.region } : {});
+    const structured = await registry.registerStructuredOutput(output, provenance);
+    const outputEvents = structured.created ? [artifactCreatedSideEvent(structured.record, provenance)] : [];
+    const compact = compactPerceptionText(output);
+    return {
+      artifact_ref: structured.record.path,
+      content: quarantinePerceptionText(`perception:${output.artifact_id}`, compact),
+      events: [...events, ...outputEvents],
+      labels: output.labels,
+      metadata: {
+        artifact_id: artifact.artifact_id,
+        content_provenance: `artifact:${artifact.artifact_id}`,
+        output_artifact_id: structured.record.artifact_id,
+        output_ref: structured.record.path,
+        perception_id: output.artifact_id,
+        untrusted: output.untrusted
+      },
+      provenance
+    };
+  };
+
+  return [
+    {
+      description: "Describe an image or document artifact with deterministic mock perception.",
+      labels_out: internalLabels,
+      name: "vision.describe",
+      params: jsonSchemaObject({
+        artifact_id_or_path: { type: "string" },
+        labels: {
+          additionalProperties: false,
+          properties: {
+            residency: { enum: ["local-only", "region-restricted", "global-ok"], type: "string" },
+            sensitivity: { enum: ["public", "internal", "personal", "secret"], type: "string" }
+          },
+          required: ["sensitivity", "residency"],
+          type: "object"
+        },
+        mime: { type: "string" },
+        question: { type: "string" }
+      }, ["artifact_id_or_path"]),
+      execute: (args, ctx) => executeVision(args, ctx, "describe")
+    },
+    {
+      description: "OCR an image artifact with deterministic mock perception.",
+      labels_out: internalLabels,
+      name: "vision.ocr",
+      params: jsonSchemaObject({
+        artifact_id_or_path: { type: "string" },
+        labels: {
+          additionalProperties: false,
+          properties: {
+            residency: { enum: ["local-only", "region-restricted", "global-ok"], type: "string" },
+            sensitivity: { enum: ["public", "internal", "personal", "secret"], type: "string" }
+          },
+          required: ["sensitivity", "residency"],
+          type: "object"
+        },
+        mime: { type: "string" },
+        region: { type: "string" }
+      }, ["artifact_id_or_path"]),
+      execute: (args, ctx) => executeVision(args, ctx, "ocr")
+    }
+  ];
+};
+
 export const createStandardToolRegistry = (options: StandardToolOptions): ToolRegistry => {
   const sandbox = readBlock(options.config, "sandbox");
   const tools = new Map<string, RegisteredTool>();
@@ -635,6 +780,9 @@ export const createStandardToolRegistry = (options: StandardToolOptions): ToolRe
   register(webFetchTool);
   register(createWebSearchTool(options.config, options.env ?? process.env));
   for (const tool of createResearchTools(options)) {
+    register(tool);
+  }
+  for (const tool of createVisionTools()) {
     register(tool);
   }
 

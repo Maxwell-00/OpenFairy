@@ -47,6 +47,9 @@ importers:
       '@fairy/memory':
         specifier: workspace:*
         version: link:../../packages/memory
+      '@fairy/perception':
+        specifier: workspace:*
+        version: link:../../packages/perception
       '@fairy/protocol':
         specifier: workspace:*
         version: link:../../packages/protocol
@@ -75,6 +78,9 @@ importers:
       '@fairy/model-gateway':
         specifier: workspace:*
         version: link:../../packages/model-gateway
+      '@fairy/perception':
+        specifier: workspace:*
+        version: link:../../packages/perception
       '@fairy/protocol':
         specifier: workspace:*
         version: link:../../packages/protocol
@@ -124,6 +130,8 @@ importers:
 
   packages/orchestrator: {}
 
+  packages/perception: {}
+
   packages/protocol:
     dependencies:
       ajv:
@@ -165,6 +173,9 @@ importers:
 
   packages/tools-std:
     dependencies:
+      '@fairy/perception':
+        specifier: workspace:*
+        version: link:../perception
       '@fairy/research':
         specifier: workspace:*
         version: link:../research

@@ -5,6 +5,7 @@ import { runMemory } from "../memory.js";
 import { runAffect, runPersona } from "../persona.js";
 import { runResearch } from "../research.js";
 import { runReplay } from "../replay.js";
+import { runArtifacts } from "../artifacts.js";
 
 const [command, ...args] = process.argv.slice(2);
 
@@ -26,6 +27,11 @@ if (command === "sessions") {
 
 if (command === "audit") {
   await runAudit(args);
+  process.exit(0);
+}
+
+if (command === "artifacts") {
+  await runArtifacts(args);
   process.exit(0);
 }
 
@@ -54,5 +60,5 @@ if (command === "affect") {
   process.exit(0);
 }
 
-console.error("Usage: fairy <doctor|chat|sessions|audit|replay|memory|research|persona|affect>");
+console.error("Usage: fairy <doctor|chat|sessions|audit|artifacts|replay|memory|research|persona|affect>");
 process.exit(1);

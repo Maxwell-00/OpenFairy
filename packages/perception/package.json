@@ -1,5 +1,5 @@
 {
-  "name": "@fairy/tools-std",
+  "name": "@fairy/perception",
   "version": "0.0.0",
   "private": true,
   "type": "module",
@@ -12,11 +12,5 @@
   "scripts": {
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run"
-  },
-  "dependencies": {
-    "@fairy/perception": "workspace:*",
-    "@fairy/research": "workspace:*",
-    "@mozilla/readability": "^0.6.0",
-    "linkedom": "^0.18.12"
   }
 }

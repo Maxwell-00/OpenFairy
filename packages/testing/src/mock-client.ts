@@ -13,7 +13,17 @@ export interface MockClientOptions {
 }
 
 export interface TurnInputPayload {
-  readonly content: readonly { readonly kind: "text"; readonly text: string }[];
+  readonly content: readonly (
+    | { readonly kind: "text"; readonly text: string }
+    | {
+        readonly description?: string;
+        readonly kind: "artifact";
+        readonly labels?: { readonly residency: "global-ok" | "local-only" | "region-restricted"; readonly sensitivity: "internal" | "personal" | "public" | "secret" };
+        readonly mime?: string;
+        readonly ocr_excerpt?: string;
+        readonly ref: string;
+      }
+  )[];
   readonly channel?: string;
 }
 
