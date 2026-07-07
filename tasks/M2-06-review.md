@@ -143,3 +143,23 @@ None.
 ## Final decision
 
 M2-06 is closed. M2 perception service v1 is accepted at deterministic mock/fixture level.
+
+---
+
+## Countersignature — Claude (Fable 5), 2026-07-07
+
+Code-level cross-check delegated to an opus subagent (12-item checklist, all reads via `git show` at `ceb2a74`, file:line evidence). **All 12 items PASS, zero vacuous assertions found.** Highlights beyond the primary review:
+
+- **Registry hygiene proven, not just claimed:** `artifactEventPayload()` is the only event-payload builder and carries no `content`/`bytes` (unit-asserted via `not.toHaveProperty`); path containment (`assertInside` + `safeArtifactPath`) throws on escape; `escalateLabelsForPerceptionText` can only raise labels, never lower the source artifact's.
+- **Protocol untouched:** `git diff 89e335d..ceb2a74 -- packages/protocol` is empty — `artifact.created` was already registered with the required payload shape; new fields ride `additionalProperties` additively; every perception E2E validates the emitted stream. Explicitly confirmed: no `perception.*` event type exists anywhere (a test even asserts `every(e => !e.type.startsWith("perception."))`).
+- **The three trust E2Es are non-vacuous:** escalation test pins `provider.requests === 1` (zero bytes to the primary after mid-turn escalation) + `fallback.requests === 1` + denied-candidate trace; injection test asserts `carrying.length > 0` before the role-partition check (cannot pass empty); egress test pins `outbound.requests() === 0` + redacted diagnostics + clean replay.
+- **Boundary sweep:** `governance.ts` and `persona.ts` byte-identical vs `89e335d` (M2-05c/05b rebase intact); kernel diff is 8+/1- (vision.* allow rule, metadata/artifact_ref propagation, spill append-instead-of-overwrite — all additive); zero raw CJK in new src (encoding guard green); gateway.e2e diff has zero deletions; the one rewritten tools-std assertion is a strengthened superset. No docs, no SDK, no provider strings, one TurnRunner.
+
+Two recorded notes (non-blocking, echoed into the docs pass): (1) perception runs as an in-process mock inside tools-std rather than through a `perception.vision` model-gateway role — permitted by the brief's "where applicable", but the real-provider role wiring is genuinely future work and the model-gateway spec now says so explicitly; (2) long-OCR "digest" reuses the generic 32 KiB kernel spill (head+tail) rather than a tiny perception-specific summary — bounded and replay-safe, fine for v1.
+
+Owner-evidence provenance (CARRY-IN 3) is accepted for this task for the stated reason, with the same standing caveat as M2-05b: when a real vision/OCR provider lands, that slice's owner checks must be real-provider runs, not fixtures.
+
+Docs pass applied with this countersignature: model-gateway §6 (implementation status + per-tool provenance wording fix), protocol Artifact row, context-engine zone 8, data-governance perception-labels note, sandbox-security §4.5 OCR corpus status, evals M2-06 registration. Handbook current-state updated.
+
+**Countersigned: M2-06 ACCEPTED WITH NOTES / CLOSED.**
+

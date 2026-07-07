@@ -21,7 +21,7 @@ Every prompt is assembled from ordered **zones**, each with a budget (absolute t
 | 5 | Skills index | Skill names + one-liners (bodies load on demand) | ~400 | fixed |
 | 6 | Task state | Plan/todo recitation block | ~600 | recompute, keep tail |
 | 7 | History | Turns, tool calls/results | remainder | the reduction ladder (§3) |
-| 8 | Current input | New user content + perception artifacts | as needed | spillover to files |
+| 8 | Current input | New user content + perception artifacts | as needed | spillover to files. *Implemented M2-06: artifact content parts render as compact `[artifact]` blocks (id/hash/path/mime/labels/provenance/description/OCR excerpt) — never raw base64/blob (test-asserted); artifact labels join effective prompt labels before route clearance, same rule as memory/research/persona; long OCR spills to the structured perception artifact via the standard tool-output budgeting (L1), accounted under existing input/tool zones — no new zone* |
 
 Zones 1–5 form the **stable prefix**: byte-identical across turns of a session wherever possible, maximizing provider KV-cache hits (Manus: cache hit rate is the #1 cost/latency lever). Volatile data (timestamps, mood) is quantized (mood updates only at turn boundaries; no seconds-precision timestamps in the prefix). *Enforced since M2-05b: the affect line renders only the quantized mood bucket `(stance, energy, humor-suppressed)` — the free-text `cause`, raw valence/arousal values, and timestamps never enter the prefix (the per-turn "why" lives in the `affect.updated` event, surfaced via `/affect` and replay). Same-bucket turns are byte-identical; the M2-05 owner smoke test caught the pre-fix violation as a per-turn `prefix_hash` drift.*
 

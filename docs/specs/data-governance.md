@@ -62,6 +62,8 @@ A single default table can't serve both "daily usability" and "psychological saf
 
 *Persona/affect labels since M2-05: persona pack content is label-bearing prompt content defaulting `internal / global-ok`; it joins effective prompt labels (max/intersection) and can raise but never lower user/history/tool/memory/research labels. Persona/affect state is style-only — it is never read by route clearance, permission decisions, MemoryGate, or the egress guard (test-gated by `substance.invariance`).*
 
+*Perception labels since M2-06: OCR/perception outputs inherit the source artifact's labels; secret-pattern OCR text (e.g. an API key in a screenshot) escalates the tool result to `secret / local-only` via the table above and raises effective prompt labels mid-turn — the under-cleared primary then receives zero further request bytes and a cleared local fallback completes (E2E-gated). Escalation never rewrites the original artifact's labels downward. Authenticated/private screenshot fixtures default `personal / local-only` or stricter (§1a). OCR-derived secret/personal content is subject to the egress guard like any other context content.*
+
 ## 2. Provider clearance
 
 Model registry entries (model-gateway §2) gain:

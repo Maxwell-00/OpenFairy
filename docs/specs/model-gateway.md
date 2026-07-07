@@ -98,7 +98,9 @@ Lets a **text-only main brain** work with images, PDFs, audio, and video by dele
 - **Prompt injection:** the turn sees `[image #1: <structured description> (artifact: path)]` inline where the attachment appeared.
 - **On-demand tools:** `vision.describe(artifact, question)` and `vision.ocr(artifact, region?)` let the main model re-interrogate an image with a specific question — the vision model answers the question, not just re-captions.
 - **Audio:** routed to the ASR path (voice spec); **documents:** parser first (text extraction), vision model only for scanned/graphical pages.
-- Perception outputs carry `provenance: tool:vision` and inherit the source's trust level (a hostile image's OCR text is untrusted content — see sandbox-security spec).
+- Perception outputs carry per-tool provenance (`tool:vision.describe` / `tool:vision.ocr`, matching the `tool:research.*` convention) and inherit the source's trust level (a hostile image's OCR text is untrusted content — see sandbox-security spec).
+
+*Implementation status — M2-06 (v1, deterministic mock):* `packages/perception` ships the artifact registry (content-addressed `art_<hash>` ids, path-contained storage, no blob bytes in canonical events) and a deterministic `MockPerceptionProvider` (describe / OCR / document extraction over seeded fixtures incl. malicious-injection, fake-API-key, bilingual, and long-OCR pages). `vision.describe`/`vision.ocr` are TurnRunner tools in `tools-std` — no second loop, no model-gateway perception role wired yet, no vendor SDK; CI is mock-only. The real vision/OCR provider boundary (role binding per the config sketch above, live conformance) remains future work and is not claimed by M2-06.
 
 ## 7. Interface (conceptual)
 
