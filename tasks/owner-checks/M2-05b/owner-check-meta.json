@@ -1,0 +1,7 @@
+{
+  "negativeConfig": "E:\\Claude_Projects\\Projects\\Fairy\\OpenFairy\\tasks\\owner-checks\\M2-05b\\negative-feedback-data\\fairy.yaml",
+  "negativeDataDir": "E:\\Claude_Projects\\Projects\\Fairy\\OpenFairy\\tasks\\owner-checks\\M2-05b\\negative-feedback-data",
+  "negativeSid": "ses_01J00000000000000000005556",
+  "prefixDataDir": "E:\\Claude_Projects\\Projects\\Fairy\\OpenFairy\\tasks\\owner-checks\\M2-05b\\prefix-data",
+  "prefixSid": "ses_01J00000000000000000005555"
+}

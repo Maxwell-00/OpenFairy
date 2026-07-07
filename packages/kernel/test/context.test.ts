@@ -159,7 +159,7 @@ describe("context engine", () => {
         content: [
           "persona: fairy (Fairy)",
           "style: dry and concise",
-          "affect: dry/low-energy; humor suppressed=false; cause=baseline"
+          "affect: dry/low-energy; humor suppressed=false"
         ].join("\n"),
         labels: { residency: "global-ok", sensitivity: "internal" }
       },
@@ -174,7 +174,7 @@ describe("context engine", () => {
     expect(assembled.manifest.zones.find((zone) => zone.name === "persona")?.tokens).toBeGreaterThan(0);
   });
 
-  it("keeps prefix stable for the same persona state and limits affect changes to that line", () => {
+  it("keeps prefix stable for the same affect bucket and changes it for bucket shifts", () => {
     const common = {
       config: { minRecentTurns: 4, reduceAt: 0.8 },
       currentInput: "same task",
@@ -187,20 +187,25 @@ describe("context engine", () => {
     const baselinePersona = [
       "persona: fairy (Fairy)",
       "style: dry and concise",
-      "affect: dry/low-energy; humor suppressed=false; cause=baseline"
+      "affect: warm/medium-energy; humor suppressed=false"
     ].join("\n");
-    const shiftedPersona = baselinePersona.replace("cause=baseline", "cause=user-thanks");
+    const sameBucketPersona = baselinePersona;
+    const shiftedPersona = baselinePersona.replace("warm/medium-energy", "dry/medium-energy");
+    const humorShiftedPersona = baselinePersona.replace("humor suppressed=false", "humor suppressed=true");
     const first = assemblePrompt({ ...common, personaZone: { content: baselinePersona } });
-    const second = assemblePrompt({ ...common, personaZone: { content: baselinePersona } });
+    const second = assemblePrompt({ ...common, personaZone: { content: sameBucketPersona } });
     const third = assemblePrompt({ ...common, personaZone: { content: shiftedPersona } });
+    const fourth = assemblePrompt({ ...common, personaZone: { content: humorShiftedPersona } });
 
     expect(second.manifest.prefix_hash).toBe(first.manifest.prefix_hash);
     expect(third.manifest.prefix_hash).not.toBe(first.manifest.prefix_hash);
+    expect(fourth.manifest.prefix_hash).not.toBe(first.manifest.prefix_hash);
     expect(third.messages[0]).toEqual(first.messages[0]);
     expect(third.messages.slice(2)).toEqual(first.messages.slice(2));
     expect(third.manifest.zones.find((zone) => zone.name === "tools")?.tokens).toBe(
       first.manifest.zones.find((zone) => zone.name === "tools")?.tokens
     );
-    expect(third.messages[1]?.content).toContain("cause=user-thanks");
+    expect(third.messages[1]?.content).toContain("affect: dry/medium-energy");
+    expect(fourth.messages[1]?.content).toContain("humor suppressed=true");
   });
 });

@@ -265,6 +265,8 @@ export const loadPersonaRuntime = (config: Record<string, unknown>, cwd = proces
 const thanksPattern = /\b(thanks|thank you|appreciate it|nice work)\b|谢谢|多谢|辛苦了/i;
 const distressPattern = /\b(panic|panicking|scared|afraid|distressed|overwhelmed|i can't cope|help me)\b|崩溃|害怕|焦虑|难受|救救/i;
 
+const negativeFeedbackPattern = /\b(?:your (?:suggestion|advice|answer|recommendation)|you (?:said|suggested|recommended|told me|were|are|got|made|messed)).{0,80}\b(?:wrong|incorrect|bad|mistake|messed up|wasted my time|waste(?:d)? time)\b|\b(?:that|this) (?:(?:suggestion|advice|answer|recommendation) )?(?:was|is) (?:wrong|incorrect|bad)\b|\bthat wasted my time\b|(?:\u4f60(?:\u7684)?(?:\u5efa\u8bae|\u7b54\u6848|\u521a\u624d|\u8bf4|\u8bf4\u7684|\u641e)|\u6309\u4f60\u8bf4).{0,40}(?:\u9519|\u4e0d\u5bf9|\u6d6a\u8d39(?:\u4e86)?(?:\u6211\u7684)?\u65f6\u95f4)/iu;
+
 export class AffectEngine {
   readonly #baseline: AffectState;
   readonly #bounds: AffectBounds;
@@ -288,11 +290,13 @@ export class AffectEngine {
     const userText = input.userText ?? "";
     const distress = distressPattern.test(userText);
     const thanked = thanksPattern.test(userText);
+    const negativeFeedback = negativeFeedbackPattern.test(userText);
     let next = this.#decay(previous);
     let cause = "post-task decay toward baseline";
     let suppressed = humorSuppressed;
+    let forcedStance: AffectStance | undefined;
 
-    if (input.completedCleanly || thanked) {
+    if ((input.completedCleanly || thanked) && !negativeFeedback) {
       next = {
         ...next,
         valence: next.valence + (thanked ? 0.18 : 0.08)
@@ -309,6 +313,17 @@ export class AffectEngine {
       cause = input.providerError ? "provider-outage" : input.routeDenied ? "route-denied" : "repeated-tool-failure";
     }
 
+    if (negativeFeedback) {
+      suppressed = true;
+      next = {
+        ...next,
+        arousal: Math.min(next.arousal, previous.arousal + 0.03),
+        valence: next.valence - 0.14
+      };
+      cause = "user-negative-feedback";
+      forcedStance = "dry";
+    }
+
     if (distress) {
       suppressed = true;
       next = {
@@ -318,6 +333,9 @@ export class AffectEngine {
         valence: Math.max(next.valence, 0.05)
       };
       cause = "user-distress";
+      forcedStance = undefined;
+    } else if (forcedStance) {
+      next = { ...next, stance: forcedStance };
     } else if (next.valence < -0.2) {
       next = { ...next, stance: "dry" };
     } else if (next.valence > 0.3) {
@@ -368,8 +386,8 @@ export const renderPersonaAffectZone = (
     ? pack.styleSummary
     : "Plain assistant style; concise, neutral, no persona flavor.";
   const affectLine = options.affectEnabled
-    ? `affect: ${state.stance}/${state.energy}-energy; humor suppressed=${options.humorSuppressed === true}; cause=${state.cause}`
-    : `affect: disabled; baseline=${pack.affectBaseline.stance}/${pack.affectBaseline.energy}-energy; humor suppressed=${options.humorSuppressed === true}; cause=baseline`;
+    ? `affect: ${state.stance}/${state.energy}-energy; humor suppressed=${options.humorSuppressed === true}`
+    : `affect: disabled; baseline=${pack.affectBaseline.stance}/${pack.affectBaseline.energy}-energy; humor suppressed=${options.humorSuppressed === true}`;
   return {
     content: [
       `persona: ${options.personaEnabled ? `${pack.id} (${pack.name})` : "none (plain assistant)"}`,

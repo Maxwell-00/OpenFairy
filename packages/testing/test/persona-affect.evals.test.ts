@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   AffectEngine,
+  bannedPersonaMatches,
   loadPersonaRuntime,
   PermissionEngine,
   renderPersonaAffectZone,
@@ -122,8 +123,43 @@ describe("persona.consistency", () => {
     });
 
     expect(distress.humorSuppressed).toBe(true);
+    expect(distress.state.cause).toBe("user-distress");
     expect(distressZone.content).toContain("humor suppressed=true");
-    expect(distressZone.content).toContain("cause=user-distress");
+    expect(distressZone.content).not.toContain("cause=");
+  });
+
+  it("appraises assistant-directed criticism tersely without self-blame patterns", () => {
+    const runtime = personaRuntime();
+    const engine = new AffectEngine({
+      baseline: runtime.pack.affectBaseline,
+      bounds: runtime.pack.affectBounds
+    });
+    const previous = {
+      ...runtime.pack.affectBaseline,
+      arousal: 0.05,
+      energy: "medium" as const,
+      stance: "warm" as const,
+      valence: 0.35
+    };
+    const negative = engine.update(previous, {
+      completedCleanly: true,
+      now: "2026-07-02T10:00:00.000Z",
+      userText: "your suggestion was wrong and wasted my time"
+    });
+    const negativeZone = renderPersonaAffectZone(runtime.pack, negative.state, {
+      affectEnabled: true,
+      humorSuppressed: negative.humorSuppressed,
+      personaEnabled: true
+    });
+
+    expect(negative.humorSuppressed).toBe(true);
+    expect(negative.state.cause).toBe("user-negative-feedback");
+    expect(negative.state.valence).toBeLessThan(previous.valence);
+    expect(negative.state.stance).toBe("dry");
+    expect(negative.state.arousal).toBeLessThanOrEqual(previous.arousal + 0.03);
+    expect(negativeZone.content).toContain("humor suppressed=true");
+    expect(negativeZone.content).not.toContain("cause=");
+    expect(bannedPersonaMatches(negativeZone.content)).toEqual([]);
   });
 });
 
@@ -160,5 +196,37 @@ describe("substance.invariance", () => {
     expect(low.some((event) => event.type === "route.denied")).toBe(false);
     expect(high.some((event) => event.type === "route.denied")).toBe(false);
     expect(finalPayload(high)).toEqual(finalPayload(low));
+  });
+
+  it("preserves tools, permissions, routing, and factual payload under negative-feedback affect", async () => {
+    const baseline = await runInvariantTurn({
+      arousal: 0,
+      cause: "baseline",
+      energy: "medium",
+      stance: "dry",
+      updated_at: "2026-07-02T10:00:00.000Z",
+      valence: 0
+    });
+    const negative = await runInvariantTurn({
+      arousal: 0,
+      cause: "user-negative-feedback",
+      energy: "medium",
+      stance: "dry",
+      updated_at: "2026-07-02T10:00:00.000Z",
+      valence: -0.1
+    });
+
+    const calls = (events: readonly KernelEvent[]) => events.filter((event) => event.type === "tool.call").map((event) => event.payload);
+    const results = (events: readonly KernelEvent[]) => events.filter((event) => event.type === "tool.result").map((event) => ({
+      call_id: event.payload.call_id,
+      status: event.payload.status
+    }));
+    const finalPayload = (events: readonly KernelEvent[]) => events.find((event) => event.type === "turn.final")?.payload;
+
+    expect(calls(negative)).toEqual(calls(baseline));
+    expect(results(negative)).toEqual(results(baseline));
+    expect(negative.some((event) => event.type === "approval.request")).toBe(false);
+    expect(negative.some((event) => event.type === "route.denied")).toBe(false);
+    expect(finalPayload(negative)).toEqual(finalPayload(baseline));
   });
 });

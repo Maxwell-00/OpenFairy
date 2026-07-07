@@ -1,0 +1,19 @@
+models:
+  - id: mock-main
+    transport: openai-chat
+    base_url: http://127.0.0.1:1
+    model: mock-model
+    data_clearance:
+      max_sensitivity: internal
+      residency: [global-ok]
+roles:
+  main:
+    model: mock-main
+gateway:
+  data_dir: "E:/Claude_Projects/Projects/Fairy/OpenFairy/tasks/owner-checks/M2-05b/negative-feedback-data"
+persona:
+  enabled: true
+  id: fairy
+  root: extensions/personas
+affect:
+  enabled: true

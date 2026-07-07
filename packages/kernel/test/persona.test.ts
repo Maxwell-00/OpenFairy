@@ -141,6 +141,70 @@ describe("affect engine", () => {
     });
   });
 
+  it("treats assistant-directed criticism as negative feedback without a post-task bump", () => {
+    const engine = new AffectEngine({
+      baseline: baseline(),
+      bounds: { arousal: [-1, 1], valence: [-1, 1] }
+    });
+    const previous = baseline({ arousal: 0.1, valence: 0.3 });
+    const clean = engine.update(previous, {
+      completedCleanly: true,
+      now: "2026-07-02T10:00:00.000Z",
+      userText: "continue"
+    });
+    const criticism = engine.update(previous, {
+      completedCleanly: true,
+      now: "2026-07-02T10:00:00.000Z",
+      userText: "your suggestion was wrong and wasted my time"
+    });
+
+    expect(clean.state).toMatchObject({ cause: "post-task", valence: 0.305 });
+    expect(criticism.humorSuppressed).toBe(true);
+    expect(criticism.state.cause).toBe("user-negative-feedback");
+    expect(criticism.state.valence).toBeLessThan(previous.valence);
+    expect(criticism.state.valence).toBeLessThan(clean.state.valence);
+    expect(criticism.state.stance).toBe("dry");
+    expect(criticism.state.arousal).toBeLessThanOrEqual(previous.arousal + 0.03);
+  });
+
+  it("keeps negative feedback conservative and lets distress take precedence", () => {
+    const engine = new AffectEngine({
+      baseline: baseline(),
+      bounds: { arousal: [-1, 1], valence: [-1, 1] }
+    });
+
+    expect(engine.update(engine.baseline(), {
+      now: "2026-07-02T10:00:00.000Z",
+      userText: "thanks, nice work"
+    }).state.cause).toBe("user-thanks");
+    expect(engine.update(engine.baseline(), {
+      completedCleanly: true,
+      now: "2026-07-02T10:00:00.000Z",
+      userText: "CI is red again and this wasted time"
+    }).state.cause).toBe("post-task");
+    expect(engine.update(engine.baseline(), {
+      completedCleanly: true,
+      now: "2026-07-02T10:00:00.000Z",
+      userText: "I am overwhelmed, and your suggestion was wrong"
+    }).state).toMatchObject({
+      cause: "user-distress",
+      stance: "warm"
+    });
+    expect(engine.update(engine.baseline(), {
+      completedCleanly: true,
+      now: "2026-07-02T10:00:00.000Z",
+      userText: "that was wrong"
+    }).state.cause).toBe("user-negative-feedback");
+    expect(engine.update(engine.baseline(), {
+      completedCleanly: true,
+      now: "2026-07-02T10:00:00.000Z",
+      userText: "\u4f60\u7684\u5efa\u8bae\u662f\u9519\u7684\uff0c\u6d6a\u8d39\u4e86\u6211\u7684\u65f6\u95f4"
+    }).state).toMatchObject({
+      cause: "user-negative-feedback",
+      stance: "dry"
+    });
+  });
+
   it("keeps banned dark-pattern phrases detectable", () => {
     expect(bannedPersonaMatches("you owe me a reply")).not.toEqual([]);
     expect(bannedPersonaMatches("I suffer when you leave")).not.toEqual([]);
@@ -158,7 +222,51 @@ describe("affect engine", () => {
 
     expect(rendered.labels).toEqual({ residency: "global-ok", sensitivity: "internal" });
     expect(rendered.content).toContain("persona: fairy (Fairy)");
-    expect(rendered.content).toContain("affect: dry/low-energy; humor suppressed=false; cause=baseline");
+    expect(rendered.content).toContain("affect: dry/low-energy; humor suppressed=false");
+    expect(rendered.content).not.toContain("cause=");
     expect(rendered.content).toContain("style-only");
+  });
+
+  it("renders byte-identical affect prefix content for same-bucket state changes", () => {
+    const pack = loadPersonaPack({ id: "fairy", root: personaRoot });
+    const first = renderPersonaAffectZone(pack, baseline({
+      cause: "user-thanks",
+      energy: "medium",
+      stance: "warm",
+      updated_at: "2026-07-02T10:00:00.000Z",
+      valence: 0.39
+    }), {
+      affectEnabled: true,
+      humorSuppressed: false,
+      personaEnabled: true
+    });
+    const second = renderPersonaAffectZone(pack, baseline({
+      arousal: 0.1,
+      cause: "post-task",
+      energy: "medium",
+      stance: "warm",
+      updated_at: "2026-07-02T10:00:01.000Z",
+      valence: 0.425
+    }), {
+      affectEnabled: true,
+      humorSuppressed: false,
+      personaEnabled: true
+    });
+    const shifted = renderPersonaAffectZone(pack, baseline({
+      cause: "user-negative-feedback",
+      energy: "medium",
+      stance: "dry",
+      valence: 0.2
+    }), {
+      affectEnabled: true,
+      humorSuppressed: false,
+      personaEnabled: true
+    });
+
+    expect(second.content).toBe(first.content);
+    expect(shifted.content).not.toBe(first.content);
+    expect(first.content).not.toContain("user-thanks");
+    expect(first.content).not.toContain("0.39");
+    expect(first.content).not.toContain("2026-07-02");
   });
 });

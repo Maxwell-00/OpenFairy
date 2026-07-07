@@ -1,0 +1,4 @@
+turn model projected/budget/window stages system tools persona memory history input prefix
+1 mock-model 1174/6400/8000 - 23 0 120 0 1 6 sha256:8d894c3700a6a0bf
+2 mock-model 1174/6400/8000 - 23 0 120 0 1 6 sha256:8d894c3700a6a0bf
+3 mock-model 1173/6400/8000 - 23 0 119 0 1 6 sha256:d804998963a6af9b
