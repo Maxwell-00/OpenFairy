@@ -1,5 +1,5 @@
 import { AuditLog, escalateLabelsForContent, PermissionEngine, profileDefaults, TurnRunner, type KernelEventType, type TurnRunnerHistory } from "@fairy/kernel";
-import { MemoryStore } from "@fairy/memory";
+import { ChronicleStore, MemoryStore } from "@fairy/memory";
 import { createModelGateway, deriveLabels, type ChatMessage, type RoutingHints } from "@fairy/model-gateway";
 import { ArtifactRegistry, type ArtifactRecord } from "@fairy/perception";
 import {
@@ -284,6 +284,7 @@ export class MinimalGateway {
   readonly #wss: WebSocketServer;
   readonly #startedAt = Date.now();
   readonly #auditLog: AuditLog;
+  readonly #chronicleStore: ChronicleStore;
   readonly #memoryStore: MemoryStore;
   readonly #sessions = new Map<string, SessionState>();
   readonly #connections = new Set<WebSocket>();
@@ -295,10 +296,16 @@ export class MinimalGateway {
     this.#config = config;
     this.#log = new EventLog(config.dataDir);
     this.#auditLog = new AuditLog(config.dataDir);
+    this.#chronicleStore = new ChronicleStore(config.dataDir, {
+      labelContent: escalateLabelsForContent,
+      workspaceRoot: config.workspaceRoot
+    });
     this.#memoryStore = new MemoryStore(config.dataDir);
     const tools = createStandardToolRegistry({
       artifactsDir: config.artifactsDir,
       config: config.config,
+      dataDir: config.dataDir,
+      labelContent: escalateLabelsForContent,
       workspaceRoot: config.workspaceRoot
     });
     const permissionEngine = new PermissionEngine({
@@ -309,6 +316,7 @@ export class MinimalGateway {
     this.#runner = new TurnRunner({
       artifactsDir: config.artifactsDir,
       auditLog: this.#auditLog,
+      chronicleStore: this.#chronicleStore,
       contextConfig: config.contextConfig,
       egressGuardConfig: config.egressGuardConfig,
       maxToolIterations: config.maxToolIterations,

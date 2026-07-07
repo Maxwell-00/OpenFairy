@@ -1,5 +1,6 @@
+import { createHash } from "node:crypto";
 import { readFileSync, writeFileSync } from "node:fs";
-import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, readdir, writeFile } from "node:fs/promises";
 import { createServer, type Server } from "node:http";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
@@ -9,7 +10,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import WebSocket from "ws";
 
 import { validateEvent, validateFrame, type EventEnvelope } from "@fairy/protocol";
-import { MemoryStore } from "@fairy/memory";
+import { ChronicleStore, MemoryStore } from "@fairy/memory";
 import { MockResearchProvider, ResearchStore } from "@fairy/research";
 import {
   acceptIncomingEvent,
@@ -160,6 +161,28 @@ const readLoggedEvents = async (dataDir: string, sid: string): Promise<EventEnve
     .trim()
     .split("\n")
     .map((line) => JSON.parse(line) as EventEnvelope);
+
+const runFairy = (args: readonly string[], timeout = 30000): string => {
+  const result = spawnSync(process.execPath, ["--import", "tsx", "apps/cli/src/bin/fairy.ts", ...args], {
+    cwd: repoRoot,
+    encoding: "utf8",
+    env: { ...process.env, CI: "true" },
+    timeout,
+    windowsHide: true
+  });
+  if (result.error) {
+    throw new Error([
+      `fairy ${args.join(" ")} failed: ${result.error.message}`,
+      `stdout:\n${result.stdout ?? ""}`,
+      `stderr:\n${result.stderr ?? ""}`
+    ].join("\n"));
+  }
+  expect(result.status, result.stderr).toBe(0);
+  return result.stdout.trim();
+};
+
+const sha256 = (content: string): string =>
+  `sha256:${createHash("sha256").update(content).digest("hex")}`;
 
 const providerPromptAt = (server: MockOpenAIChatServer, index: number): string => {
   const body = server.requestBodies.at(index) as { messages?: readonly { content?: unknown }[] } | undefined;
@@ -2699,6 +2722,625 @@ describe("gateway M1 e2e", () => {
         await fallback.stop();
       }
     }, 120_000);
+
+    it("skips model-backed compaction when no summarizer candidate is cleared and completes on the original context path", async () => {
+      provider = await MockOpenAIChatServer.start({ text: ["under-cleared summarizer should not receive bytes"] });
+      const local = await MockOpenAIChatServer.start({ text: ["completed without model-backed compaction"] });
+
+      const temp = await mkdtemp(join(tmpdir(), "fairy-gateway-compaction-no-cleared-summarizer-"));
+      const dataDir = join(temp, "data");
+      const configPath = join(temp, "fairy.yaml");
+      const token = "compaction-no-cleared-summarizer-token";
+      const sid = await seedCompactionHistoryLog(dataDir, {
+        labels: { residency: "local-only", sensitivity: "personal" },
+        privateNote: "PRIVATE_NOTE_NO_SUMMARIZER"
+      });
+      writeConfig(configPath, dataDir, token, provider.url, {
+        context: [
+          "  reduce_at: 0.25",
+          "  output_reserve: 100",
+          "  min_recent_turns: 1",
+          "  l4_placeholder_threshold: 1",
+          "  l4_target_tokens: 80",
+          "  l5_target_tokens: 120",
+          "  compaction_role: summarizer"
+        ],
+        extraModels: [
+          "  - id: mock-local",
+          "    transport: openai-chat",
+          `    base_url: ${JSON.stringify(local.url)}`,
+          "    model: mock-model",
+          "    context_window: 500",
+          "    max_output: 100",
+          "    data_clearance:",
+          "      max_sensitivity: secret",
+          "      residency: [local-only]"
+        ],
+        mainRole: [
+          "    model: mock-local"
+        ],
+        model: [
+          "    context_window: 500",
+          "    max_output: 100"
+        ],
+        roles: [
+          "  summarizer:",
+          "    model: mock-main"
+        ]
+      });
+      const gateway = startGateway(configPath);
+
+      try {
+        const port = await waitForGateway(gateway);
+        const client = await MockFairyClient.connect({ token, url: `ws://127.0.0.1:${port}` });
+        const turnEvents = await sendTurnInputWithTimeout(client, sid, {
+          content: [{ kind: "text", text: "continue after terminal compaction denial" }]
+        }, 90000);
+        client.close();
+
+        expect(provider.requests).toBe(0);
+        expect(local.requests).toBe(1);
+        expect(providerPromptAt(local, 0)).not.toContain("[context compaction L4");
+        expect(providerPromptAt(local, 0)).not.toContain("[context compaction L5");
+        expect(turnEvents.find((event) => event.type === "route.denied" && isPayloadRecord(event))).toMatchObject({
+          payload: { role: "summarizer" }
+        });
+        expect(turnEvents.find((event) => event.type === "progress.update" && isPayloadRecord(event) && event.payload.compaction_stage === "L4")).toMatchObject({
+          payload: { model_id: "mock-main", stage: "route-denied" }
+        });
+        const manifest = [...turnEvents].reverse().find((event) => event.type === "context.manifest");
+        const stages = manifest && isPayloadRecord(manifest)
+          ? manifest.payload.reduction_stages_applied
+          : [];
+        expect(stages).not.toContain("L4");
+        expect(stages).not.toContain("L5");
+        expect(turnEvents.some((event) => event.type === "artifact.created" && isPayloadRecord(event) && String(event.payload.kind ?? "").startsWith("context.compaction."))).toBe(false);
+        expect(turnEvents.some((event) => event.type === "session.compacted")).toBe(false);
+        expect(turnEvents.at(-1)?.payload).toMatchObject({
+          content: [{ kind: "text", text: "completed without model-backed compaction" }]
+        });
+        assertSchemaValidStream(client.events());
+      } finally {
+        await stopGateway(gateway);
+        await local.stop();
+      }
+    }, 120_000);
+
+    it("falls back to the original context path when compactor output is invalid", async () => {
+      provider = await MockOpenAIChatServer.start();
+      provider.enqueueScript({ text: ["not valid compaction json"] });
+      provider.enqueueScript({ text: ["completed after invalid compactor output"] });
+
+      const temp = await mkdtemp(join(tmpdir(), "fairy-gateway-compaction-invalid-output-"));
+      const dataDir = join(temp, "data");
+      const configPath = join(temp, "fairy.yaml");
+      const token = "compaction-invalid-output-token";
+      const sid = await seedCompactionHistoryLog(dataDir);
+      writeConfig(configPath, dataDir, token, provider.url, {
+        context: [
+          "  reduce_at: 0.25",
+          "  output_reserve: 100",
+          "  min_recent_turns: 1",
+          "  l4_placeholder_threshold: 1",
+          "  l4_target_tokens: 80",
+          "  l5_target_tokens: 120",
+          "  compaction_role: summarizer"
+        ],
+        model: [
+          "    context_window: 500",
+          "    max_output: 100"
+        ],
+        roles: [
+          "  summarizer:",
+          "    model: mock-main"
+        ]
+      });
+      const gateway = startGateway(configPath);
+
+      try {
+        const port = await waitForGateway(gateway);
+        const client = await MockFairyClient.connect({ token, url: `ws://127.0.0.1:${port}` });
+        const turnEvents = await sendTurnInputWithTimeout(client, sid, {
+          content: [{ kind: "text", text: "continue after invalid compaction output" }]
+        }, 90000);
+        client.close();
+
+        expect(provider.requests).toBe(2);
+        expect(JSON.stringify(provider.requestBodies[0])).toContain("l4_micro_compaction_request");
+        expect(providerPromptAt(provider, 1)).not.toContain("[context compaction L4");
+        expect(turnEvents.find((event) => event.type === "progress.update" && isPayloadRecord(event) && event.payload.stage === "context.compaction.skipped")).toMatchObject({
+          payload: { reason: expect.stringContaining("invalid") }
+        });
+        const manifest = [...turnEvents].reverse().find((event) => event.type === "context.manifest");
+        const stages = manifest && isPayloadRecord(manifest)
+          ? manifest.payload.reduction_stages_applied
+          : [];
+        expect(stages).not.toContain("L4");
+        expect(stages).not.toContain("L5");
+        expect(turnEvents.some((event) => event.type === "artifact.created" && isPayloadRecord(event) && String(event.payload.kind ?? "").startsWith("context.compaction."))).toBe(false);
+        expect(turnEvents.some((event) => event.type === "session.compacted")).toBe(false);
+        expect(turnEvents.at(-1)?.payload).toMatchObject({
+          content: [{ kind: "text", text: "completed after invalid compactor output" }]
+        });
+        assertSchemaValidStream(client.events());
+      } finally {
+        await stopGateway(gateway);
+      }
+    }, 120_000);
+  });
+
+  describe("chronicle.workspace-v0", () => {
+    it("keeps append-only Chronicle records workspace-scoped", async () => {
+      const temp = await mkdtemp(join(tmpdir(), "fairy-chronicle-workspace-scope-"));
+      const dataDir = join(temp, "data");
+      const workspaceA = join(temp, "workspace-a");
+      const workspaceB = join(temp, "workspace-b");
+      const storeA = new ChronicleStore(dataDir, {
+        clock: () => "2026-07-02T10:00:00.000Z",
+        workspaceRoot: workspaceA
+      });
+      const storeB = new ChronicleStore(dataDir, { workspaceRoot: workspaceB });
+
+      const first = await storeA.append({
+        kind: "decision",
+        provenance: { event_id: "evt_chronicle_source", sid: "ses_chronicle_scope", source: "testing", turn: 1 },
+        summary: "Use source-first TS execution for gateway tests",
+        topics: ["m2"]
+      });
+      const second = await storeA.append({
+        kind: "failure",
+        summary: "Fragile file packages/kernel/src/index.ts needs replay coverage",
+        files: ["packages/kernel/src/index.ts"]
+      });
+
+      expect((await readFile(storeA.path, "utf8")).trim().split(/\r?\n/)).toHaveLength(2);
+      const sourceMatches = await storeA.query("source-first");
+      expect(sourceMatches[0]?.record.id).toBe(first.id);
+      expect(sourceMatches.map((item) => item.record.id)).toContain(first.id);
+      const fileMatches = await storeA.query("packages/kernel/src/index.ts");
+      expect(fileMatches[0]?.record.id).toBe(second.id);
+      expect(fileMatches.map((item) => item.record.id)).toContain(second.id);
+      expect(await storeB.query("source-first", { includeIrrelevant: true })).toEqual([]);
+      expect(new MemoryStore(dataDir).list()).toEqual([]);
+    });
+
+    it("runs chronicle.log and chronicle.query through the tool loop and renders replay", async () => {
+      provider = await MockOpenAIChatServer.start();
+      provider.enqueueScript({
+        toolCalls: [{
+          id: "call_chronicle_log",
+          name: "chronicle.log",
+          args: {
+            file: "packages/kernel/src/index.ts",
+            kind: "decision",
+            summary: "Use source-first TS execution",
+            topic: "m2"
+          }
+        }]
+      });
+      provider.enqueueScript({
+        toolCalls: [{ id: "call_chronicle_query", name: "chronicle.query", args: { topic_or_file: "source-first" } }]
+      });
+      provider.enqueueScript({ text: ["chronicle complete"] });
+
+      const temp = await mkdtemp(join(tmpdir(), "fairy-gateway-chronicle-tools-"));
+      const dataDir = join(temp, "data");
+      const workspaceRoot = join(temp, "workspace");
+      const configPath = join(temp, "fairy.yaml");
+      const token = "chronicle-tools-token";
+      await mkdir(workspaceRoot, { recursive: true });
+      writeConfig(configPath, dataDir, token, provider.url, { workspaceRoot });
+      const gateway = startGateway(configPath);
+
+      try {
+        const port = await waitForGateway(gateway);
+        const client = await MockFairyClient.connect({ token, url: `ws://127.0.0.1:${port}` });
+        const created = await client.createSession("chronicle tools");
+        const turnEvents = await sendTurnInputWithTimeout(client, created.sid, {
+          content: [{ kind: "text", text: "log and query the Chronicle decision" }]
+        }, 60000);
+        client.close();
+
+        expect(provider.requests).toBe(3);
+        expect(turnEvents.filter((event) => event.type === "tool.call").map((event) => isPayloadRecord(event) ? event.payload.tool : undefined)).toEqual([
+          "chronicle.log",
+          "chronicle.query"
+        ]);
+        expect(turnEvents.find((event) => event.type === "tool.result" && isPayloadRecord(event) && event.payload.call_id === "call_chronicle_log")).toMatchObject({
+          labels: { residency: "global-ok", sensitivity: "internal" },
+          payload: { provenance: "tool:chronicle.log", status: "ok" }
+        });
+        expect(turnEvents.find((event) => event.type === "tool.result" && isPayloadRecord(event) && event.payload.call_id === "call_chronicle_query")).toMatchObject({
+          payload: { provenance: "tool:chronicle.query", status: "ok" }
+        });
+        expect(turnEvents.some((event) => event.type === "memory.written")).toBe(false);
+        const records = await new ChronicleStore(dataDir, { workspaceRoot }).list();
+        expect(records).toEqual([
+          expect.objectContaining({ summary: "Use source-first TS execution", topics: ["m2"] })
+        ]);
+
+        const replay = runFairy(["replay", created.sid, "--data-dir", dataDir]);
+        expect(replay).toContain("tool.call chronicle.log call_chronicle_log");
+        expect(replay).toContain("tool.call chronicle.query call_chronicle_query");
+        expect(replay).toContain("tool.result call_chronicle_log ok tool:chronicle.log");
+        assertSchemaValidStream(client.events());
+      } finally {
+        await stopGateway(gateway);
+      }
+    }, 90_000);
+
+    it("denies secret-like Chronicle writes without creating records", async () => {
+      provider = await MockOpenAIChatServer.start();
+      provider.enqueueScript({
+        toolCalls: [{
+          id: "call_chronicle_secret",
+          name: "chronicle.log",
+          args: {
+            kind: "note",
+            summary: "API_KEY=sk_test_1234567890abcdef"
+          }
+        }]
+      });
+      provider.enqueueScript({ text: ["secret chronicle attempt denied"] });
+
+      const temp = await mkdtemp(join(tmpdir(), "fairy-gateway-chronicle-secret-"));
+      const dataDir = join(temp, "data");
+      const workspaceRoot = join(temp, "workspace");
+      const configPath = join(temp, "fairy.yaml");
+      const token = "chronicle-secret-token";
+      await mkdir(workspaceRoot, { recursive: true });
+      writeConfig(configPath, dataDir, token, provider.url, { workspaceRoot });
+      const gateway = startGateway(configPath);
+
+      try {
+        const port = await waitForGateway(gateway);
+        const client = await MockFairyClient.connect({ token, url: `ws://127.0.0.1:${port}` });
+        const created = await client.createSession("chronicle secret rejection");
+        const turnEvents = await sendTurnInputWithTimeout(client, created.sid, {
+          content: [{ kind: "text", text: "try to log a malicious Chronicle note" }]
+        }, 60000);
+        client.close();
+
+        expect(provider.requests).toBe(2);
+        expect(turnEvents.find((event) => event.type === "tool.result" && isPayloadRecord(event) && event.payload.call_id === "call_chronicle_secret")).toMatchObject({
+          payload: {
+            denied_by_policy: true,
+            error: { class: "PolicyError" },
+            status: "error"
+          }
+        });
+        expect(await new ChronicleStore(dataDir, { workspaceRoot }).list()).toEqual([]);
+        expect(turnEvents.some((event) => event.type === "memory.written")).toBe(false);
+        assertSchemaValidStream(client.events());
+      } finally {
+        await stopGateway(gateway);
+      }
+    }, 90_000);
+
+    it("injects only relevant Chronicle digest entries and gates under-cleared primary routing", async () => {
+      provider = await MockOpenAIChatServer.start({ text: ["primary should not receive Chronicle digest bytes"] });
+      const local = await MockOpenAIChatServer.start({ text: ["local Chronicle digest answer"] });
+
+      const temp = await mkdtemp(join(tmpdir(), "fairy-gateway-chronicle-digest-"));
+      const dataDir = join(temp, "data");
+      const workspaceRoot = join(temp, "workspace");
+      const configPath = join(temp, "fairy.yaml");
+      const token = "chronicle-digest-token";
+      await mkdir(workspaceRoot, { recursive: true });
+      const chronicle = new ChronicleStore(dataDir, { workspaceRoot });
+      await chronicle.append({
+        files: ["packages/gateway/src/server.ts"],
+        kind: "failure",
+        labels: { residency: "local-only", sensitivity: "internal" },
+        summary: "LOCAL_ONLY_CHRONICLE_MARKER: gateway route failure needs local replay",
+        topics: ["gateway-route"]
+      });
+      await chronicle.append({
+        kind: "decision",
+        summary: "IRRELEVANT_CHRONICLE_MARKER: CSS palette decision",
+        topics: ["palette"]
+      });
+      writeConfig(configPath, dataDir, token, provider.url, {
+        context: [
+          "  chronicle_digest_budget: 200"
+        ],
+        extraModels: [
+          "  - id: mock-local",
+          "    transport: openai-chat",
+          `    base_url: ${JSON.stringify(local.url)}`,
+          "    model: mock-model",
+          "    data_clearance:",
+          "      max_sensitivity: secret",
+          "      residency: [local-only]"
+        ],
+        mainRole: [
+          "    model: mock-main",
+          "    fallback: [mock-local]"
+        ],
+        workspaceRoot
+      });
+      const gateway = startGateway(configPath);
+
+      try {
+        const port = await waitForGateway(gateway);
+        const client = await MockFairyClient.connect({ token, url: `ws://127.0.0.1:${port}` });
+        const created = await client.createSession("chronicle digest routing");
+        const turnEvents = await sendTurnInputWithTimeout(client, created.sid, {
+          content: [{ kind: "text", text: "Explain the gateway route failure before I continue" }]
+        }, 60000);
+        client.close();
+
+        expect(provider.requests).toBe(0);
+        expect(local.requests).toBe(1);
+        const localPrompt = providerPromptAt(local, 0);
+        expect(localPrompt).toContain("Chronicle digest:");
+        expect(localPrompt).toContain("LOCAL_ONLY_CHRONICLE_MARKER");
+        expect(localPrompt).not.toContain("IRRELEVANT_CHRONICLE_MARKER");
+        expect(turnEvents.find((event) => event.type === "memory.gate.decision" && isPayloadRecord(event) && event.payload.reason === "chronicle_relevance")).toMatchObject({
+          payload: { decision: "allow", phase: "retrieval" }
+        });
+        const manifest = [...turnEvents].reverse().find((event) => event.type === "context.manifest");
+        expect(manifest).toMatchObject({
+          payload: { effective_labels: { residency: "local-only", sensitivity: "internal" } }
+        });
+        expect(zoneTokens(manifest, "memory")).toBeGreaterThan(0);
+        expect(turnEvents.find((event) => event.type === "progress.update" && isPayloadRecord(event) && event.payload.stage === "route-denied")).toMatchObject({
+          payload: { model_id: "mock-main" }
+        });
+        expect(turnEvents.some((event) => event.type === "memory.written")).toBe(false);
+        expect(new MemoryStore(dataDir).list()).toEqual([]);
+        assertSchemaValidStream(client.events());
+      } finally {
+        await stopGateway(gateway);
+        await local.stop();
+      }
+    }, 90_000);
+  });
+
+  describe("dream-cycle.consolidation-v0", () => {
+    const seedDreamCycleFixture = async (dataDir: string): Promise<string> => {
+      const sid = "ses_01J00000000000000000007777";
+      const sessionDir = join(dataDir, "sessions", sid);
+      await mkdir(sessionDir, { recursive: true });
+      const events = [
+        {
+          actor: "user",
+          id: "evt_01J00000000000000000007771",
+          labels: { residency: "global-ok", sensitivity: "internal" },
+          payload: { content: [{ kind: "text", text: "remember that favorite shell is pwsh" }] },
+          provenance: "user",
+          sid,
+          ts: "2026-07-02T10:00:00.000Z",
+          turn: 1,
+          type: "turn.input",
+          v: 1
+        },
+        {
+          actor: "system",
+          id: "evt_01J00000000000000000007772",
+          labels: { residency: "global-ok", sensitivity: "internal" },
+          payload: {
+            confidence: 0.8,
+            kind: "preference",
+            memory_id: "mem_shell_pwsh",
+            scope: { kind: "personal" },
+            source: { event_id: "evt_01J00000000000000000007771", quote: "favorite shell is pwsh", sid, turn: 1 },
+            summary: "favorite shell is pwsh",
+            tier: "semantic"
+          },
+          provenance: "agent",
+          sid,
+          ts: "2026-07-02T10:00:00.001Z",
+          turn: 1,
+          type: "memory.written",
+          v: 1
+        },
+        {
+          actor: "system",
+          id: "evt_01J00000000000000000007773",
+          labels: { residency: "global-ok", sensitivity: "internal" },
+          payload: {
+            confidence: 0.8,
+            kind: "preference",
+            memory_id: "mem_shell_bash",
+            scope: { kind: "personal" },
+            source: { event_id: "evt_01J00000000000000000007771", quote: "favorite shell is bash", sid, turn: 1 },
+            summary: "favorite shell is bash",
+            tier: "semantic"
+          },
+          provenance: "agent",
+          sid,
+          ts: "2026-07-02T10:00:00.002Z",
+          turn: 1,
+          type: "memory.written",
+          v: 1
+        },
+        {
+          actor: "user",
+          id: "evt_01J00000000000000000007774",
+          labels: { residency: "global-ok", sensitivity: "internal" },
+          payload: { content: [{ kind: "text", text: "DECISION_GAMMA: keep source-first TS execution" }] },
+          provenance: "user",
+          sid,
+          ts: "2026-07-02T10:00:01.000Z",
+          turn: 2,
+          type: "turn.input",
+          v: 1
+        },
+        {
+          actor: "tool",
+          id: "evt_01J00000000000000000007775",
+          labels: { residency: "global-ok", sensitivity: "internal" },
+          payload: {
+            call_id: "call_fixture_failure",
+            error: { class: "ToolError", message: "fixture failed" },
+            labels: { residency: "global-ok", sensitivity: "internal" },
+            provenance: "tool:vision.ocr",
+            status: "error"
+          },
+          provenance: "agent",
+          sid,
+          ts: "2026-07-02T10:00:02.000Z",
+          turn: 2,
+          type: "tool.result",
+          v: 1
+        },
+        {
+          actor: "user",
+          id: "evt_01J00000000000000000007776",
+          labels: { residency: "local-only", sensitivity: "personal" },
+          payload: { content: [{ kind: "text", text: "remember that favorite doctor is Dr Blue" }] },
+          provenance: "user",
+          sid,
+          ts: "2026-07-02T10:00:03.000Z",
+          turn: 3,
+          type: "turn.input",
+          v: 1
+        },
+        {
+          actor: "user",
+          id: "evt_01J00000000000000000007777",
+          labels: { residency: "global-ok", sensitivity: "internal" },
+          payload: { content: [{ kind: "text", text: "API_KEY=sk_test_1234567890abcdef" }] },
+          provenance: "user",
+          sid,
+          ts: "2026-07-02T10:00:04.000Z",
+          turn: 4,
+          type: "turn.input",
+          v: 1
+        },
+        {
+          actor: "agent",
+          id: "evt_01J00000000000000000007778",
+          labels: { residency: "global-ok", sensitivity: "internal" },
+          payload: { content: [{ kind: "text", text: "done" }], finish_reason: "stop", usage: { estimated: true, input_tokens: 1, output_tokens: 1 } },
+          provenance: "agent",
+          sid,
+          ts: "2026-07-02T10:00:05.000Z",
+          turn: 4,
+          type: "turn.final",
+          v: 1
+        }
+      ];
+      await writeFile(join(sessionDir, "log.jsonl"), `${events.map((event) => JSON.stringify(event)).join("\n")}\n`, "utf8");
+      return sid;
+    };
+
+    const readAllSessionEvents = async (dataDir: string): Promise<EventEnvelope[]> => {
+      const sessionsDir = join(dataDir, "sessions");
+      const entries = await readdir(sessionsDir, { withFileTypes: true });
+      const events: EventEnvelope[] = [];
+      for (const entry of entries.filter((item) => item.isDirectory()).sort((left, right) => left.name.localeCompare(right.name))) {
+        const raw = await readFile(join(sessionsDir, entry.name, "log.jsonl"), "utf8");
+        events.push(...raw
+          .split(/\r?\n/)
+          .filter(Boolean)
+          .map((line) => JSON.parse(line) as EventEnvelope));
+      }
+      return events;
+    };
+
+    it("creates deterministic manual reports with redaction, provenance, pending skills, and no scheduler", async () => {
+      const temp = await mkdtemp(join(tmpdir(), "fairy-dream-cycle-cli-"));
+      const dataDir = join(temp, "data");
+      const workspaceRoot = join(temp, "workspace");
+      const configPath = join(temp, "fairy.yaml");
+      await mkdir(workspaceRoot, { recursive: true });
+      await writeFile(configPath, [
+        "gateway:",
+        `  data_dir: ${JSON.stringify(dataDir.replace(/\\/g, "/"))}`,
+        "workspace:",
+        `  root: ${JSON.stringify(workspaceRoot.replace(/\\/g, "/"))}`,
+        "memory:",
+        "  consolidation:",
+        "    enabled: true",
+        "    learned_skill_pending_dir: learned/pending"
+      ].join("\n"), "utf8");
+      const sid = await seedDreamCycleFixture(dataDir);
+
+      const first = JSON.parse(runFairy(["memory", "consolidate", "--from", sid, "--config", configPath, "--json"], 60000)) as {
+        report: {
+          artifact: { path: string };
+          id: string;
+          learned_skill_drafts: { path: string; status: string }[];
+        };
+      };
+      const second = JSON.parse(runFairy(["memory", "consolidate", "--from", sid, "--config", configPath, "--json"], 60000)) as typeof first;
+      const latest = JSON.parse(runFairy(["memory", "report", "--config", configPath, "--json"], 60000)) as typeof first;
+
+      expect(second.report.id).toBe(first.report.id);
+      expect(second.report.artifact.path).toBe(first.report.artifact.path);
+      expect(latest.report.id).toBe(first.report.id);
+      const reportRaw = await readFile(first.report.artifact.path, "utf8");
+      const report = JSON.parse(reportRaw) as {
+        artifact: { labels: { residency: string; sensitivity: string } };
+        candidate_memories: { admission: string; provenance: { event_id: string; quote: string }; summary: string }[];
+        chronicle_candidates: { kind: string; summary: string }[];
+        contradiction_suggestions: { memory_ids: string[]; suggestion: string }[];
+        episode_summary: { event_count: number; final_count: number; tool_error_count: number };
+        learned_skill_drafts: { path: string; status: string }[];
+        redactions: { event_id: string; quote: string; reason: string }[];
+      };
+
+      expect(report.episode_summary).toMatchObject({ event_count: 8, final_count: 1, tool_error_count: 1 });
+      expect(report.candidate_memories).toEqual(expect.arrayContaining([
+        expect.objectContaining({
+          admission: "candidate_only",
+          provenance: expect.objectContaining({ event_id: "evt_01J00000000000000000007771" }),
+          summary: "favorite shell is pwsh"
+        }),
+        expect.objectContaining({
+          admission: "held",
+          provenance: expect.objectContaining({ event_id: "evt_01J00000000000000000007776" }),
+          summary: "favorite doctor is Dr Blue"
+        })
+      ]));
+      expect(report.candidate_memories.find((item) => item.summary === "favorite shell is pwsh")?.provenance.quote).toContain("remember that favorite shell is pwsh");
+      expect(report.chronicle_candidates).toEqual(expect.arrayContaining([
+        expect.objectContaining({ kind: "decision", summary: expect.stringContaining("DECISION_GAMMA") }),
+        expect.objectContaining({ kind: "failure", summary: expect.stringContaining("fixture failed") })
+      ]));
+      expect(report.contradiction_suggestions).toEqual([
+        expect.objectContaining({
+          memory_ids: ["mem_shell_bash", "mem_shell_pwsh"],
+          suggestion: expect.stringContaining("explicitly supersede")
+        })
+      ]);
+      expect(report.redactions).toEqual([
+        expect.objectContaining({
+          event_id: "evt_01J00000000000000000007777",
+          quote: expect.stringContaining("[REDACTED:secret:"),
+          reason: "secret"
+        })
+      ]);
+      expect(reportRaw).toContain("[REDACTED:secret:");
+      expect(reportRaw).not.toContain("sk_test_1234567890abcdef");
+      expect(report.artifact.labels).toEqual({ residency: "local-only", sensitivity: "personal" });
+      expect(report.learned_skill_drafts).toEqual([
+        expect.objectContaining({ path: expect.stringContaining("learned"), status: "pending" })
+      ]);
+      expect(report.learned_skill_drafts[0]?.path).toContain("pending");
+      await expect(readFile(report.learned_skill_drafts[0]?.path ?? "", "utf8")).resolves.toContain("\"status\": \"pending\"");
+
+      const allEvents = await readAllSessionEvents(dataDir);
+      const artifactEvents = allEvents.filter((event) => event.type === "artifact.created" && isPayloadRecord(event) && event.payload.kind === "memory.consolidation.report");
+      expect(artifactEvents).toHaveLength(1);
+      const artifactEvent = artifactEvents[0];
+      expect(artifactEvent).toBeDefined();
+      if (!artifactEvent || !isPayloadRecord(artifactEvent)) {
+        throw new Error("memory consolidation artifact event was not payload-shaped");
+      }
+      expect(artifactEvent.payload).toMatchObject({
+        labels: { residency: "local-only", sensitivity: "personal" },
+        origin: "memory.consolidation",
+        report_id: first.report.id
+      });
+      expect(artifactEvent.payload.hash).toBe(sha256(reportRaw));
+      expect(allEvents.some((event) => event.type === "memory.deleted")).toBe(false);
+      expect(allEvents.some((event) => event.type === "memory.superseded")).toBe(false);
+      expect(allEvents.some((event) => event.type === "tool.call")).toBe(false);
+      expect(allEvents.some((event) => event.type === "turn.final" && isPayloadRecord(event) && JSON.stringify(event.payload).includes("nightly"))).toBe(false);
+    }, 90_000);
   });
 
   it("logs affect.updated for an enabled persona turn without writing memory", async () => {

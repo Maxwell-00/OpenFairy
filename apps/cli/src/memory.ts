@@ -1,15 +1,27 @@
 import { defaultDataDir, loadConfig } from "@fairy/config";
-import { MemoryStore, evaluateRetrievalGate, type MemoryRecord, type ScoredMemoryRecord } from "@fairy/memory";
+import { escalateLabelsForContent, redactText } from "@fairy/kernel";
+import {
+  MemoryStore,
+  consolidateMemory,
+  evaluateRetrievalGate,
+  readLatestConsolidationReport,
+  type MemoryRecord,
+  type ScoredMemoryRecord
+} from "@fairy/memory";
 import { createEventId, type EventEnvelope } from "@fairy/protocol";
 import { appendFile, mkdir, readFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 
 interface MemoryCliOptions {
-  readonly command: "delete" | "list" | "rebuild" | "search" | "show";
+  readonly command: "consolidate" | "delete" | "evidence" | "list" | "rebuild" | "report" | "search" | "show";
   readonly configPath?: string;
   readonly dataDir: string;
+  readonly from?: string;
   readonly json: boolean;
+  readonly learnedSkillPendingDir?: string;
+  readonly to?: string;
   readonly value?: string;
+  readonly workspaceRoot: string;
 }
 
 const readOption = (args: readonly string[], name: string): string | undefined => {
@@ -34,12 +46,25 @@ const configuredDataDir = (config: Record<string, unknown>, env: NodeJS.ProcessE
   return typeof gateway.data_dir === "string" ? gateway.data_dir : defaultDataDir(env);
 };
 
+const configuredWorkspaceRoot = (config: Record<string, unknown>): string => {
+  const workspace = isRecord(config.workspace) ? config.workspace : {};
+  return resolve(typeof workspace.root === "string" ? workspace.root : process.cwd());
+};
+
+const configuredPendingDir = (config: Record<string, unknown>): string | undefined => {
+  const memory = isRecord(config.memory) ? config.memory : {};
+  const consolidation = isRecord(memory.consolidation) ? memory.consolidation : {};
+  return typeof consolidation.learned_skill_pending_dir === "string" ? consolidation.learned_skill_pending_dir : undefined;
+};
+
 export const parseMemoryOptions = (args: readonly string[], env: NodeJS.ProcessEnv = process.env): MemoryCliOptions => {
   const command = args[0];
-  if (command !== "delete" && command !== "list" && command !== "rebuild" && command !== "search" && command !== "show") {
-    throw new Error("Usage: fairy memory <list|search|show|delete|rebuild> [value] [--json] [--data-dir path] [--config path]");
+  if (command !== "delete" && command !== "list" && command !== "rebuild" && command !== "search" && command !== "show" && command !== "evidence" && command !== "consolidate" && command !== "report") {
+    throw new Error("Usage: fairy memory <list|search|show|evidence|delete|rebuild|consolidate|report> [value] [--from date-or-session] [--to date] [--json] [--data-dir path] [--config path]");
   }
   const configPath = readOption(args, "--config");
+  const from = readOption(args, "--from");
+  const to = readOption(args, "--to");
   const loaded = loadConfig(configPath ? { configPath, env } : { env });
   const dataDir = resolve(readOption(args, "--data-dir") ?? configuredDataDir(loaded.config, env));
   const positional = args
@@ -47,18 +72,28 @@ export const parseMemoryOptions = (args: readonly string[], env: NodeJS.ProcessE
     .filter((arg, index, all) =>
       !arg.startsWith("--") &&
       all[index - 1] !== "--data-dir" &&
-      all[index - 1] !== "--config"
+      all[index - 1] !== "--config" &&
+      all[index - 1] !== "--from" &&
+      all[index - 1] !== "--to"
     );
   const value = positional.join(" ").trim() || undefined;
-  if ((command === "delete" || command === "search" || command === "show") && !value) {
+  if ((command === "delete" || command === "search" || command === "show" || command === "evidence") && !value) {
     throw new Error(`fairy memory ${command} requires a value`);
   }
+  if (command === "consolidate" && !from) {
+    throw new Error("fairy memory consolidate requires --from <date-or-session>");
+  }
+  const pendingDir = configuredPendingDir(loaded.config);
   return {
     command,
     dataDir,
+    ...(from ? { from } : {}),
     ...(configPath ? { configPath } : {}),
     json: hasFlag(args, "--json"),
-    ...(value ? { value } : {})
+    ...(pendingDir ? { learnedSkillPendingDir: pendingDir } : {}),
+    ...(to ? { to } : {}),
+    ...(value ? { value } : {}),
+    workspaceRoot: configuredWorkspaceRoot(loaded.config)
   };
 };
 
@@ -138,6 +173,31 @@ export const runMemory = async (args: readonly string[]): Promise<void> => {
     return;
   }
 
+  if (options.command === "consolidate") {
+    await store.rebuildFromSessionLogs();
+    const report = await consolidateMemory({
+      dataDir: options.dataDir,
+      from: options.from ?? "",
+      labelContent: escalateLabelsForContent,
+      ...(options.learnedSkillPendingDir ? { learnedSkillPendingDir: options.learnedSkillPendingDir } : {}),
+      memoryRecords: store.list(),
+      redactText,
+      ...(options.to ? { to: options.to } : {}),
+      workspaceRoot: options.workspaceRoot
+    });
+    console.log(options.json ? JSON.stringify({ report }) : `memory report ${report.id} ${report.artifact.path}`);
+    return;
+  }
+
+  if (options.command === "report") {
+    const report = await readLatestConsolidationReport(options.dataDir);
+    if (!report) {
+      throw new Error("no memory consolidation report found");
+    }
+    console.log(options.json ? JSON.stringify({ report }) : `memory report ${report.id} ${report.artifact.path}`);
+    return;
+  }
+
   if (options.command === "list") {
     printRecords(store.list(), options.json);
     return;
@@ -155,7 +215,7 @@ export const runMemory = async (args: readonly string[]): Promise<void> => {
     return;
   }
 
-  if (options.command === "show") {
+  if (options.command === "show" || options.command === "evidence") {
     const record = store.get(options.value ?? "");
     if (!record) {
       throw new Error(`memory ${options.value ?? ""} not found`);

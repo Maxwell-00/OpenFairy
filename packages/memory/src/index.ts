@@ -109,6 +109,15 @@ export interface MemoryEvidenceAllowed {
   readonly provenance: MemoryProvenance;
   readonly quote?: string;
   readonly episode: readonly Record<string, unknown>[];
+  readonly chronicle?: readonly {
+    readonly id: string;
+    readonly path: string;
+    readonly provenance?: unknown;
+  }[];
+  readonly report_artifacts?: readonly {
+    readonly path: string;
+    readonly report_id: string;
+  }[];
 }
 
 export interface MemoryEvidenceDenied {
@@ -682,6 +691,7 @@ export class MemoryStore {
     }
 
     return {
+      ...(await this.#chronicleRefsFor(record)),
       episode: await this.#episodeSlice(record.provenance),
       labels: record.labels,
       memory_id: id,
@@ -833,4 +843,108 @@ export class MemoryStore {
     }
     return events.slice(Math.max(0, center - 2), center + 3);
   }
+
+  async #chronicleRefsFor(record: MemoryRecord): Promise<{
+    chronicle?: readonly { id: string; path: string; provenance?: unknown }[];
+    report_artifacts?: readonly { path: string; report_id: string }[];
+  }> {
+    const chronicle = await this.#matchingChronicleRefs(record);
+    const reportArtifacts = await this.#matchingReportArtifacts(record);
+    return {
+      ...(chronicle.length > 0 ? { chronicle } : {}),
+      ...(reportArtifacts.length > 0 ? { report_artifacts: reportArtifacts } : {})
+    };
+  }
+
+  async #matchingChronicleRefs(record: MemoryRecord): Promise<{ id: string; path: string; provenance?: unknown }[]> {
+    const root = join(this.#dataDir, "chronicle");
+    let workspaces: Dirent<string>[];
+    try {
+      workspaces = await readdir(root, { withFileTypes: true });
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+        return [];
+      }
+      throw error;
+    }
+
+    const refs: { id: string; path: string; provenance?: unknown }[] = [];
+    for (const workspace of workspaces.filter((entry) => entry.isDirectory())) {
+      const path = join(root, workspace.name, "chronicle.jsonl");
+      let raw = "";
+      try {
+        raw = await readFile(path, "utf8");
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+          continue;
+        }
+        throw error;
+      }
+      for (const entry of parseJsonlEvents<Record<string, unknown>>(raw)) {
+        const provenance = isRecord(entry.provenance) ? entry.provenance : {};
+        if (
+          provenance.event_id === record.provenance.event_id ||
+          (provenance.sid === record.provenance.sid && provenance.turn === record.provenance.turn)
+        ) {
+          refs.push({
+            id: typeof entry.id === "string" ? entry.id : "unknown",
+            path,
+            ...(isRecord(entry.provenance) ? { provenance: entry.provenance } : {})
+          });
+        }
+      }
+    }
+    return refs.sort((left, right) => left.id.localeCompare(right.id));
+  }
+
+  async #matchingReportArtifacts(record: MemoryRecord): Promise<{ path: string; report_id: string }[]> {
+    const reportsDir = join(this.#dataDir, "artifacts", "memory", "reports");
+    let entries: Dirent<string>[];
+    try {
+      entries = await readdir(reportsDir, { withFileTypes: true });
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+        return [];
+      }
+      throw error;
+    }
+
+    const refs: { path: string; report_id: string }[] = [];
+    for (const entry of entries.filter((item) => item.isFile() && item.name.endsWith(".json") && item.name !== "latest.json")) {
+      const path = join(reportsDir, entry.name);
+      const raw = await readFile(path, "utf8");
+      if (!raw.includes(record.id) && !raw.includes(record.provenance.event_id)) {
+        continue;
+      }
+      const parsed = JSON.parse(raw) as { id?: unknown };
+      refs.push({ path, report_id: typeof parsed.id === "string" ? parsed.id : entry.name.replace(/\.json$/, "") });
+    }
+    return refs.sort((left, right) => left.report_id.localeCompare(right.report_id));
+  }
 }
+
+export {
+  ChroniclePolicyError,
+  ChronicleStore,
+  deriveChronicleLabels,
+  renderChronicleDigest,
+  workspaceIdForRoot
+} from "./chronicle.js";
+export type {
+  ChronicleAppendInput,
+  ChronicleContentLabeler,
+  ChronicleDigest,
+  ChronicleKind,
+  ChronicleProvenance,
+  ChronicleQueryResult,
+  ChronicleRecord,
+  ChronicleStoreOptions
+} from "./chronicle.js";
+export { consolidateMemory, readLatestConsolidationReport } from "./consolidation.js";
+export type {
+  ConsolidationArtifactEvent,
+  ConsolidationArtifactRef,
+  ConsolidationOptions,
+  ConsolidationProvenanceQuote,
+  ConsolidationReport
+} from "./consolidation.js";

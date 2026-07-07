@@ -61,7 +61,10 @@ const readMaxToolIterations = (config: Record<string, unknown>): number => {
 
 const readContextConfig = (config: Record<string, unknown>): ContextConfig => {
   const context = readBlock(config, "context");
+  const chronicle = readBlock(config, "chronicle");
   return {
+    ...(typeof chronicle.digest_budget === "number" ? { chronicleDigestBudget: chronicle.digest_budget } : {}),
+    ...(typeof context.chronicle_digest_budget === "number" ? { chronicleDigestBudget: context.chronicle_digest_budget } : {}),
     compactionRole: typeof context.compaction_role === "string" ? context.compaction_role : "summarizer",
     l4PlaceholderThreshold: typeof context.l4_placeholder_threshold === "number" ? context.l4_placeholder_threshold : 6,
     l4TargetTokens: typeof context.l4_target_tokens === "number" ? context.l4_target_tokens : 800,

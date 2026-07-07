@@ -1,9 +1,22 @@
 import { describe, expect, it } from "vitest";
-import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, readdir, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { evaluateRetrievalGate, MemoryGate, MemoryStore, proposeMemoryCandidate, type MemoryCandidate, type MemoryRecord } from "../src/index.js";
+import {
+  ChroniclePolicyError,
+  ChronicleStore,
+  consolidateMemory,
+  evaluateRetrievalGate,
+  MemoryGate,
+  MemoryStore,
+  proposeMemoryCandidate,
+  readLatestConsolidationReport,
+  type ChronicleContentLabeler,
+  type MemoryCandidate,
+  type MemoryLabels,
+  type MemoryRecord
+} from "../src/index.js";
 
 const candidate = (overrides: Partial<MemoryCandidate> = {}): MemoryCandidate => ({
   category: "preference",
@@ -33,6 +46,16 @@ const record = (overrides: Partial<MemoryRecord> = {}): MemoryRecord => ({
   valid_from: "2026-07-02T10:00:00.000Z",
   ...overrides
 });
+
+const testLabeler: ChronicleContentLabeler = (text: string, labels: MemoryLabels) => {
+  if (/sk_test_|API_KEY=/i.test(text)) {
+    return { labels: { residency: "local-only", sensitivity: "secret" } };
+  }
+  if (/doctor|birthday|my private/i.test(text)) {
+    return { labels: { residency: "local-only", sensitivity: "personal" } };
+  }
+  return { labels };
+};
 
 describe("@fairy/memory", () => {
   it("allows safe explicit memory by default", () => {
@@ -273,6 +296,221 @@ describe("@fairy/memory", () => {
       ok: true,
       provenance: { sid, turn: 1 },
       text: "favorite shell is pwsh"
+    });
+
+    await expect(store.evidence("mem_shell", {
+      requestLabels: { residency: "global-ok", sensitivity: "internal" },
+      routeAllowed: false
+    })).resolves.toEqual({
+      memory_id: "mem_shell",
+      ok: false,
+      reason: "label_clearance_denied"
+    });
+  });
+
+  it("appends workspace Chronicle entries, scopes queries, and rejects secret or implicit personal writes", async () => {
+    const dataDir = await mkdtemp(join(tmpdir(), "fairy-chronicle-store-"));
+    const workspaceRoot = join(dataDir, "workspace-a");
+    const store = new ChronicleStore(dataDir, {
+      clock: () => "2026-07-02T10:00:00.000Z",
+      labelContent: testLabeler,
+      workspaceRoot
+    });
+    const memory = new MemoryStore(dataDir);
+
+    const entry = await store.append({
+      files: ["packages/kernel/src/index.ts"],
+      kind: "decision",
+      provenance: { event_id: "evt_source", sid: "ses_source", source: "unit", turn: 2 },
+      summary: "Use source-first TS execution for gateway tests",
+      topics: ["m2", "testing"]
+    });
+
+    expect(entry).toMatchObject({
+      id: expect.stringMatching(/^chr_[a-f0-9]{20}$/),
+      labels: { residency: "global-ok", sensitivity: "internal" },
+      workspace: { id: expect.stringMatching(/^ws_[a-f0-9]{16}$/) }
+    });
+    expect((await readFile(store.path, "utf8")).trim().split(/\r?\n/)).toHaveLength(1);
+    expect(await store.query("source-first packages/kernel/src/index.ts")).toEqual([
+      expect.objectContaining({ record: expect.objectContaining({ id: entry.id }), score: expect.any(Number) })
+    ]);
+
+    const otherWorkspace = new ChronicleStore(dataDir, {
+      labelContent: testLabeler,
+      workspaceRoot: join(dataDir, "workspace-b")
+    });
+    expect(await otherWorkspace.query("source-first", { includeIrrelevant: true })).toEqual([]);
+    expect(memory.list()).toEqual([]);
+
+    await expect(store.append({
+      kind: "note",
+      summary: "API_KEY=sk_test_1234567890abcdef"
+    })).rejects.toBeInstanceOf(ChroniclePolicyError);
+    await expect(store.append({
+      kind: "note",
+      summary: "my private doctor note"
+    })).rejects.toMatchObject({ code: "personal_requires_explicit_workspace_scope" });
+    expect((await readFile(store.path, "utf8")).trim().split(/\r?\n/)).toHaveLength(1);
+  });
+
+  it("creates deterministic consolidation reports with redaction, suggestions, and pending learned skills only", async () => {
+    const dataDir = await mkdtemp(join(tmpdir(), "fairy-consolidation-"));
+    const workspaceRoot = join(dataDir, "workspace");
+    const pendingDir = join(workspaceRoot, "extensions", "skills", "learned", "pending");
+    const sid = "ses_01J00000000000000000004444";
+    const sessionDir = join(dataDir, "sessions", sid);
+    await mkdir(sessionDir, { recursive: true });
+    await writeFile(join(sessionDir, "log.jsonl"), [
+      JSON.stringify({
+        actor: "user",
+        id: "evt_01J00000000000000000004441",
+        labels: { residency: "global-ok", sensitivity: "internal" },
+        payload: { content: [{ kind: "text", text: "remember that favorite shell is pwsh" }] },
+        provenance: "user",
+        sid,
+        ts: "2026-07-02T10:00:00.000Z",
+        turn: 1,
+        type: "turn.input",
+        v: 1
+      }),
+      JSON.stringify({
+        actor: "user",
+        id: "evt_01J00000000000000000004442",
+        labels: { residency: "global-ok", sensitivity: "internal" },
+        payload: { content: [{ kind: "text", text: "DECISION_ALPHA: keep source-first TS execution" }] },
+        provenance: "user",
+        sid,
+        ts: "2026-07-02T10:00:01.000Z",
+        turn: 2,
+        type: "turn.input",
+        v: 1
+      }),
+      JSON.stringify({
+        actor: "tool",
+        id: "evt_01J00000000000000000004443",
+        labels: { residency: "global-ok", sensitivity: "internal" },
+        payload: {
+          call_id: "call_fail",
+          error: { class: "ToolError", message: "fixture failed" },
+          labels: { residency: "global-ok", sensitivity: "internal" },
+          provenance: "tool:vision.ocr",
+          status: "error"
+        },
+        provenance: "agent",
+        sid,
+        ts: "2026-07-02T10:00:02.000Z",
+        turn: 2,
+        type: "tool.result",
+        v: 1
+      }),
+      JSON.stringify({
+        actor: "user",
+        id: "evt_01J00000000000000000004444",
+        labels: { residency: "global-ok", sensitivity: "internal" },
+        payload: { content: [{ kind: "text", text: "API_KEY=sk_test_1234567890abcdef" }] },
+        provenance: "user",
+        sid,
+        ts: "2026-07-02T10:00:03.000Z",
+        turn: 3,
+        type: "turn.input",
+        v: 1
+      })
+    ].join("\n") + "\n", "utf8");
+
+    const memoryRecords = [
+      record({ id: "mem_shell_pwsh", text: "favorite shell is pwsh" }),
+      record({ id: "mem_shell_bash", text: "favorite shell is bash", provenance: { ...record().provenance, event_id: "evt_other" } })
+    ];
+    const first = await consolidateMemory({
+      dataDir,
+      from: sid,
+      labelContent: testLabeler,
+      learnedSkillPendingDir: pendingDir,
+      memoryRecords,
+      workspaceRoot
+    });
+    const second = await consolidateMemory({
+      dataDir,
+      from: sid,
+      labelContent: testLabeler,
+      learnedSkillPendingDir: pendingDir,
+      memoryRecords,
+      workspaceRoot
+    });
+
+    expect(second.id).toBe(first.id);
+    expect(second.artifact.path).toBe(first.artifact.path);
+    expect(first.candidate_memories).toEqual([
+      expect.objectContaining({ admission: "candidate_only", summary: "favorite shell is pwsh" })
+    ]);
+    expect(first.chronicle_candidates.some((item) => item.kind === "decision")).toBe(true);
+    expect(first.contradiction_suggestions).toEqual([
+      expect.objectContaining({
+        memory_ids: ["mem_shell_bash", "mem_shell_pwsh"],
+        suggestion: expect.stringContaining("explicitly supersede")
+      })
+    ]);
+    expect(first.learned_skill_drafts).toEqual([
+      expect.objectContaining({ path: expect.stringContaining("pending"), status: "pending" })
+    ]);
+    await expect(readFile(first.learned_skill_drafts[0]?.path ?? "", "utf8")).resolves.toContain("\"status\": \"pending\"");
+    expect(await readLatestConsolidationReport(dataDir)).toMatchObject({ id: first.id });
+    const reportRaw = await readFile(first.artifact.path, "utf8");
+    expect(reportRaw).not.toContain("sk_test_1234567890abcdef");
+    expect(reportRaw).toContain("[REDACTED:secret:");
+
+    const sessionDirs = await readdir(join(dataDir, "sessions"), { withFileTypes: true });
+    const allSessionLogs = (await Promise.all(sessionDirs
+      .filter((entry) => entry.isDirectory())
+      .map((entry) => readFile(join(dataDir, "sessions", entry.name, "log.jsonl"), "utf8")))).join("\n");
+    expect(allSessionLogs).not.toContain("memory.deleted");
+    expect(allSessionLogs).not.toContain("memory.superseded");
+  });
+
+  it("pulls Chronicle and consolidation report refs through memory evidence without exposing denied text", async () => {
+    const dataDir = await mkdtemp(join(tmpdir(), "fairy-memory-evidence-pullthrough-"));
+    const sid = "ses_01J00000000000000000005555";
+    const sessionDir = join(dataDir, "sessions", sid);
+    await mkdir(sessionDir, { recursive: true });
+    await writeFile(join(sessionDir, "log.jsonl"), [
+      JSON.stringify({
+        actor: "user",
+        id: "evt_01J00000000000000000005551",
+        labels: { residency: "global-ok", sensitivity: "internal" },
+        payload: { content: [{ kind: "text", text: "remember that favorite shell is pwsh" }] },
+        provenance: "user",
+        sid,
+        ts: "2026-07-02T10:00:00.000Z",
+        turn: 1,
+        type: "turn.input",
+        v: 1
+      })
+    ].join("\n") + "\n", "utf8");
+    const store = new MemoryStore(dataDir);
+    store.insert(record({ provenance: { event_id: "evt_01J00000000000000000005551", quote: "favorite shell is pwsh", sid, turn: 1 } }));
+    const chronicle = new ChronicleStore(dataDir, { workspaceRoot: join(dataDir, "workspace") });
+    await chronicle.append({
+      kind: "decision",
+      provenance: { event_id: "evt_01J00000000000000000005551", sid, source: "unit", turn: 1 },
+      summary: "Memory evidence should include this Chronicle decision"
+    });
+    await consolidateMemory({
+      dataDir,
+      from: sid,
+      labelContent: testLabeler,
+      memoryRecords: [store.get("mem_shell")].filter((item): item is MemoryRecord => Boolean(item)),
+      workspaceRoot: join(dataDir, "workspace")
+    });
+
+    await expect(store.evidence("mem_shell", {
+      requestLabels: { residency: "global-ok", sensitivity: "internal" },
+      routeAllowed: true,
+      scope: { kind: "personal" }
+    })).resolves.toMatchObject({
+      chronicle: [expect.objectContaining({ id: expect.stringMatching(/^chr_/) })],
+      ok: true,
+      report_artifacts: [expect.objectContaining({ report_id: expect.stringMatching(/^mrep_/) })]
     });
 
     await expect(store.evidence("mem_shell", {

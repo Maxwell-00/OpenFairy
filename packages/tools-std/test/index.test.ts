@@ -7,13 +7,27 @@ import { describe, expect, it } from "vitest";
 
 import { createStandardToolRegistry, PolicyError } from "../src/index.js";
 
-const makeRegistry = async () => {
+const makeRegistry = async (options: { readonly labelSecrets?: boolean } = {}) => {
   const root = await mkdtemp(join(tmpdir(), "fairy-tools-"));
   const artifactsDir = join(root, ".artifacts");
+  const dataDir = join(root, ".fairy-data");
   await mkdir(artifactsDir, { recursive: true });
   return {
     artifactsDir,
-    registry: createStandardToolRegistry({ artifactsDir, env: {}, workspaceRoot: root }),
+    dataDir,
+    registry: createStandardToolRegistry({
+      artifactsDir,
+      dataDir,
+      env: {},
+      ...(options.labelSecrets
+        ? {
+            labelContent: (text, labels) => /sk_test_|API_KEY=/i.test(text)
+              ? { labels: { residency: "local-only" as const, sensitivity: "secret" as const } }
+              : { labels }
+          }
+        : {}),
+      workspaceRoot: root
+    }),
     root
   };
 };
@@ -79,7 +93,41 @@ describe("@fairy/tools-std", () => {
 
   it("registers fs and web tools without requiring Docker", async () => {
     const { registry } = await makeRegistry();
-    expect([...registry.keys()]).toEqual(expect.arrayContaining(["fs.read", "fs.write", "fs.list", "web.fetch", "web.search", "research.plan", "research.search", "research.fetch", "research.cite", "research.sources", "vision.describe", "vision.ocr"]));
+    expect([...registry.keys()]).toEqual(expect.arrayContaining(["fs.read", "fs.write", "fs.list", "web.fetch", "web.search", "research.plan", "research.search", "research.fetch", "research.cite", "research.sources", "vision.describe", "vision.ocr", "chronicle.log", "chronicle.query"]));
+  });
+
+  it("runs Chronicle tools with workspace-local provenance, inherited labels, and secret denial", async () => {
+    const { artifactsDir, dataDir, registry, root } = await makeRegistry({ labelSecrets: true });
+    const ctx = { artifactsDir, env: {}, workspaceRoot: root };
+
+    const logged = await registry.get("chronicle.log")?.execute({
+      file: "packages/kernel/src/index.ts",
+      kind: "decision",
+      labels: { residency: "local-only", sensitivity: "internal" },
+      summary: "Keep source-first TS execution",
+      topic: "m2"
+    }, ctx);
+    expect(logged).toMatchObject({
+      labels: { residency: "local-only", sensitivity: "internal" },
+      metadata: { chronicle_id: expect.stringMatching(/^chr_/) },
+      provenance: "tool:chronicle.log"
+    });
+
+    const queried = await registry.get("chronicle.query")?.execute({ topic_or_file: "source-first" }, ctx);
+    expect(queried).toMatchObject({
+      labels: { residency: "local-only", sensitivity: "internal" },
+      provenance: "tool:chronicle.query"
+    });
+    expect(queried?.content).toContain("Keep source-first TS execution");
+
+    await expect(registry.get("chronicle.log")?.execute({
+      kind: "note",
+      summary: "API_KEY=sk_test_1234567890abcdef"
+    }, ctx)).rejects.toBeInstanceOf(PolicyError);
+
+    const afterDenied = await registry.get("chronicle.query")?.execute({ query: "sk_test" }, ctx);
+    expect(afterDenied?.content).not.toContain("sk_test_1234567890abcdef");
+    expect(dataDir).toContain(".fairy-data");
   });
 
   it("runs vision tools with quarantined perception artifacts and label escalation", async () => {

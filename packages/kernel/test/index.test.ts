@@ -1,5 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
-import { resolve } from "node:path";
+import { mkdtemp } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join, resolve } from "node:path";
 
 import {
   detectSensitiveText,
@@ -15,6 +17,7 @@ import {
 } from "../src/index.js";
 import { estimateTextTokens, type ModelGateway, type NormalizedModelEvent } from "@fairy/model-gateway";
 import type { EventEnvelope } from "@fairy/protocol";
+import { ChronicleStore } from "@fairy/memory";
 
 const labels = { residency: "global-ok", sensitivity: "internal" } as const;
 const repoRoot = resolve(new URL("../../..", import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, "$1"));
@@ -575,5 +578,88 @@ describe("@fairy/kernel TurnRunner", () => {
     expect(promptText).toContain("persona: none (plain assistant)");
     expect(promptText).toContain("affect: disabled");
     expect(emitted.some((event) => event.type === "affect.updated")).toBe(false);
+  });
+
+  it("injects relevant Chronicle digest into the memory zone and raises effective labels", async () => {
+    const dataDir = await mkdtemp(join(tmpdir(), "fairy-kernel-chronicle-"));
+    const chronicleStore = new ChronicleStore(dataDir, { workspaceRoot: repoRoot });
+    await chronicleStore.append({
+      kind: "fragile-file",
+      labels: { residency: "local-only", sensitivity: "internal" },
+      summary: "Parser fixture is fragile on Windows",
+      topics: ["parser", "windows"]
+    });
+
+    let promptText = "";
+    let seenLabels: unknown;
+    const gateway: ModelGateway = {
+      estimateTokens(input) {
+        return { estimated: true, tokens: estimateTextTokens(input) };
+      },
+      async *generate(_role, request) {
+        seenLabels = request.labels;
+        promptText = request.messages.map((message) => message.content).join("\n");
+        yield { finish_reason: "stop", type: "done", usage: { estimated: true, input_tokens: 1, output_tokens: 0 } };
+      },
+      modelInfo() {
+        return { context_window: 8000, id: "mock-main", max_output: 1024, model: "mock-model" };
+      }
+    };
+    const emitted: KernelEvent[] = [];
+    const runner = new TurnRunner({ chronicleStore, modelGateway: gateway });
+
+    await runner.runTurn({
+      emit: makeEmit(emitted),
+      history: { messages: [] },
+      input: "What is fragile about the parser on Windows?",
+      labels,
+      sid: "ses_01J00000000000000000000009",
+      turn: 1
+    });
+
+    expect(promptText).toContain("Chronicle digest:");
+    expect(promptText).toContain("Parser fixture is fragile on Windows");
+    expect(seenLabels).toEqual({ residency: "local-only", sensitivity: "internal" });
+    expect(emitted.find((event) => event.type === "context.manifest")?.payload).toMatchObject({
+      effective_labels: { residency: "local-only", sensitivity: "internal" }
+    });
+    expect(emitted.find((event) => event.type === "memory.gate.decision")).toMatchObject({
+      payload: { phase: "retrieval", reason: "chronicle_relevance" }
+    });
+  });
+
+  it("does not inject irrelevant Chronicle entries", async () => {
+    const dataDir = await mkdtemp(join(tmpdir(), "fairy-kernel-chronicle-irrel-"));
+    const chronicleStore = new ChronicleStore(dataDir, { workspaceRoot: repoRoot });
+    await chronicleStore.append({
+      kind: "decision",
+      summary: "Use the dashboard fixture for UI smoke tests",
+      topics: ["dashboard"]
+    });
+
+    let promptText = "";
+    const runner = new TurnRunner({
+      chronicleStore,
+      modelGateway: fakeGateway(
+        [{ finish_reason: "stop", type: "done", usage: { estimated: true, input_tokens: 1, output_tokens: 0 } }],
+        (messages) => {
+          promptText = messages.map((message) =>
+            typeof message === "object" && message && "content" in message ? String((message as { content?: unknown }).content ?? "") : ""
+          ).join("\n");
+        }
+      )
+    });
+
+    await runner.runTurn({
+      emit: makeEmit([]),
+      history: { messages: [] },
+      input: "Explain the research citation flow",
+      labels,
+      sid: "ses_01J00000000000000000000010",
+      turn: 1
+    });
+
+    expect(promptText).not.toContain("Chronicle digest:");
+    expect(promptText).not.toContain("dashboard fixture");
   });
 });

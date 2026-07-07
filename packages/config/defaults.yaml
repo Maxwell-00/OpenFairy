@@ -21,6 +21,8 @@ permissions:
       decision: allow
     - tool: "vision.*"
       decision: allow
+    - tool: "chronicle.*"
+      decision: allow
     - tool: "*"
       decision: ask
 context:
@@ -31,6 +33,15 @@ context:
   l4_target_tokens: 800
   l5_target_tokens: 1200
   compaction_role: summarizer
+chronicle:
+  enabled: true
+  digest_budget: 500
+  max_results: 6
+  storage: data-dir
+memory:
+  consolidation:
+    enabled: true
+    learned_skill_pending_dir: extensions/skills/learned/pending
 persona:
   id: fairy
   enabled: true

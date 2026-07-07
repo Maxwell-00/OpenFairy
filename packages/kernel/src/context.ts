@@ -5,6 +5,7 @@ export type ContextZoneName = "system" | "persona" | "tools" | "memory" | "skill
 export type ReductionStage = "L1" | "L2" | "L3" | "L4" | "L5";
 
 export interface ContextConfig {
+  readonly chronicleDigestBudget?: number;
   readonly compactionRole?: string;
   readonly l4PlaceholderThreshold?: number;
   readonly l4TargetTokens?: number;

@@ -8,7 +8,18 @@ import {
   type ToolDefinition,
   type UsageSnapshot
 } from "@fairy/model-gateway";
-import { deriveMemoryLabels, evaluateRetrievalGate, MemoryGate, proposeMemoryCandidate, renderMemoryDigest, type MemoryLabels, type MemoryStore, type ScoredMemoryRecord } from "@fairy/memory";
+import {
+  deriveMemoryLabels,
+  evaluateRetrievalGate,
+  MemoryGate,
+  proposeMemoryCandidate,
+  renderChronicleDigest,
+  renderMemoryDigest,
+  type ChronicleStore,
+  type MemoryLabels,
+  type MemoryStore,
+  type ScoredMemoryRecord
+} from "@fairy/memory";
 import type { EventEnvelope, Labels, Provenance } from "@fairy/protocol";
 import {
   PolicyError,
@@ -212,6 +223,7 @@ export interface AuditRow {
 export interface TurnRunnerOptions {
   readonly artifactsDir?: string;
   readonly auditLog?: AuditLog;
+  readonly chronicleStore?: ChronicleStore;
   readonly contextConfig?: Partial<ContextConfig>;
   readonly egressGuard?: EgressGuard;
   readonly egressGuardConfig?: EgressGuardConfig;
@@ -274,6 +286,7 @@ const defaultPermissions: PermissionRule[] = [
   { decision: "allow", tool: "web.*" },
   { decision: "allow", tool: "research.*" },
   { decision: "allow", tool: "vision.*" },
+  { decision: "allow", tool: "chronicle.*" },
   { decision: "ask", tool: "*" }
 ];
 
@@ -458,6 +471,7 @@ export class TurnRunner {
   readonly #affectSessions = new Map<string, AffectSession>();
   readonly #artifactsDir: string | undefined;
   readonly #auditLog: AuditLog | undefined;
+  readonly #chronicleStore: ChronicleStore | undefined;
   readonly #contextConfig: ContextConfig;
   readonly #egressGuard: EgressGuard;
   readonly #maxToolIterations: number;
@@ -475,7 +489,9 @@ export class TurnRunner {
   constructor(options: TurnRunnerOptions) {
     this.#artifactsDir = options.artifactsDir;
     this.#auditLog = options.auditLog;
+    this.#chronicleStore = options.chronicleStore;
     this.#contextConfig = {
+      ...(options.contextConfig?.chronicleDigestBudget !== undefined ? { chronicleDigestBudget: options.contextConfig.chronicleDigestBudget } : {}),
       compactionRole: options.contextConfig?.compactionRole ?? "summarizer",
       l4PlaceholderThreshold: options.contextConfig?.l4PlaceholderThreshold ?? 6,
       l4TargetTokens: options.contextConfig?.l4TargetTokens ?? 800,
@@ -584,7 +600,7 @@ export class TurnRunner {
       for (let iteration = 0; iteration <= this.#maxToolIterations; iteration += 1) {
         const toolCalls: ToolCall[] = [];
         let sawDone = false;
-        const memoryDigest = await this.#buildMemoryDigest(options, currentLabels);
+        const memoryDigest = await this.#buildContextDigest(options, currentLabels);
         const personaZone = this.#personaRuntime && affectSession
           ? renderPersonaAffectZone(this.#personaRuntime.pack, affectSession.state, {
               affectEnabled: this.#personaRuntime.affectEnabled,
@@ -1250,6 +1266,74 @@ export class TurnRunner {
     return digest.content
       ? { content: digest.content, ...(digest.labels ? { labels: digest.labels } : {}) }
       : undefined;
+  }
+
+  async #buildContextDigest(
+    options: RunTurnOptions,
+    currentLabels: MemoryLabels
+  ): Promise<{ content: string; labels?: MemoryLabels } | undefined> {
+    const memoryDigest = await this.#buildMemoryDigest(options, currentLabels);
+    const chronicleDigest = await this.#buildChronicleDigest(options);
+    const parts = [memoryDigest, chronicleDigest].filter((part): part is { content: string; labels?: MemoryLabels } =>
+      Boolean(part?.content.trim())
+    );
+    if (parts.length === 0) {
+      return undefined;
+    }
+    return {
+      content: parts.map((part) => part.content).join("\n\n"),
+      labels: deriveMemoryLabels(parts.map((part) => ({ labels: part.labels ?? currentLabels })), currentLabels)
+    };
+  }
+
+  async #buildChronicleDigest(
+    options: RunTurnOptions
+  ): Promise<{ content: string; labels?: MemoryLabels } | undefined> {
+    if (!this.#chronicleStore) {
+      return undefined;
+    }
+    const query = this.#chronicleQueryText(options);
+    const matches = await this.#chronicleStore.query(query, { limit: 12 });
+    if (matches.length === 0) {
+      return undefined;
+    }
+    for (const match of matches) {
+      await options.emit({
+        labels: match.record.labels,
+        payload: {
+          decision: "allow",
+          memory_id: match.record.id,
+          phase: "retrieval",
+          reason: "chronicle_relevance",
+          score: Number(match.score.toFixed(4))
+        },
+        type: "memory.gate.decision"
+      });
+    }
+    const digest = renderChronicleDigest(matches, { estimatedTokenBudget: this.#contextConfig.chronicleDigestBudget ?? 500 });
+    return digest.content
+      ? { content: digest.content, ...(digest.labels ? { labels: digest.labels } : {}) }
+      : undefined;
+  }
+
+  #chronicleQueryText(options: RunTurnOptions): string {
+    const fileHints = options.input.match(/(?:\.{0,2}[\\/])?[\p{L}\p{N}_./\\-]+\.[\p{L}\p{N}_-]+/gu) ?? [];
+    const failedToolHints = options.history.messages
+      .filter((message) => message.role === "tool" && /"status"\s*:\s*"error"|ToolError|error/i.test(message.content))
+      .slice(-4)
+      .map((message) => {
+        try {
+          const parsed = JSON.parse(message.content) as Record<string, unknown>;
+          return [
+            typeof parsed.provenance === "string" ? parsed.provenance : "",
+            typeof parsed.reason_code === "string" ? parsed.reason_code : "",
+            typeof parsed.call_id === "string" ? parsed.call_id : ""
+          ].filter(Boolean).join(" ");
+        } catch {
+          return message.content.slice(0, 120);
+        }
+      });
+    return [options.input, ...fileHints, ...failedToolHints].join("\n");
   }
 
   async #handleToolCall(

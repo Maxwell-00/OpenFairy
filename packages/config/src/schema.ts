@@ -133,6 +133,7 @@ export const configSchema = {
         reduce_at: { type: "number", exclusiveMinimum: 0, maximum: 1 },
         output_reserve: { type: "integer", minimum: 1 },
         memory_digest_budget: { type: "integer", minimum: 1 },
+        chronicle_digest_budget: { type: "integer", minimum: 1 },
         min_recent_turns: { type: "integer", minimum: 0 },
         l4_placeholder_threshold: { type: "integer", minimum: 1 },
         l4_target_tokens: { type: "integer", minimum: 1 },
@@ -140,6 +141,30 @@ export const configSchema = {
         compaction_role: { type: "string", minLength: 1 }
       },
       required: ["reduce_at", "min_recent_turns"]
+    },
+    chronicle: {
+      type: "object",
+      additionalProperties: true,
+      properties: {
+        enabled: { type: "boolean" },
+        digest_budget: { type: "integer", minimum: 1 },
+        max_results: { type: "integer", minimum: 1 },
+        storage: { type: "string", enum: ["data-dir"] }
+      }
+    },
+    memory: {
+      type: "object",
+      additionalProperties: true,
+      properties: {
+        consolidation: {
+          type: "object",
+          additionalProperties: true,
+          properties: {
+            enabled: { type: "boolean" },
+            learned_skill_pending_dir: { type: "string", minLength: 1 }
+          }
+        }
+      }
     },
     persona: {
       oneOf: [

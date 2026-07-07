@@ -1,5 +1,12 @@
 import { Readability } from "@mozilla/readability";
 import {
+  ChroniclePolicyError,
+  ChronicleStore,
+  deriveChronicleLabels,
+  type ChronicleContentLabeler,
+  type ChronicleKind
+} from "@fairy/memory";
+import {
   artifactEventPayload,
   ArtifactRegistry,
   compactPerceptionText,
@@ -84,7 +91,9 @@ export class PolicyError extends Error {
 export interface StandardToolOptions {
   readonly artifactsDir: string;
   readonly config?: Record<string, unknown>;
+  readonly dataDir?: string;
   readonly env?: NodeJS.ProcessEnv;
+  readonly labelContent?: ChronicleContentLabeler;
   readonly workspaceRoot: string;
 }
 
@@ -652,6 +661,115 @@ const maybeFixtureKey = (ref: string): string | undefined => {
 const labelsArg = (args: Record<string, unknown>): ToolLabels =>
   isToolLabels(args.labels) ? args.labels : internalLabels;
 
+const chronicleKind = (value: unknown): ChronicleKind => {
+  if (
+    value === "attempt" ||
+    value === "failure" ||
+    value === "decision" ||
+    value === "outcome" ||
+    value === "fragile-file" ||
+    value === "note"
+  ) {
+    return value;
+  }
+  throw new ToolError("kind must be attempt, failure, decision, outcome, fragile-file, or note");
+};
+
+const stringListArgs = (args: Record<string, unknown>, single: string, plural: string): string[] => [
+  ...(typeof args[single] === "string" ? [args[single] as string] : []),
+  ...readStringArray(args[plural])
+];
+
+const createChronicleTools = (options: StandardToolOptions): RegisteredTool[] => {
+  const store = new ChronicleStore(options.dataDir ?? dirname(options.artifactsDir), {
+    ...(options.labelContent ? { labelContent: options.labelContent } : {}),
+    workspaceRoot: options.workspaceRoot
+  });
+
+  const chronicleLogTool: RegisteredTool = {
+    description: "Append a workspace-local Chronicle entry for project attempts, failures, decisions, outcomes, fragile files, or notes.",
+    labels_out: internalLabels,
+    name: "chronicle.log",
+    params: jsonSchemaObject({
+      details: { type: "string" },
+      file: { type: "string" },
+      files: { items: { type: "string" }, type: "array" },
+      kind: { enum: ["attempt", "failure", "decision", "outcome", "fragile-file", "note"], type: "string" },
+      labels: {
+        additionalProperties: false,
+        properties: {
+          residency: { enum: ["local-only", "region-restricted", "global-ok"], type: "string" },
+          sensitivity: { enum: ["public", "internal", "personal", "secret"], type: "string" }
+        },
+        required: ["sensitivity", "residency"],
+        type: "object"
+      },
+      summary: { type: "string" },
+      topic: { type: "string" },
+      topics: { items: { type: "string" }, type: "array" }
+    }, ["kind", "summary"]),
+    async execute(args) {
+      try {
+        const entry = await store.append({
+          files: stringListArgs(args, "file", "files"),
+          kind: chronicleKind(args.kind),
+          labels: labelsArg(args),
+          provenance: { source: "tool:chronicle.log" },
+          summary: stringArg(args, "summary"),
+          topics: stringListArgs(args, "topic", "topics"),
+          ...(typeof args.details === "string" ? { details: args.details } : {})
+        });
+        return {
+          content: JSON.stringify({ entry }, null, 2),
+          labels: entry.labels,
+          metadata: { chronicle_id: entry.id, workspace_id: entry.workspace.id },
+          provenance: "tool:chronicle.log"
+        };
+      } catch (error) {
+        if (error instanceof ChroniclePolicyError) {
+          throw new PolicyError(error.message);
+        }
+        throw error;
+      }
+    }
+  };
+
+  const chronicleQueryTool: RegisteredTool = {
+    description: "Query compact workspace Chronicle entries by topic, file, or project text.",
+    labels_out: internalLabels,
+    name: "chronicle.query",
+    params: jsonSchemaObject({
+      query: { type: "string" },
+      topic_or_file: { type: "string" }
+    }),
+    async execute(args) {
+      const query = typeof args.topic_or_file === "string" && args.topic_or_file.length > 0
+        ? args.topic_or_file
+        : stringArg(args, "query");
+      const matches = await store.query(query, { limit: 6 });
+      const entries = matches.map((item) => ({
+        files: item.record.files,
+        id: item.record.id,
+        kind: item.record.kind,
+        labels: item.record.labels,
+        provenance: item.record.provenance,
+        score: Number(item.score.toFixed(4)),
+        summary: item.record.summary,
+        topics: item.record.topics
+      }));
+      const labels = matches.length > 0 ? deriveChronicleLabels(matches.map((item) => item.record)) : internalLabels;
+      return {
+        content: JSON.stringify({ entries, query }, null, 2),
+        labels,
+        metadata: { query, result_count: entries.length },
+        provenance: "tool:chronicle.query"
+      };
+    }
+  };
+
+  return [chronicleLogTool, chronicleQueryTool];
+};
+
 const resolvePerceptionArtifact = async (
   args: Record<string, unknown>,
   ctx: ToolExecutionContext,
@@ -783,6 +901,9 @@ export const createStandardToolRegistry = (options: StandardToolOptions): ToolRe
     register(tool);
   }
   for (const tool of createVisionTools()) {
+    register(tool);
+  }
+  for (const tool of createChronicleTools(options)) {
     register(tool);
   }
 

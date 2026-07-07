@@ -24,6 +24,8 @@ describe("loadConfig", () => {
         l4_target_tokens: 800,
         l5_target_tokens: 1200
       },
+      chronicle: { digest_budget: 500, enabled: true, max_results: 6, storage: "data-dir" },
+      memory: { consolidation: { enabled: true, learned_skill_pending_dir: "extensions/skills/learned/pending" } },
       models: [],
       roles: {},
       gateway: { port: 8787, auth: { token: "dev-token" } },
@@ -320,6 +322,38 @@ describe("loadConfig", () => {
       [
         "context:",
         "  l4_placeholder_threshold: 0"
+      ].join("\n")
+    );
+    expect(() => loadConfig({ cwd, userConfigPath })).toThrow(ConfigValidationError);
+  });
+
+  it("validates Chronicle and consolidation config", () => {
+    const cwd = makeTempDir();
+    const userConfigPath = join(cwd, "fairy.yaml");
+    writeFileSync(
+      userConfigPath,
+      [
+        "chronicle:",
+        "  digest_budget: 200",
+        "  max_results: 4",
+        "  storage: data-dir",
+        "memory:",
+        "  consolidation:",
+        "    enabled: true",
+        "    learned_skill_pending_dir: .fairy/pending-skills"
+      ].join("\n")
+    );
+
+    expect(loadConfig({ cwd, userConfigPath }).config).toMatchObject({
+      chronicle: { digest_budget: 200, max_results: 4, storage: "data-dir" },
+      memory: { consolidation: { learned_skill_pending_dir: ".fairy/pending-skills" } }
+    });
+
+    writeFileSync(
+      userConfigPath,
+      [
+        "chronicle:",
+        "  digest_budget: 0"
       ].join("\n")
     );
     expect(() => loadConfig({ cwd, userConfigPath })).toThrow(ConfigValidationError);

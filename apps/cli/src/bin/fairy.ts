@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import { runDoctor } from "../doctor.js";
 import { runAudit, runChat, runSessions } from "../chat.js";
+import { runChronicle } from "../chronicle.js";
 import { runMemory } from "../memory.js";
 import { runAffect, runPersona } from "../persona.js";
 import { runResearch } from "../research.js";
@@ -45,6 +46,11 @@ if (command === "memory") {
   process.exit(0);
 }
 
+if (command === "chronicle") {
+  await runChronicle(args);
+  process.exit(0);
+}
+
 if (command === "research") {
   await runResearch(args);
   process.exit(0);
@@ -60,5 +66,5 @@ if (command === "affect") {
   process.exit(0);
 }
 
-console.error("Usage: fairy <doctor|chat|sessions|audit|artifacts|replay|memory|research|persona|affect>");
+console.error("Usage: fairy <doctor|chat|sessions|audit|artifacts|replay|memory|chronicle|research|persona|affect>");
 process.exit(1);
