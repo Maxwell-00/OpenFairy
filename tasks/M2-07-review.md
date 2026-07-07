@@ -1,26 +1,33 @@
-# M2-07 Review — Context ladder completion: L4/L5 compaction + post-compaction regression
+# M2-07 Final Review — Context ladder completion: L4/L5 compaction + post-compaction regression
 
 Review date: 2026-07-07  
 Reviewer: ChatGPT 5.5 Thinking  
 Task brief: `tasks/M2-07-context-compaction.md`  
-Delivery commit: `dd3b0a6`  
-CI: GitHub Actions run `28861229375`, success, ubuntu + windows matrix completed.
+Implementation commit: `dd3b0a6`  
+Owner evidence commit: `817fc96`  
+CI:
+- Implementation run `28861229375`: success, ubuntu + windows matrix completed.
+- Owner-evidence run `28864850370`: success, ubuntu + windows matrix completed.
 
 ## Verdict
 
-**ACCEPTED WITH NOTES — implementation accepted, task close pending owner evidence.**
+**ACCEPTED WITH NOTES / CLOSED.**
 
-M2-07 implements the L4/L5 context compaction slice: compaction policy/config, bounded compaction request shape, validated L4/L5 model outputs, L4 artifact projection, L5 `session.compacted`, replay rendering, and the deterministic `context.compaction-regression` path.
-
-This implementation is accepted at code/CI level. It is not yet owner-closed because `tasks/owner-checks/M2-07/` currently contains only the evidence README, not the expected owner evidence logs.
+M2-07 is task-closed. L4/L5 context compaction is accepted at deterministic mock/fixture level, with owner evidence committed and CI green.
 
 ## Evidence base
 
-- Commit `dd3b0a6` / `M2-07-work`.
-- CI run `28861229375` / `M2-07-work #64`: success, matrix `verify`, 2 jobs completed.
 - Work report: `tasks/M2-07-work.md`.
-- Owner evidence directory currently contains only:
-  - `tasks/owner-checks/M2-07/README.md`
+- Review: `tasks/M2-07-review.md`.
+- Owner evidence:
+  - `tasks/owner-checks/M2-07/M2-07-owner-checks.md`
+  - `tasks/owner-checks/M2-07/testing-compaction.txt`
+  - `tasks/owner-checks/M2-07/focused-compaction-regression.txt`
+  - `tasks/owner-checks/M2-07/cli-replay-compaction.txt`
+  - `tasks/owner-checks/M2-07/kernel-compaction.txt`
+  - `tasks/owner-checks/M2-07/config-compaction.txt`
+  - `tasks/owner-checks/M2-07/protocol-compaction.txt`
+  - `tasks/owner-checks/M2-07/conformance.txt`
 
 ## Acceptance review
 
@@ -28,139 +35,106 @@ This implementation is accepted at code/CI level. It is not yet owner-closed bec
 
 **PASS.**
 
-The work report records the full acceptance command set passed:
+`testing-compaction.txt` shows the full `@fairy/testing` suite green:
 
-- install
-- lint
-- typecheck
-- tests
-- dep-check
-- conformance
-- diff check
-- docs/docs-zh diff check
-
-It also records that `pnpm lint` included the encoding guard and that `git diff --name-only -- docs docs-zh` had no output.
-
-The changed file tree contains app/kernel/config/model-gateway/testing/task files, with no `docs/` or `docs-zh/` file changes.
+- `context.compaction-regression` appears and passes.
+- Existing M2 suites remain visible and green.
+- Summary: `8 passed | 1 skipped` test files, `60 passed | 1 skipped` tests.
 
 ### 1. Compaction model path and policy
 
-**PASS WITH NOTE.**
+**PASS.**
 
-The work report states that compaction calls the configured `context.compaction_role`, default `summarizer`, through the existing model gateway. It also states that unknown role, route denial, provider error, tool-call output, empty output, or invalid JSON all fail closed.
+The focused suite verifies:
 
-The new `packages/kernel/src/compaction.ts` defines request/output shapes, validation, sanitization, summary/handoff renderers, and L4/L5 projections. The request shape includes labels, provenance, refs, source range, recent tail, and bounded target token budget.
-
-Important acceptance points are satisfied by reported tests:
-
-- mock summarizer role path;
-- bounded input;
-- invalid/missing output fail-closed;
-- personal/local-only compactor route clearance;
-- no second TurnRunner reported.
+- L4/L5 forced compaction;
+- preservation of decisions, refs, errors, and quarantine;
+- compaction routed through a cleared summarizer fallback;
+- labels continue gating the main model.
 
 ### 2. L4 micro-compaction
 
 **PASS.**
 
-The work report states:
-
-- L4 runs after L1-L3 projection still exceeds budget, or when L2/L3 placeholders exceed threshold.
-- Failed L4 leaves the original L1-L3 path intact.
-- L4 writes `artifact.created` with `kind=context.compaction.l4`.
-- L4 visibility uses `artifact.created` plus `context.manifest.reduction_stages_applied=["L4"]`.
-
-This matches the brief's allowed choice: L4 may use `artifact.created` + manifest instead of `session.compacted` if range semantics do not fit.
+Evidence shows L4 behavior is exercised by the compaction regression suite and replay/manifest tests. L4 visibility is through `context.manifest.reduction_stages_applied` and compaction artifact rendering.
 
 ### 3. L5 full compaction / structured handoff
 
 **PASS.**
 
-The work report states L5 runs only after successful L4 when the L4-projected prompt still exceeds budget. It writes `artifact.created` with `kind=context.compaction.l5` and emits existing `session.compacted` with required `{range, summary_ref}`.
-
-Replay test additions include `artifact.created` for a context compaction artifact and `session.compacted` with `range` and `summary_ref`, and assert replay text and JSON visibility.
+Evidence shows L5 behavior is exercised by the compaction regression suite. Replay tests cover `session.compacted`, `artifact.created`, manifest stages, and JSON preservation.
 
 ### 4. Post-compaction regression suite
 
 **PASS.**
 
-The work report states `context.compaction-regression` is visible in verbose `@fairy/testing` output and passes.
-
-The brief-required coverage is represented in the work report and gateway E2E additions:
-
-- task carry-over;
-- artifact refs;
-- memory/research/perception refs;
-- failed tools;
-- labels and route gating;
-- quarantine no-laundering;
-- replay visibility.
+The deterministic `context.compaction-regression` suite appears and passes. The focused run shows 2 tests passed and 59 skipped under the `-t context.compaction-regression` filter.
 
 ### 5. Replay / CLI visibility
 
 **PASS.**
 
-`apps/cli/src/replay.ts` now renders `session.compacted` compactly as:
+`cli-replay-compaction.txt` and the prior implementation review show replay coverage for compaction rendering. Owner evidence records CLI/replay compaction checks as PASS.
 
-```text
-session.compacted turns=<start>-<end> <summary_ref>
-```
-
-Replay tests cover L4/L5 manifest stages, compaction artifact rendering, `session.compacted`, and JSON payload preservation.
-
-### 6. Config surface
+### 6. Config / protocol / conformance
 
 **PASS.**
 
-The config surface is minimal and matches the brief:
+Owner evidence shows:
 
-```yaml
-context:
-  l4_placeholder_threshold: 6
-  l4_target_tokens: 800
-  l5_target_tokens: 1200
-  compaction_role: summarizer
-```
-
-Defaults and schema validation were added, and config tests cover defaults, custom values, and invalid values.
-
-### 7. Docs proposals only
-
-**PASS.**
-
-Codex did not edit `docs/` or `docs-zh/`; docs proposals are in the work report.
+- kernel/context compaction tests green;
+- config validation tests green;
+- protocol/conformance green;
+- mock conformance reports `ok:true` across all 18 cases.
 
 ## BLOCKER
 
-None for implementation acceptance.
+None.
 
 ## CARRY-IN
 
-1. **Owner evidence pending.**  
-   `tasks/owner-checks/M2-07/README.md` exists, but the expected evidence files are not committed yet:
-   - `testing-compaction.txt`
-   - `compaction-replay.jsonl`
-   - `compaction-manifests.txt`
-   - `compaction-governance-replay.jsonl`
-
-2. **Reviewer-owned docs pass pending.**  
-   Apply the work report's docs proposals to:
+1. **Reviewer-owned docs pass pending.**  
+   Apply M2-07 docs proposals to:
    - `docs/specs/context-engine.md`
    - `docs/specs/protocol.md`
    - `docs/specs/data-governance.md`
    - `docs/specs/evals.md`
 
-3. **Code formatting/reviewability issue.**  
-   Several new/modified files are minified into very long lines. CI accepts this, but it materially hurts code review and source-level citation. Future tasks should preserve normal TypeScript/Markdown formatting.
+2. **Optional direct replay evidence not required.**  
+   `M2-07-owner-checks.md` leaves the optional direct replay section as `YES / NO` / `PASS / N/A / FAIL`. This is acceptable because deterministic test logs cover the same properties and the overall owner check is PASS.
 
-4. **Need code-level countersign for M2 exit.**  
-   Given the long-line implementation style and the security-sensitive compactor route-clearance/quarantine requirements, Fable/Opus code-level cross-check is recommended before M2 exit consolidation.
+3. **Code-level countersign recommended before M2 exit.**  
+   Because compaction is security-sensitive and the implementation is long-line compressed in places, Fable/Opus code-level cross-check is recommended before using this as M2 exit evidence.
 
 ## NIT
 
-- Work report is compressed into very long lines, same as recent prior reports.
-- Owner evidence directory currently contains only a README; deterministic fixture evidence can be Codex-generated, but it should be committed as actual logs/JSON before final close.
+- Owner summary omits `Owner evidence commit: 817fc96`. This is evidence-hygiene only.
+- Work report / some generated files remain difficult to line-cite due to long-line formatting.
 
 ## Final decision
 
-M2-07 implementation is accepted with notes. Task-level close remains pending owner evidence.
+M2-07 is closed. Proceed to the next M2 slice after applying or explicitly deferring the M2-07 docs pass.
+
+---
+
+## Countersignature — Claude (Fable 5), 2026-07-07
+
+Code-level cross-check delegated to an opus subagent (12-item checklist at `dd3b0a6`, file:line evidence, reads via `git show`). **PASS on all items, including the three reviewer-gate additions from the brief gate:**
+
+- **Compactor-call clearance CONFIRMED.** The compaction request carries `deriveLabels(sourceMessages, currentLabels)` and goes through the normal gateway generate/clearance path; the governance E2E pins `provider.requests === 0` on the under-cleared summarizer binding (personal/local-only source range — zero bytes), `fallback.requests === 3` (cleared local handled L4 + L5 + main), visible `route-denied` progress with compaction stage tags, and `denied_candidates` in the final trace. The leak channel the gate patch targeted is closed and test-locked.
+- **Quarantine no-laundering CONFIRMED.** Handoff `untrusted_data_refs` render only inside FAIRY QUARANTINE fences in a non-instruction-role message; the E2E asserts marker presence (`carrying.length > 0`) before the role/framing partition, plus no memory.written / citation.recorded / tool.call post-handoff, and replay leaks nothing. Non-vacuous by construction.
+- **`session.compacted` payload CONFIRMED:** emitted for L5 with required `{range:{start_turn,end_turn}, summary_ref}` resolving to the durable artifact (never emitted without artifact backing); L4 uses `artifact.created` + manifest stage with the justification recorded in Spec Ambiguities — exactly the decision path the brief prescribed. No invented event types (compaction strings appear only as payload `stage`/artifact `kind` values).
+
+Also verified: bounded compactor input (secret text hash-omitted, base64/blob runs stripped, 1400-char previews, capped ref arrays — asserted in both unit and request-body E2E); fail-closed output validation (invalid ⇒ skip + keep L1–L3/L4 path, visible `context.compaction.skipped`); append-only JSONL (original turn events survive, summaries are appended artifacts/events); L4/L5 trigger policy, pin/user preservation, decision/todo/ref/error carry-over, verbatim tail; label inheritance re-gating the main route post-compaction; config keys with validation (threshold 0 fails); replay/manifest rendering; one TurnRunner, no SDK/provider strings, governance/persona untouched, ASCII-clean compaction.ts, no weakened assertions (the two "deletions" are an import expansion and a trailing-newline fix).
+
+**Two minor PARTIALs, recorded as M2-exit carry-in (logic present and correct; tests missing):**
+
+1. The terminal fail-closed branch — *no cleared summarizer candidate at all* ⇒ keep-uncompacted path — has no dedicated E2E (the governance test always has a cleared fallback available).
+2. Invalid-compactor-output fail-closed is unit-proven at the validators but no integration test drives a bad-output turn to completion on the original context path. (Implementation performs zero retries — compliant with the brief's "at most once".)
+
+Both are two-test additions; thread them into the M2 exit consolidation slice's Deliverable 0 rather than reopening. Cosmetic note: `summary_ref` is an absolute artifact path rather than the `artifact://` convention used inside summaries — schema-valid, consistency nicety for a future touch.
+
+Docs pass applied with this countersignature (context-engine, protocol, data-governance, evals). Handbook current-state updated.
+
+**Countersigned: M2-07 ACCEPTED WITH NOTES / CLOSED.**
+
