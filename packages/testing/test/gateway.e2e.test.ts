@@ -78,6 +78,7 @@ const writeConfig = (path: string, dataDir: string, token: string, baseUrl: stri
   readonly persona?: readonly string[];
   readonly affect?: readonly string[];
   readonly extraModels?: readonly string[];
+  readonly governance?: readonly string[];
   readonly mainRole?: readonly string[];
   readonly model?: readonly string[];
   readonly modelClearance?: readonly string[];
@@ -108,6 +109,7 @@ const writeConfig = (path: string, dataDir: string, token: string, baseUrl: stri
       `  data_dir: ${JSON.stringify(dataDir.replace(/\\/g, "/"))}`,
       "  auth:",
       `    token: ${JSON.stringify(token)}`,
+      ...(options.governance ?? []),
       "kernel:",
       "  system_prompt: M1 e2e test prompt",
       "  max_tool_iterations: 16",
@@ -1697,6 +1699,64 @@ describe("gateway M1 e2e", () => {
       expect(personalResult).toMatchObject({
         payload: { egress: { label_class: "personal", reason_code: "personal_context" }, status: "error" }
       });
+      assertSchemaValidStream(client.events());
+    } finally {
+      await stopGateway(gateway);
+    }
+  }, 90_000);
+
+  it("allows configured personal egress tools and audits the pass decision", async () => {
+    const personalSentence = "This authenticated profile page says the user's private research notebook is local-only";
+    provider = await MockOpenAIChatServer.start();
+    provider.enqueueScript({
+      toolCalls: [{ id: "call_private_fetch", name: "research.fetch", args: { url_or_source_id: "https://auth.local.test/private-research-note" } }]
+    });
+    provider.enqueueScript({
+      toolCalls: [{ id: "call_allowed_personal_search", name: "web.search", args: { query: personalSentence } }]
+    });
+    provider.enqueueScript({ text: ["personal egress allowed"] });
+
+    const temp = await mkdtemp(join(tmpdir(), "fairy-gateway-egress-personal-allow-"));
+    const dataDir = join(temp, "data");
+    const configPath = join(temp, "fairy.yaml");
+    const token = "egress-personal-allow-token";
+    writeConfig(configPath, dataDir, token, provider.url, {
+      governance: [
+        "governance:",
+        "  egress:",
+        "    personal_allowed_tools: [\"web.search\"]"
+      ],
+      modelClearance: [
+        "    data_clearance:",
+        "      max_sensitivity: secret",
+        "      residency: [local-only, global-ok]"
+      ]
+    });
+    const gateway = startGateway(configPath);
+
+    try {
+      const port = await waitForGateway(gateway);
+      const client = await MockFairyClient.connect({ token, url: `ws://127.0.0.1:${port}` });
+      const created = await client.createSession("personal egress allow");
+      const turnEvents = await sendTurnInputWithTimeout(client, created.sid, {
+        content: [{ kind: "text", text: "fetch private research and search with the configured allowed tool" }]
+      }, 60000);
+      client.close();
+
+      expect(turnEvents.find((event) => event.type === "snapshot.created")).toMatchObject({
+        labels: { residency: "local-only", sensitivity: "personal" }
+      });
+      expect(turnEvents.some((event) => event.type === "progress.update" && isPayloadRecord(event) && event.payload.stage === "egress.denied")).toBe(false);
+      expect(turnEvents.find((event) => event.type === "tool.result" && isPayloadRecord(event) && event.payload.call_id === "call_allowed_personal_search")).toMatchObject({
+        payload: { status: "ok" }
+      });
+
+      const audit = await fetch(`http://127.0.0.1:${port}/audit?limit=30&token=${token}`).then((response) => response.json()) as {
+        entries: { decision: string | null; op: string; tool: string | null }[];
+      };
+      expect(audit.entries.some((entry) => entry.op === "egress.denied" && entry.tool === "web.search")).toBe(false);
+      expect(audit.entries.some((entry) => entry.op === "permission.decide" && entry.tool === "web.search" && entry.decision === "allow")).toBe(true);
+      expect(audit.entries.some((entry) => entry.op === "tool.execute" && entry.tool === "web.search" && entry.decision === "ok")).toBe(true);
       assertSchemaValidStream(client.events());
     } finally {
       await stopGateway(gateway);

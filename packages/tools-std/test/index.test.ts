@@ -124,5 +124,8 @@ describe("@fairy/tools-std", () => {
       type: "sourceset.reviewed"
     });
     expect(sources?.content).toContain("independence_key");
+    const parsedSources = JSON.parse(sources?.content ?? "{}") as { review?: { independent_family_count?: unknown } };
+    expect(typeof parsedSources.review?.independent_family_count).toBe("number");
+    expect(parsedSources.review?.independent_family_count as number).toBeGreaterThan(0);
   });
 });

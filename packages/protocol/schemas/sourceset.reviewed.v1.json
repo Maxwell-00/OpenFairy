@@ -49,6 +49,10 @@
           ],
           "type": "string"
         },
+        "independent_family_count": {
+          "minimum": 0,
+          "type": "integer"
+        },
         "review_id": {
           "minLength": 1,
           "type": "string"

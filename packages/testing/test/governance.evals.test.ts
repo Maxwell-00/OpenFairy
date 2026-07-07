@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it } from "vitest";
 
-import { EgressGuard, escalateLabelsForContent, redactText } from "@fairy/kernel";
-import { createModelGateway, deriveLabels, type NormalizedModelEvent } from "@fairy/model-gateway";
+import { EgressGuard, escalateLabelsForContent, profileDefaults, redactText } from "@fairy/kernel";
+import { canRouteToModel, createModelGateway, deriveLabels, type ModelConfig, type NormalizedModelEvent } from "@fairy/model-gateway";
 import { MockOpenAIChatServer } from "../src/index.js";
 
 let providers: MockOpenAIChatServer[] = [];
@@ -25,18 +25,80 @@ const collect = async (events: AsyncIterable<NormalizedModelEvent>): Promise<Nor
   return out;
 };
 
+const governanceModel = (data_clearance: ModelConfig["data_clearance"]): ModelConfig => ({
+  base_url: "http://127.0.0.1:1",
+  capabilities: { tools: "none" },
+  context_window: 8000,
+  data_clearance,
+  id: "candidate",
+  model: "mock-model",
+  transport: "openai-chat"
+});
+
 describe("label.conformance", () => {
-  it("enforces derivation laws without hint-based gating or automatic downgrade", () => {
+  it("enforces max/intersection derivation without automatic downgrade", () => {
     expect(deriveLabels([
       { labels: { residency: "global-ok", sensitivity: "internal" } },
       { labels: { residency: "local-only", sensitivity: "personal" } },
       { labels: { residency: "region-restricted", sensitivity: "public" } }
     ])).toEqual({ residency: "local-only", sensitivity: "personal" });
 
-    expect(deriveLabels([
+    const composed = deriveLabels([
       { labels: { residency: "local-only", sensitivity: "secret" } },
       { labels: { residency: "global-ok", sensitivity: "public" } }
-    ])).toEqual({ residency: "local-only", sensitivity: "secret" });
+    ]);
+
+    expect(composed).toEqual({ residency: "local-only", sensitivity: "secret" });
+    expect(canRouteToModel(
+      composed,
+      governanceModel({ max_sensitivity: "internal", residency: ["global-ok"] }),
+      { home_regions: [], profile: "balanced" }
+    )).toMatchObject({ ok: false });
+  });
+
+  it("treats routing hints as advisory and never as gates", () => {
+    const global = governanceModel({ max_sensitivity: "internal", residency: ["global-ok"] });
+    const governance = { home_regions: [], profile: "balanced" } as const;
+    const clearedWithoutHint = canRouteToModel({ residency: "global-ok", sensitivity: "internal" }, global, governance);
+    const clearedWithHint = canRouteToModel({ residency: "global-ok", sensitivity: "internal" }, global, governance, {
+      prefer_local: true
+    });
+    const underClearedWithoutHint = canRouteToModel({ residency: "local-only", sensitivity: "internal" }, global, governance);
+    const underClearedWithHint = canRouteToModel({ residency: "local-only", sensitivity: "internal" }, global, governance, {
+      prefer_local: true
+    });
+
+    expect(clearedWithHint).toEqual(clearedWithoutHint);
+    expect(underClearedWithHint).toEqual(underClearedWithoutHint);
+    expect(clearedWithHint.ok).toBe(true);
+    expect(underClearedWithHint.ok).toBe(false);
+  });
+
+  it("pins the complete governance profile default tables", () => {
+    expect(profileDefaults("balanced")).toEqual({
+      authenticatedFetch: { labels: { residency: "region-restricted", sensitivity: "personal" } },
+      financeHealthLegal: { labels: { residency: "local-only", sensitivity: "personal" } },
+      unknown: { labels: { residency: "global-ok", sensitivity: "internal" }, preferLocal: true },
+      userInputTrusted: { labels: { residency: "global-ok", sensitivity: "internal" }, preferLocal: true },
+      webSearchContent: { labels: { residency: "global-ok", sensitivity: "public" } },
+      workspaceFiles: { labels: { residency: "global-ok", sensitivity: "internal" }, preferLocal: true }
+    });
+    expect(profileDefaults("sovereign")).toEqual({
+      authenticatedFetch: { labels: { residency: "local-only", sensitivity: "personal" } },
+      financeHealthLegal: { labels: { residency: "local-only", sensitivity: "secret" } },
+      unknown: { labels: { residency: "local-only", sensitivity: "internal" }, preferLocal: true },
+      userInputTrusted: { labels: { residency: "local-only", sensitivity: "personal" } },
+      webSearchContent: { labels: { residency: "global-ok", sensitivity: "public" } },
+      workspaceFiles: { labels: { residency: "local-only", sensitivity: "internal" } }
+    });
+    expect(profileDefaults("cloud-friendly")).toEqual({
+      authenticatedFetch: { labels: { residency: "region-restricted", sensitivity: "personal" } },
+      financeHealthLegal: { labels: { residency: "local-only", sensitivity: "personal" } },
+      unknown: { labels: { residency: "global-ok", sensitivity: "internal" }, preferLocal: true },
+      userInputTrusted: { labels: { residency: "global-ok", sensitivity: "personal" } },
+      webSearchContent: { labels: { residency: "global-ok", sensitivity: "public" } },
+      workspaceFiles: { labels: { residency: "global-ok", sensitivity: "internal" } }
+    });
   });
 
   it("covers semantic escalation and near-miss non-escalation", () => {
@@ -52,7 +114,7 @@ describe("label.conformance", () => {
       .toEqual({ residency: "global-ok", sensitivity: "internal" });
   });
 
-  it("keeps secret and personal labels away from non-cleared model providers", async () => {
+  it("keeps secret and personal local-only labels away from non-cleared model providers", async () => {
     const primary = await startProvider({ text: ["should not be called"] });
     const gateway = createModelGateway({
       governance: { home_regions: ["cn"], profile: "balanced" },
@@ -67,13 +129,18 @@ describe("label.conformance", () => {
       roles: { main: { model: "cloud" } }
     });
 
-    const events = await collect(gateway.generate("main", {
+    const secretEvents = await collect(gateway.generate("main", {
       labels: { residency: "local-only", sensitivity: "secret" },
       messages: [{ content: "API_KEY=sk_test_1234567890abcdef", labels: { residency: "local-only", sensitivity: "secret" }, role: "user" }]
     }));
+    const personalEvents = await collect(gateway.generate("main", {
+      labels: { residency: "local-only", sensitivity: "personal" },
+      messages: [{ content: "private notebook stays local", labels: { residency: "local-only", sensitivity: "personal" }, role: "user" }]
+    }));
 
     expect(primary.requests).toBe(0);
-    expect(events.at(-1)).toMatchObject({ type: "route_denied" });
+    expect(secretEvents.at(-1)).toMatchObject({ type: "route_denied" });
+    expect(personalEvents.at(-1)).toMatchObject({ type: "route_denied" });
   });
 
   it("blocks seeded secret content from outbound tool arguments and redacts diagnostics", () => {

@@ -6,7 +6,8 @@
     "sensitivity": "internal"
   },
   "payload": {
-    "decision": "approved",
+    "decision": "needs_more_sources",
+    "independent_family_count": 1,
     "review_id": "review-1",
     "sources": [
       {
@@ -15,6 +16,13 @@
         "id": "src_abc",
         "independence_key": "docs.openfairy.test",
         "url": "https://docs.openfairy.test/research/memory-store"
+      },
+      {
+        "duplicate_count": 1,
+        "grade": "news",
+        "id": "src_def",
+        "independence_key": "docs.openfairy.test",
+        "url": "https://mirror.example.test/research/memory-store"
       }
     ],
     "warnings": [

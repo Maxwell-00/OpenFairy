@@ -1,0 +1,21 @@
+{
+  "actor": "agent",
+  "id": "evt_01J00000000000000000000023",
+  "labels": {
+    "residency": "local-only",
+    "sensitivity": "personal"
+  },
+  "payload": {
+    "decision": "deny",
+    "memory_id": "mem-personal-local",
+    "phase": "retrieval",
+    "reason": "label_clearance_denied",
+    "score": 0.84
+  },
+  "provenance": "agent",
+  "sid": "ses_01J00000000000000000000000",
+  "ts": "2026-07-02T10:00:00.000Z",
+  "turn": 2,
+  "type": "memory.gate.decision",
+  "v": 1
+}

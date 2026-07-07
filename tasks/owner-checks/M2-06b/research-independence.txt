@@ -1,0 +1,10 @@
+$ vitest run "--" "--reporter=verbose"
+
+ RUN  v4.1.9 E:/Claude_Projects/Projects/Fairy/OpenFairy/packages/research
+
+
+ Test Files  1 passed (1)
+      Tests  20 passed (20)
+   Start at  10:07:55
+   Duration  360ms (transform 37ms, setup 0ms, import 127ms, tests 66ms, environment 0ms)
+

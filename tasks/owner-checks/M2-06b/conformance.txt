@@ -1,0 +1,23 @@
+$ node --import tsx packages/testing/src/bin/conformance.ts
+Mode: mock
+| Case | Result | Detail |
+|---|---:|---|
+| streaming text deltas | PASS |  |
+| tool deltas whole call | PASS |  |
+| tool deltas fragmented args | PASS |  |
+| tool deltas parallel | PASS |  |
+| tool deltas name-first empty args | PASS |  |
+| tool deltas malformed JSON | PASS |  |
+| reasoning field and think tags | PASS |  |
+| usage present | PASS |  |
+| usage missing estimated | PASS |  |
+| finish_reason mapping | PASS |  |
+| 429 retry | PASS |  |
+| 5xx retry | PASS |  |
+| 400 context overflow classification | PASS |  |
+| 401 auth classification | PASS |  |
+| 403 auth classification | PASS |  |
+| stream stall watchdog | PASS |  |
+| function-name charset rejection | PASS |  |
+| wire-name codec round-trip | PASS |  |
+{"cases":[{"name":"streaming text deltas","ok":true,"status":"pass"},{"name":"tool deltas whole call","ok":true,"status":"pass"},{"name":"tool deltas fragmented args","ok":true,"status":"pass"},{"name":"tool deltas parallel","ok":true,"status":"pass"},{"name":"tool deltas name-first empty args","ok":true,"status":"pass"},{"name":"tool deltas malformed JSON","ok":true,"status":"pass"},{"name":"reasoning field and think tags","ok":true,"status":"pass"},{"name":"usage present","ok":true,"status":"pass"},{"name":"usage missing estimated","ok":true,"status":"pass"},{"name":"finish_reason mapping","ok":true,"status":"pass"},{"name":"429 retry","ok":true,"status":"pass"},{"name":"5xx retry","ok":true,"status":"pass"},{"name":"400 context overflow classification","ok":true,"status":"pass"},{"name":"401 auth classification","ok":true,"status":"pass"},{"name":"403 auth classification","ok":true,"status":"pass"},{"name":"stream stall watchdog","ok":true,"status":"pass"},{"name":"function-name charset rejection","ok":true,"status":"pass"},{"name":"wire-name codec round-trip","ok":true,"status":"pass"}],"mode":"mock","ok":true}

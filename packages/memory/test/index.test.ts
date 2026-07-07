@@ -233,6 +233,25 @@ describe("@fairy/memory", () => {
     })).toMatchObject({ decision: "deny", reason: "label_clearance_denied" });
   });
 
+  it("denies retrieval when residency fails route clearance while sensitivity is cleared", () => {
+    const scored = {
+      record: record({
+        labels: { residency: "local-only", sensitivity: "internal" }
+      }),
+      score: 0.8
+    };
+
+    expect(evaluateRetrievalGate(scored, {
+      requestLabels: { residency: "global-ok", sensitivity: "internal" },
+      routeAllowed: false,
+      scope: { kind: "personal" }
+    })).toMatchObject({
+      decision: "deny",
+      labels: { residency: "local-only", sensitivity: "internal" },
+      reason: "label_clearance_denied"
+    });
+  });
+
   it("returns evidence for allowed records and does not leak denied record text", async () => {
     const dataDir = await mkdtemp(join(tmpdir(), "fairy-memory-evidence-"));
     const sid = "ses_01J00000000000000000000000";

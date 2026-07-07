@@ -103,6 +103,7 @@ export interface ResearchCitation {
 }
 
 export interface SourceSetReview {
+  readonly independent_family_count: number;
   readonly review_id: string;
   readonly decision: "approved" | "needs_more_sources" | "rejected";
   readonly sources: readonly {
@@ -315,6 +316,28 @@ const mockPages: readonly MockFetchResult[] = [
     mime: "text/html",
     title: "AI memory services overview",
     url: "https://analysis.example.test/ai-memory-services?fbclid=fixture"
+  },
+  {
+    body: "A seeded wire report says local-first assistant memory should keep rebuildable event logs and explicit citation trails.",
+    canonical_url: "https://metro-wire-a.example.test/technology/local-memory-wire",
+    engine: "mock-wire",
+    grade: "news",
+    independence_key: "wire:local-memory-policy",
+    labels: publicLabels,
+    mime: "text/html",
+    title: "Metro Wire A carries local memory policy report",
+    url: "https://metro-wire-a.example.test/technology/local-memory-wire"
+  },
+  {
+    body: "A separate outlet carries the same seeded wire family with different wording about assistant memory, replay, and citations.",
+    canonical_url: "https://daily-wire-b.example.test/ai/assistant-memory-wire",
+    engine: "mock-wire",
+    grade: "news",
+    independence_key: "wire:local-memory-policy",
+    labels: publicLabels,
+    mime: "text/html",
+    title: "Daily Wire B publishes assistant memory analysis",
+    url: "https://daily-wire-b.example.test/ai/assistant-memory-wire"
   },
   {
     body: "This authenticated profile page says the user's private research notebook is local-only. It is labeled personal and must not be routed to an under-cleared provider.",
@@ -711,18 +734,19 @@ export class ResearchStore {
   }
 
   reviewSources(sources: readonly ResearchSource[]): SourceSetReview {
+    const reviewedSources = dedupeSources(sources);
     const warnings: string[] = [];
-    const families = new Set(sources.map((source) => source.independence_key));
-    if (sources.length === 0) {
+    const families = new Set(reviewedSources.map((source) => source.independence_key));
+    if (reviewedSources.length === 0) {
       warnings.push("no_sources");
     }
-    if (sources.length > 0 && families.size <= 1) {
+    if (reviewedSources.length >= 2 && families.size === 1) {
       warnings.push("single_source_family");
     }
-    if (sources.length > 0 && sources.every((source) => source.grade === "blog" || source.grade === "forum" || source.grade === "sns" || source.grade === "unknown")) {
+    if (reviewedSources.length > 0 && reviewedSources.every((source) => source.grade === "blog" || source.grade === "forum" || source.grade === "sns" || source.grade === "unknown")) {
       warnings.push("low_grade_only");
     }
-    const reviewed = sources.map((source) => ({
+    const reviewed = reviewedSources.map((source) => ({
       duplicate_count: source.duplicate_count ?? 1,
       grade: source.grade,
       id: source.id,
@@ -731,6 +755,7 @@ export class ResearchStore {
     }));
     return {
       decision: warnings.length === 0 ? "approved" : "needs_more_sources",
+      independent_family_count: families.size,
       review_id: stableId("review", JSON.stringify(reviewed)),
       sources: reviewed,
       warnings
@@ -809,6 +834,7 @@ export const citationEventPayload = (citation: ResearchCitation): Record<string,
 
 export const sourcesetEventPayload = (review: SourceSetReview): Record<string, unknown> => ({
   decision: review.decision,
+  independent_family_count: review.independent_family_count,
   review_id: review.review_id,
   sources: review.sources,
   warnings: review.warnings

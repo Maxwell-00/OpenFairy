@@ -17,6 +17,7 @@ import {
 
 const readFixture = (name: string): string => readFileSync(join(fixturesDir, name), "utf8");
 const parseFixture = (name: string): unknown => JSON.parse(readFixture(name));
+const supplementalValidEventFixtures = ["memory.gate.decision.retrieval.valid.json"];
 
 describe("protocol registry", () => {
   it("registers every v1 type from the protocol spec", () => {
@@ -98,6 +99,14 @@ describe("fixture conformance", () => {
     const result = validateEvent(parseFixture(`${type}.invalid.json`));
 
     expect(result.ok).toBe(false);
+  });
+
+  it.each(supplementalValidEventFixtures)("%s supplemental valid fixture parses and serializes byte-stable", (fixtureName) => {
+    const raw = readFixture(fixtureName);
+    const parsed = parseEvent(raw);
+
+    expect(validateEvent(parsed)).toMatchObject({ ok: true, known: true });
+    expect(serializeEvent(parsed)).toBe(raw);
   });
 
   it("rejects outlawed local-preferred residency labels", () => {

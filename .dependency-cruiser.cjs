@@ -19,6 +19,13 @@ module.exports = {
       to: { path: "^(packages/channels|apps)/" }
     },
     {
+      name: "research-no-model-gateway",
+      severity: "error",
+      comment: "Research planning and source mechanics stay deterministic and must not import the model gateway.",
+      from: { path: "^packages/research" },
+      to: { path: "^(packages/model-gateway|@fairy/model-gateway)(/|$)" }
+    },
+    {
       name: "vendor-sdks-only-in-model-gateway-or-speech-workers",
       severity: "error",
       comment: "Vendor SDK usage is confined to model-gateway transports and speech worker adapters.",

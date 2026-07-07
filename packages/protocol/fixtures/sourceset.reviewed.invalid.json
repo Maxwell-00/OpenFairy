@@ -7,6 +7,7 @@
   },
   "payload": {
     "decision": "approved",
+    "independent_family_count": "one",
     "review_id": "review-1",
     "sources": []
   },

@@ -1,0 +1,75 @@
+$ vitest run --reporter verbose "--" "--reporter=verbose"
+
+ RUN  v4.1.9 E:/Claude_Projects/Projects/Fairy/OpenFairy/packages/testing
+
+(node:15968) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:29172) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:21408) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+ ↓ test/memory.canary.test.ts > memory.canary > is deferred until dream-cycle consolidation exists
+(node:4956) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:22236) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:34988) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+ ✓ test/memory.leakage.test.ts > memory.leakage > records retrieval denials without leaking under-cleared personal text 289ms
+ ✓ test/research.evals.test.ts > research.citation-precision > requires each cited claim to resolve to a supporting snapshot span 28ms
+ ✓ test/research.evals.test.ts > research.zh-en-parity > reaches comparable seeded source grades and an overlapping canonical source 11ms
+ ✓ test/index.test.ts > @fairy/testing > exposes the M0 protocol conformance manifest 2ms
+ ✓ test/research.evals.test.ts > injection.research-v0 > keeps malicious fetched instructions quarantined and out of memory records 230ms
+ ✓ test/memory.deletion-permanence.test.ts > memory.deletion-permanence > keeps deleted memories tombstoned across rebuild and retrieval 392ms
+ ✓ test/conformance.test.ts > conformance kit v1 > passes the mock OpenAI-compatible provider suite 138ms
+ ✓ test/conformance.test.ts > conformance kit v1 > does not report live tool capability as pass when only done is observed 1ms
+ ✓ test/persona-affect.evals.test.ts > persona.consistency > renders allowed style markers and suppresses humor for distress 10ms
+ ✓ test/persona-affect.evals.test.ts > substance.invariance > preserves tools, permissions, routing, and factual payload across affect extremes 18ms
+ ✓ test/governance.evals.test.ts > label.conformance > enforces max/intersection derivation without automatic downgrade 2ms
+ ✓ test/governance.evals.test.ts > label.conformance > treats routing hints as advisory and never as gates 0ms
+ ✓ test/governance.evals.test.ts > label.conformance > pins the complete governance profile default tables 0ms
+ ✓ test/governance.evals.test.ts > label.conformance > covers semantic escalation and near-miss non-escalation 1ms
+ ✓ test/governance.evals.test.ts > label.conformance > keeps secret and personal local-only labels away from non-cleared model providers 16ms
+ ✓ test/governance.evals.test.ts > label.conformance > blocks seeded secret content from outbound tool arguments and redacts diagnostics 2ms
+ ✓ test/governance.evals.test.ts > governance.friction-canary > emits a deterministic parseable report for route-denied recovery 17ms
+ ✓ test/gateway.e2e.test.ts > gateway M1 e2e > serves health/meta/sessions, streams a model-backed turn, and writes valid JSONL 974ms
+ ✓ test/gateway.e2e.test.ts > gateway M1 e2e > falls back to a configured secondary model with visible progress and trace 773ms
+ ✓ test/gateway.e2e.test.ts > gateway M1 e2e > denies a secret turn before provider I/O when no model has clearance 703ms
+ ✓ test/gateway.e2e.test.ts > gateway M1 e2e > skips a denied primary and routes a secret turn to an allowed local fallback 743ms
+ ✓ test/gateway.e2e.test.ts > gateway M1 e2e > keeps history contamination gated while secret content remains in the assembled prompt 734ms
+ ✓ test/gateway.e2e.test.ts > gateway M1 e2e > emits MemoryGate allow and memory.written for a safe explicit preference 771ms
+ ✓ test/gateway.e2e.test.ts > gateway M1 e2e > emits MemoryGate deny and no memory.written for an explicit secret 756ms
+ ✓ test/gateway.e2e.test.ts > gateway M1 e2e > does not inject irrelevant memories into the memory zone 762ms
+ ✓ test/gateway.e2e.test.ts > gateway M1 e2e > keeps personal local-only memory out of an under-cleared cloud route 771ms
+ ✓ test/gateway.e2e.test.ts > gateway M1 e2e > admits personal local-only memory only when a cleared local fallback is selected 748ms
+ ✓ test/gateway.e2e.test.ts > gateway M1 e2e > appends a synthetic interruption after restart and continues with the next turn number 1620ms
+ ✓ test/gateway.e2e.test.ts > gateway M1 e2e > cancels an in-flight turn and emits turn.interrupted 785ms
+ ✓ test/gateway.e2e.test.ts > gateway M1 e2e > uses deterministic ack and op-error transport frames for non-fact ops 705ms
+ ✓ test/gateway.e2e.test.ts > gateway M1 e2e > runs an auto-allowed fs.read tool call, spills oversized results, and completes 799ms
+ ✓ test/gateway.e2e.test.ts > gateway M1 e2e > runs prompted tool calls through the normal tool loop 762ms
+ ✓ test/gateway.e2e.test.ts > gateway M1 e2e > repairs prompted tool calls before executing them 820ms
+ ✓ test/gateway.e2e.test.ts > gateway M1 e2e > surfaces prompted tool repair exhaustion as an error envelope 719ms
+ ✓ test/gateway.e2e.test.ts > gateway M1 e2e > continues gracefully when policy denies a tool call 726ms
+ ✓ test/gateway.e2e.test.ts > gateway M1 e2e > returns audit rows through /audit?limit=N after an auto-allowed tool turn 756ms
+ ✓ test/gateway.e2e.test.ts > gateway M1 e2e > drives context reduction manifests through L1-L3 and renders fairy replay manifests offline 1389ms
+ ✓ test/gateway.e2e.test.ts > gateway M1 e2e > emits session.resumed as the replay sentinel on attach 851ms
+ ✓ test/gateway.e2e.test.ts > gateway M1 e2e > runs research tools through the normal tool loop and renders replay 1427ms
+ ✓ test/gateway.e2e.test.ts > gateway M1 e2e > keeps research injection pages quarantined through the TurnRunner tool loop 1862ms
+ ✓ test/gateway.e2e.test.ts > gateway M1 e2e > blocks secret egress from malicious research content before outbound web fetch 1263ms
+ ✓ test/gateway.e2e.test.ts > gateway M1 e2e > blocks shell.run secret commands before sandbox/container execution 840ms
+ ✓ test/gateway.e2e.test.ts > gateway M1 e2e > allows safe public web.search queries through the normal tool loop 736ms
+ ✓ test/gateway.e2e.test.ts > gateway M1 e2e > blocks personal research text from egress to global web tools 756ms
+ ✓ test/gateway.e2e.test.ts > gateway M1 e2e > allows configured personal egress tools and audits the pass decision 736ms
+ ✓ test/gateway.e2e.test.ts > gateway M1 e2e > records untrusted research provenance in permission audit context without narrowing by default 733ms
+ ✓ test/gateway.e2e.test.ts > gateway M1 e2e > can deny explicitly untrusted-channel tool instructions through config rules 780ms
+ ✓ test/gateway.e2e.test.ts > gateway M1 e2e > composes authenticated research snapshot labels before route clearance 743ms
+ ✓ test/gateway.e2e.test.ts > gateway M1 e2e > logs affect.updated for an enabled persona turn without writing memory 742ms
+ ✓ test/gateway.e2e.test.ts > gateway M1 e2e > keeps affect disabled silent while rendering a plain persona zone 730ms
+ ✓ test/gateway.e2e.test.ts > gateway M1 e2e > does not change route clearance or permission outcome after distress affect state changes 756ms
+ ✓ test/gateway.e2e.test.ts > gateway M1 e2e > asks once for shell.run, stores a session grant, and audits execution 1008ms
+
+ Test Files  8 passed | 1 skipped (9)
+      Tests  52 passed | 1 skipped (53)
+   Start at  10:06:42
+   Duration  31.56s (transform 685ms, setup 0ms, import 3.12s, tests 31.94s, environment 1ms)
+

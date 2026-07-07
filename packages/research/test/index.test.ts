@@ -13,7 +13,8 @@ import {
   MockResearchProvider,
   mockInjectionFixtureUrls,
   ResearchStore,
-  sourceFromSearchResult
+  sourceFromSearchResult,
+  type ResearchProvider
 } from "../src/index.js";
 
 describe("@fairy/research planning", () => {
@@ -38,6 +39,13 @@ describe("@fairy/research planning", () => {
     const plan = createResearchPlan("China-local AI companion memory design");
 
     expect(plan.subqueries.map((item) => item.locale)).toContain("zh");
+  });
+
+  it("keeps plain-English intents without China-local signals on en-only subqueries", () => {
+    const plan = createResearchPlan("compare local memory with hosted companion services");
+
+    expect(plan.subqueries.map((item) => item.locale)).toEqual(["en"]);
+    expect(plan.subqueries).toHaveLength(1);
   });
 
   it("classifies recency deterministically", () => {
@@ -70,6 +78,117 @@ describe("@fairy/research source mechanics", () => {
 
     expect(sources).toHaveLength(1);
     expect(sources[0]).toMatchObject({ duplicate_count: 2 });
+  });
+
+  it("counts three deduped sources across two independence families", () => {
+    const store = new ResearchStore("unused");
+    const sources = dedupeSources([
+      sourceFromSearchResult({
+        grade: "news",
+        independence_key: "wire:shared-family",
+        snippet: "wire story version alpha with unique wording",
+        title: "Wire Alpha",
+        url: "https://alpha.example.test/wire"
+      }, { engine: "mock" }),
+      sourceFromSearchResult({
+        grade: "news",
+        independence_key: "wire:shared-family",
+        snippet: "wire story version beta with different wording",
+        title: "Wire Beta",
+        url: "https://beta.example.test/wire"
+      }, { engine: "mock" }),
+      sourceFromSearchResult({
+        grade: "official",
+        snippet: "primary official source with separate provenance",
+        title: "Official",
+        url: "https://official.example.test/policy"
+      }, { engine: "mock" })
+    ]);
+
+    const review = store.reviewSources(sources);
+
+    expect(sources).toHaveLength(3);
+    expect(review.independent_family_count).toBe(2);
+    expect(review.sources.filter((source) => source.independence_key === "wire:shared-family")).toHaveLength(2);
+    expect(review.warnings).not.toContain("single_source_family");
+  });
+
+  it("warns only when multiple deduped sources share one independence family", () => {
+    const store = new ResearchStore("unused");
+    const sameFamily = [
+      sourceFromSearchResult({
+        grade: "news",
+        independence_key: "wire:one-family",
+        snippet: "first outlet with unique words",
+        title: "Outlet One",
+        url: "https://one.example.test/story"
+      }, { engine: "mock" }),
+      sourceFromSearchResult({
+        grade: "news",
+        independence_key: "wire:one-family",
+        snippet: "second outlet with different words",
+        title: "Outlet Two",
+        url: "https://two.example.test/story"
+      }, { engine: "mock" })
+    ];
+    const twoFamilies = [
+      sameFamily[0]!,
+      sourceFromSearchResult({
+        grade: "official",
+        snippet: "independent official source",
+        title: "Official",
+        url: "https://official.example.test/story"
+      }, { engine: "mock" })
+    ];
+
+    expect(store.reviewSources(sameFamily).warnings).toContain("single_source_family");
+    expect(store.reviewSources(twoFamilies).warnings).not.toContain("single_source_family");
+  });
+
+  it("preserves override-assigned shared independence keys across hosts through search", async () => {
+    const artifactsDir = await mkdtemp(join(tmpdir(), "fairy-research-family-override-"));
+    const store = new ResearchStore(artifactsDir);
+    const provider: ResearchProvider = {
+      id: "override-provider",
+      async fetch() {
+        throw new Error("not used");
+      },
+      async search() {
+        return [
+          {
+            independence_key: "wire:override-family",
+            snippet: "first host carries a distinct body",
+            title: "First Host",
+            url: "https://first-host.example.test/a"
+          },
+          {
+            independence_key: "wire:override-family",
+            snippet: "second host carries different wording",
+            title: "Second Host",
+            url: "https://second-host.example.test/b"
+          }
+        ];
+      }
+    };
+
+    const result = await store.search("shared family", provider);
+    const review = store.reviewSources(result.sources);
+
+    expect(result.sources).toHaveLength(2);
+    expect(result.sources.map((source) => source.independence_key)).toEqual(["wire:override-family", "wire:override-family"]);
+    expect(review.independent_family_count).toBe(1);
+    expect(review.warnings).toContain("single_source_family");
+  });
+
+  it("ships seeded shared-key wire fixtures with distinct canonical URLs and bodies", async () => {
+    const provider = new MockResearchProvider();
+    const first = await provider.fetch("https://metro-wire-a.example.test/technology/local-memory-wire");
+    const second = await provider.fetch("https://daily-wire-b.example.test/ai/assistant-memory-wire");
+
+    expect(first.canonical_url).not.toBe(second.canonical_url);
+    expect(first.body).not.toBe(second.body);
+    expect(first.independence_key).toBe("wire:local-memory-policy");
+    expect(second.independence_key).toBe("wire:local-memory-policy");
   });
 
   it("grades by overrides and known domain heuristics", () => {
@@ -130,6 +249,39 @@ describe("@fairy/research snapshots and citations", () => {
     expect(provider.fetches).toBe(2);
   });
 
+  it("writes an honest empty-text snapshot when the provider fetch throws", async () => {
+    const artifactsDir = await mkdtemp(join(tmpdir(), "fairy-research-fetch-throw-"));
+    const provider: ResearchProvider = {
+      id: "throwing-provider",
+      async fetch(url) {
+        throw new Error(`provider exploded for ${url}`);
+      },
+      async search() {
+        return [];
+      }
+    };
+    const store = new ResearchStore(artifactsDir);
+
+    const result = await store.fetchSnapshot("https://throws.example.test/page?utm_source=x", provider, {
+      now: new Date("2026-07-02T10:00:00.000Z")
+    });
+    const snapshots = await store.listSnapshots();
+
+    expect(result.cache_hit).toBe(false);
+    expect(result.snapshot).toMatchObject({
+      canonical_url: "https://throws.example.test/page",
+      cleaning_method: "fetch-error-v1",
+      engine: "throwing-provider",
+      fetch_error: "provider exploded for https://throws.example.test/page?utm_source=x",
+      retrieved_at: "2026-07-02T10:00:00.000Z",
+      text: "",
+      untrusted: true,
+      url: "https://throws.example.test/page?utm_source=x"
+    });
+    expect(snapshots).toHaveLength(1);
+    expect(snapshots[0]?.snapshot_id).toBe(result.snapshot.snapshot_id);
+  });
+
   it("validates citations and propagates source grade", async () => {
     const artifactsDir = await mkdtemp(join(tmpdir(), "fairy-research-cite-"));
     const provider = new MockResearchProvider();
@@ -147,14 +299,15 @@ describe("@fairy/research snapshots and citations", () => {
     await expect(store.cite("Missing", "snap_missing", { start: 0, end: 1 })).rejects.toThrow(/not found/);
   });
 
-  it("reviews weak and single-family source sets", async () => {
+  it("reviews weak one-source sets without treating them as a same-family set", async () => {
     const artifactsDir = await mkdtemp(join(tmpdir(), "fairy-research-review-"));
     const store = new ResearchStore(artifactsDir);
     const review = store.reviewSources([
       sourceFromSearchResult({ grade: "blog", snippet: "", title: "Blog", url: "https://blog.example.test/a" }, { engine: "mock" })
     ]);
 
-    expect(review.warnings).toEqual(expect.arrayContaining(["single_source_family", "low_grade_only"]));
+    expect(review.independent_family_count).toBe(1);
+    expect(review.warnings).toEqual(["low_grade_only"]);
     expect(review.decision).toBe("needs_more_sources");
   });
 
