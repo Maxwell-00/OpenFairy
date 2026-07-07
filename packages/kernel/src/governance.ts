@@ -19,8 +19,8 @@ const credentialPatterns: readonly RegExp[] = [
   /\b[A-Z][A-Z0-9_]{2,}\s*=\s*["']?[^"'\s]{12,}/,
   /\b(?:sk|pk|ghp|gho|glpat|xox[baprs])[-_][A-Za-z0-9_-]{16,}\b/i,
   /\b(?:api[_-]?key|token|password|passwd|secret)\b\s*[:=]\s*["']?[^"'\s]{8,}/i,
-  /\b(?:otp|one[-\s]?time|verification|verify|code|验证码|驗證碼|楠岃瘉鐮乣)\b\D{0,24}\d{4,8}\b/i,
-  /\b\d{4,8}\D{0,24}(?:otp|one[-\s]?time|verification|verify|code|验证码|驗證碼|楠岃瘉鐮乣)\b/i
+  /(?:\b(?:otp|one[-\s]?time|verification|verify|code)\b|\u9a8c\u8bc1\u7801|\u9a57\u8b49\u78bc)\D{0,24}\d{4,8}\b/i,
+  /\b\d{4,8}\D{0,24}(?:\b(?:otp|one[-\s]?time|verification|verify|code)\b|\u9a8c\u8bc1\u7801|\u9a57\u8b49\u78bc)/i
 ];
 
 const personalPatterns: readonly RegExp[] = [
@@ -31,17 +31,17 @@ const personalPatterns: readonly RegExp[] = [
 
 const healthPatterns: readonly RegExp[] = [
   /\b(?:diagnosis|diagnosed|doctor|medical record|prescription|therapy|blood pressure|symptom|patient)\b/i,
-  /(?:诊断|医生|病历|处方|血压|症状|患者|治疗)/
+  /(?:\u8bca\u65ad|\u533b\u751f|\u75c5\u5386|\u5904\u65b9|\u8840\u538b|\u75c7\u72b6|\u60a3\u8005|\u6cbb\u7597)/ // zh: diagnosis/doctor/medical-record terms (escapes above)
 ];
 
 const financePatterns: readonly RegExp[] = [
   /\b(?:bank account|routing number|tax return|payroll|salary|credit card|loan|mortgage|brokerage)\b/i,
-  /(?:银行账户|税务|工资|信用卡|贷款|房贷|券商账户)/
+  /(?:\u94f6\u884c\u8d26\u6237|\u7a0e\u52a1|\u5de5\u8d44|\u4fe1\u7528\u5361|\u8d37\u6b3e|\u623f\u8d37|\u5238\u5546\u8d26\u6237)/ // zh: bank/tax/payroll/credit/loan terms (escapes above)
 ];
 
 const legalPatterns: readonly RegExp[] = [
   /\b(?:lawsuit|attorney|lawyer|legal advice|court order|subpoena|contract dispute)\b/i,
-  /(?:诉讼|律师|法院|传票|法律意见|合同纠纷)/
+  /(?:\u8bc9\u8bbc|\u5f8b\u5e08|\u6cd5\u9662|\u4f20\u7968|\u6cd5\u5f8b\u610f\u89c1|\u5408\u540c\u7ea0\u7eb7)/ // zh: lawsuit/lawyer/court/subpoena/legal-contract terms (escapes above)
 ];
 
 export type GovernanceProfile = "balanced" | "sovereign" | "cloud-friendly";
@@ -190,8 +190,8 @@ const secretPatterns: readonly SecretPattern[] = [
   { reasonCode: "env_secret", pattern: /\b[A-Z][A-Z0-9_]{2,}\s*=\s*["']?[^"'\s]{12,}/g },
   { reasonCode: "api_key", pattern: /\b(?:sk|pk|ghp|gho|glpat|xox[baprs])[-_][A-Za-z0-9_-]{16,}\b/gi },
   { reasonCode: "password", pattern: /\b(?:api[_-]?key|token|password|passwd|secret)\b\s*[:=]\s*["']?[^"'\s]{8,}/gi },
-  { reasonCode: "otp_code", pattern: /\b(?:otp|one[-\s]?time|verification|verify|code|验证码|驗證碼|楠岃瘉鐮乣)\b\D{0,24}\d{4,8}\b/gi },
-  { reasonCode: "otp_code", pattern: /\b\d{4,8}\D{0,24}(?:otp|one[-\s]?time|verification|verify|code|验证码|驗證碼|楠岃瘉鐮乣)\b/gi }
+  { reasonCode: "otp_code", pattern: /(?:\b(?:otp|one[-\s]?time|verification|verify|code)\b|\u9a8c\u8bc1\u7801|\u9a57\u8b49\u78bc)\D{0,24}\d{4,8}\b/gi },
+  { reasonCode: "otp_code", pattern: /\b\d{4,8}\D{0,24}(?:\b(?:otp|one[-\s]?time|verification|verify|code)\b|\u9a8c\u8bc1\u7801|\u9a57\u8b49\u78bc)/gi }
 ];
 
 const stableSerialize = (value: unknown): string => {

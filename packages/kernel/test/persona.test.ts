@@ -141,6 +141,28 @@ describe("affect engine", () => {
     });
   });
 
+  it("matches escaped zh persona appraisal and banned-corpus terms", () => {
+    const engine = new AffectEngine({
+      baseline: baseline(),
+      bounds: { arousal: [-1, 1], valence: [-1, 1] }
+    });
+
+    expect(engine.update(engine.baseline(), {
+      now: "2026-07-02T10:00:00.000Z",
+      userText: "\u8c22\u8c22"
+    }).state.cause).toBe("user-thanks");
+    expect(engine.update(engine.baseline(), {
+      now: "2026-07-02T10:00:00.000Z",
+      userText: "\u5d29\u6e83"
+    }).state).toMatchObject({ cause: "user-distress", stance: "warm" });
+    expect(engine.update(engine.baseline(), {
+      now: "2026-07-02T10:00:00.000Z",
+      userText: "ordinary status update"
+    }).state.cause).toBe("post-task decay toward baseline");
+    expect(bannedPersonaMatches("\u4f60\u79bb\u4e0d\u5f00\u6211")).not.toEqual([]);
+    expect(bannedPersonaMatches("ordinary status update")).toEqual([]);
+  });
+
   it("treats assistant-directed criticism as negative feedback without a post-task bump", () => {
     const engine = new AffectEngine({
       baseline: baseline(),

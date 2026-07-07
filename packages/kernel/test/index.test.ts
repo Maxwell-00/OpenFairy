@@ -228,6 +228,12 @@ describe("@fairy/kernel TurnRunner", () => {
     expect(redactText(`send ${key} now`)).toBe(redacted);
     expect(detectSensitiveText("port 8787, amount 123456, date 2026-07-06")).toEqual([]);
     expect(detectSensitiveText("verification code 123456").map((match) => match.reasonCode)).toContain("otp_code");
+    expect(detectSensitiveText("otp 4821").map((match) => match.reasonCode)).toContain("otp_code");
+    expect(detectSensitiveText("\u9a8c\u8bc1\u7801 123456").map((match) => match.reasonCode)).toContain("otp_code");
+    expect(detectSensitiveText("\u9a57\u8b49\u78bc 123456").map((match) => match.reasonCode)).toContain("otp_code");
+    expect(detectSensitiveText("\u7aef\u53e3 123456")).toEqual([]);
+    expect(detectSensitiveText("\u91d1\u989d 123456")).toEqual([]);
+    expect(detectSensitiveText("123456")).toEqual([]);
   });
 
   it("ships closed governance profile defaults", () => {

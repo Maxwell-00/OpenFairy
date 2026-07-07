@@ -1,0 +1,2 @@
+$ node scripts/check-encoding.mjs && eslint . --max-warnings=0
+Encoding guard passed (218 files scanned)

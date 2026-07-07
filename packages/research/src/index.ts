@@ -131,10 +131,10 @@ const chinaLocalTerms = /\b(china|chinese|beijing|shanghai|wechat|weibo|zh|cn)\b
 
 const translateZhToEn = (value: string): string => {
   const normalized = normalizeWhitespace(value);
-  if (/记忆|記憶|memory/i.test(normalized)) {
+  if (/\u8bb0\u5fc6|\u8a18\u61b6|memory/i.test(normalized)) {
     return "local-first AI companion memory system design";
   }
-  if (/研究|調研|调研|research/i.test(normalized)) {
+  if (/\u7814\u7a76|\u8abf\u7814|\u8c03\u7814|research/i.test(normalized)) {
     return "research sources for AI companion design";
   }
   return `English sources about ${normalized}`;
@@ -152,10 +152,10 @@ const translateEnToZh = (value: string): string => {
 };
 
 export const classifyRecency = (query: string): ResearchSubquery["recency"] => {
-  if (/\b(today|latest|current|breaking|live|now|202[5-9]|20[3-9]\d)\b/i.test(query) || /今天|最新|实时|今年/u.test(query)) {
+  if (/\b(today|latest|current|breaking|live|now|202[5-9]|20[3-9]\d)\b/i.test(query) || /\u4eca\u5929|\u6700\u65b0|\u5b9e\u65f6|\u4eca\u5e74/u.test(query)) {
     return "live";
   }
-  if (/\b(recent|last year|this year|updated)\b/i.test(query) || /近期|最近|近年|更新/u.test(query)) {
+  if (/\b(recent|last year|this year|updated)\b/i.test(query) || /\u8fd1\u671f|\u6700\u8fd1|\u8fd1\u5e74|\u66f4\u65b0/u.test(query)) {
     return "recent";
   }
   return "evergreen";

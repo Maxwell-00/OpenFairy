@@ -35,6 +35,15 @@ describe("@fairy/research planning", () => {
     expect(plan.subqueries[1]?.query).toContain("local-first");
   });
 
+  it("fans escaped Chinese research and memory intent out unchanged", () => {
+    const intent = `OpenFairy ${"\u8c03\u7814"} ${"\u8bb0\u5fc6"} system design`;
+    const plan = createResearchPlan(intent);
+
+    expect(plan.subqueries.map((item) => item.locale)).toEqual(["zh", "en"]);
+    expect(plan.subqueries[0]?.query).toBe(intent);
+    expect(plan.subqueries[1]?.query).toContain("memory system");
+  });
+
   it("adds Chinese local coverage for China-related English intents", () => {
     const plan = createResearchPlan("China-local AI companion memory design");
 

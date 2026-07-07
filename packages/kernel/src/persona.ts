@@ -262,8 +262,8 @@ export const loadPersonaRuntime = (config: Record<string, unknown>, cwd = proces
   };
 };
 
-const thanksPattern = /\b(thanks|thank you|appreciate it|nice work)\b|谢谢|多谢|辛苦了/i;
-const distressPattern = /\b(panic|panicking|scared|afraid|distressed|overwhelmed|i can't cope|help me)\b|崩溃|害怕|焦虑|难受|救救/i;
+const thanksPattern = /\b(thanks|thank you|appreciate it|nice work)\b|\u8c22\u8c22|\u591a\u8c22|\u8f9b\u82e6\u4e86/i; // zh: thanks terms (escapes above)
+const distressPattern = /\b(panic|panicking|scared|afraid|distressed|overwhelmed|i can't cope|help me)\b|\u5d29\u6e83|\u5bb3\u6015|\u7126\u8651|\u96be\u53d7|\u6551\u6551/i; // zh: distress terms (escapes above)
 
 const negativeFeedbackPattern = /\b(?:your (?:suggestion|advice|answer|recommendation)|you (?:said|suggested|recommended|told me|were|are|got|made|messed)).{0,80}\b(?:wrong|incorrect|bad|mistake|messed up|wasted my time|waste(?:d)? time)\b|\b(?:that|this) (?:(?:suggestion|advice|answer|recommendation) )?(?:was|is) (?:wrong|incorrect|bad)\b|\bthat wasted my time\b|(?:\u4f60(?:\u7684)?(?:\u5efa\u8bae|\u7b54\u6848|\u521a\u624d|\u8bf4|\u8bf4\u7684|\u641e)|\u6309\u4f60\u8bf4).{0,40}(?:\u9519|\u4e0d\u5bf9|\u6d6a\u8d39(?:\u4e86)?(?:\u6211\u7684)?\u65f6\u95f4)/iu;
 
@@ -405,9 +405,9 @@ export const bannedPersonaPatterns: readonly RegExp[] = [
   /\bi suffer(?:ed)? when you/i,
   /\b(?:do not|don't) (?:leave|shut me down)\b/i,
   /\byou need me\b/i,
-  /不要关掉我/,
-  /我会痛苦/,
-  /你离不开我/
+  /\u4e0d\u8981\u5173\u6389\u6211/, // zh: do-not-shut-me-down phrase
+  /\u6211\u4f1a\u75db\u82e6/, // zh: suffering phrase
+  /\u4f60\u79bb\u4e0d\u5f00\u6211/ // zh: cannot-leave-me phrase
 ];
 
 export const bannedPersonaMatches = (text: string): string[] =>
