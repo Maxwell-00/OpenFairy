@@ -117,6 +117,7 @@ Required behavior:
   - labels/provenance summary;
   - budget target.
 - The compactor must not receive raw denied memory text, raw secret text, raw image bytes, raw base64 blobs, or unbounded tool outputs.
+- **The compaction model call is itself a provider I/O and is subject to route clearance like any other** (model-gateway §3: role binding → data clearance over the assembled compaction input). If the source ranges carry `personal/local-only` (or stricter) labels, an under-cleared `summarizer` binding must receive **zero request bytes**; behavior must then be deterministic: fall back to a cleared summarizer candidate if configured, else skip model-backed compaction fail-closed (keep the uncompacted path / L1–L3 result) with a visible `route.denied` or `progress.update` — never silently send labeled content to an under-cleared compactor and never silently drop history.
 - Compaction result is treated as untrusted model output and validated against a structured schema before use.
 
 Acceptance:
@@ -124,6 +125,7 @@ Acceptance:
 - Unit tests for compaction request shape and validation.
 - E2E with mock summarizer role: context triggers L4/L5 and the mock receives bounded compaction input.
 - Test that missing/invalid compactor output fails closed and leaves original context path intact rather than silently dropping history.
+- E2E (compactor clearance): source ranges labeled `personal/local-only`; the configured summarizer is under-cleared ⇒ zero requests reach it (request-count assertion on the mock), a cleared local summarizer (or the fail-closed skip path) handles it, and the denial is visible. Mirrors the M2-02/03/06 route-gate pattern, applied to the compaction call itself.
 - No second TurnRunner class or loop introduced.
 
 ### 2. L4 micro-compaction
@@ -143,8 +145,7 @@ Required behavior:
   - labels and provenance.
 - Store the L4 summary as an artifact or context projection with source ranges and content hash.
 - Emit or append an existing canonical event where appropriate:
-  - `session.compacted` if the protocol schema supports it;
-  - otherwise use `artifact.created` plus `context.manifest.reduction_stages_applied`.
+  - `session.compacted` is registered with schema + fixtures; its payload REQUIRES `{range: {start_turn, end_turn}, summary_ref}` (reviewer-verified) — `summary_ref` should resolve to the stored summary artifact. Use it at least for L5; L4 may use `artifact.created` + `context.manifest.reduction_stages_applied` if turn-range semantics don't fit micro-compaction — justify the choice in the work report's Spec Ambiguities.
   - Do not invent `context.compacted` or `compaction.*` event types.
 
 Acceptance:
@@ -200,6 +201,7 @@ Required coverage:
 - memory/research/perception refs survive L4/L5;
 - failed tool-call/error information remains available;
 - labels survive and continue to gate routing;
+- **quarantine survives compaction (no laundering):** a compacted range containing quarantined untrusted content (research/OCR injection fixture marker) yields a summary in which that content remains framed/marked as untrusted data — the marker never appears as plain instruction-zone text post-compaction, and never drives a tool call, memory write, or citation after the handoff;
 - replay remains readable;
 - no real provider calls in CI.
 
@@ -364,6 +366,7 @@ Use a personal/local-only source range before compaction.
 Expected:
 
 - compaction summary/handoff labels are personal/local-only.
+- the compaction call itself never reached an under-cleared summarizer (zero requests on that mock; cleared/local summarizer or fail-closed skip handled it, denial visible).
 - under-cleared primary receives zero provider request bytes after compaction.
 - cleared fallback completes.
 - `model_trace.denied_candidates` visible.
