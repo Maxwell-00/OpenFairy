@@ -1,0 +1,23 @@
+{
+  "id": "skilldraft_e2388942ffc72f7e",
+  "report_id": "mrep_b5dd998f1b1c7511e111",
+  "status": "pending",
+  "title": "Review repeated project operation pattern",
+  "created_from": [
+    {
+      "event_id": "evt_01M20800000000000000000001",
+      "sid": "ses_01M20800000000000000000000",
+      "turn": 1
+    },
+    {
+      "event_id": "evt_01M20800000000000000000002",
+      "sid": "ses_01M20800000000000000000000",
+      "turn": 1
+    },
+    {
+      "event_id": "evt_01M20800000000000000000003",
+      "sid": "ses_01M20800000000000000000000",
+      "turn": 2
+    }
+  ]
+}
