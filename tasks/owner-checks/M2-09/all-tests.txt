@@ -1,0 +1,181 @@
+Scope: 13 of 14 workspace projects
+packages/channels test$ vitest run
+packages/config test$ vitest run
+packages/memory test$ vitest run
+packages/model-gateway test$ vitest run
+packages/channels test:  RUN  v4.1.9 E:/Claude_Projects/Projects/Fairy/OpenFairy/packages/channels
+packages/model-gateway test:  RUN  v4.1.9 E:/Claude_Projects/Projects/Fairy/OpenFairy/packages/model-gateway
+packages/config test:  RUN  v4.1.9 E:/Claude_Projects/Projects/Fairy/OpenFairy/packages/config
+packages/memory test:  RUN  v4.1.9 E:/Claude_Projects/Projects/Fairy/OpenFairy/packages/memory
+packages/channels test:  Test Files  1 passed (1)
+packages/channels test:       Tests  1 passed (1)
+packages/channels test:    Start at  19:12:30
+packages/channels test:    Duration  647ms (transform 24ms, setup 0ms, import 60ms, tests 2ms, environment 0ms)
+packages/channels test: Done
+packages/orchestrator test$ vitest run
+packages/memory test: (node:30480) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+packages/memory test: (Use `node --trace-warnings ...` to show where the warning was created)
+packages/orchestrator test:  RUN  v4.1.9 E:/Claude_Projects/Projects/Fairy/OpenFairy/packages/orchestrator
+packages/model-gateway test:  Test Files  1 passed (1)
+packages/model-gateway test:       Tests  20 passed (20)
+packages/model-gateway test:    Start at  19:12:30
+packages/model-gateway test:    Duration  1.16s (transform 131ms, setup 0ms, import 335ms, tests 235ms, environment 0ms)
+packages/model-gateway test: Done
+packages/perception test$ vitest run
+packages/orchestrator test:  Test Files  1 passed (1)
+packages/orchestrator test:       Tests  1 passed (1)
+packages/orchestrator test:    Start at  19:12:31
+packages/orchestrator test:    Duration  229ms (transform 17ms, setup 0ms, import 47ms, tests 2ms, environment 0ms)
+packages/orchestrator test: Done
+packages/protocol test$ vitest run
+packages/memory test:  Test Files  1 passed (1)
+packages/memory test:       Tests  14 passed (14)
+packages/memory test:    Start at  19:12:30
+packages/memory test:    Duration  1.46s (transform 90ms, setup 0ms, import 186ms, tests 686ms, environment 0ms)
+packages/memory test: Done
+packages/research test$ vitest run
+packages/perception test:  RUN  v4.1.9 E:/Claude_Projects/Projects/Fairy/OpenFairy/packages/perception
+packages/protocol test:  RUN  v4.1.9 E:/Claude_Projects/Projects/Fairy/OpenFairy/packages/protocol
+packages/research test:  RUN  v4.1.9 E:/Claude_Projects/Projects/Fairy/OpenFairy/packages/research
+packages/perception test:  Test Files  1 passed (1)
+packages/perception test:       Tests  5 passed (5)
+packages/perception test:    Start at  19:12:31
+packages/perception test:    Duration  340ms (transform 38ms, setup 0ms, import 106ms, tests 37ms, environment 0ms)
+packages/perception test: Done
+packages/research test:  Test Files  1 passed (1)
+packages/research test:       Tests  21 passed (21)
+packages/research test:    Start at  19:12:32
+packages/research test:    Duration  382ms (transform 44ms, setup 0ms, import 99ms, tests 105ms, environment 0ms)
+packages/research test: Done
+packages/protocol test:  Test Files  1 passed (1)
+packages/protocol test:       Tests  108 passed (108)
+packages/protocol test:    Start at  19:12:31
+packages/protocol test:    Duration  651ms (transform 63ms, setup 0ms, import 406ms, tests 55ms, environment 0ms)
+packages/protocol test: Done
+packages/config test:  Test Files  1 passed (1)
+packages/config test:       Tests  14 passed (14)
+packages/config test:    Start at  19:12:30
+packages/config test:    Duration  3.08s (transform 103ms, setup 0ms, import 2.32s, tests 177ms, environment 0ms)
+packages/config test: Done
+packages/tools-std test$ vitest run
+packages/tools-std test:  RUN  v4.1.9 E:/Claude_Projects/Projects/Fairy/OpenFairy/packages/tools-std
+packages/tools-std test: (node:31700) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+packages/tools-std test: (Use `node --trace-warnings ...` to show where the warning was created)
+packages/tools-std test:  Test Files  1 passed (1)
+packages/tools-std test:       Tests  6 passed | 3 skipped (9)
+packages/tools-std test:    Start at  19:12:33
+packages/tools-std test:    Duration  6.95s (transform 118ms, setup 0ms, import 6.01s, tests 776ms, environment 0ms)
+packages/tools-std test: Done
+packages/kernel test$ vitest run
+packages/kernel test:  RUN  v4.1.9 E:/Claude_Projects/Projects/Fairy/OpenFairy/packages/kernel
+packages/kernel test: (node:22092) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+packages/kernel test: (Use `node --trace-warnings ...` to show where the warning was created)
+packages/kernel test: (node:4308) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+packages/kernel test: (Use `node --trace-warnings ...` to show where the warning was created)
+packages/kernel test: (node:33348) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+packages/kernel test: (Use `node --trace-warnings ...` to show where the warning was created)
+packages/kernel test:  Test Files  4 passed (4)
+packages/kernel test:       Tests  36 passed (36)
+packages/kernel test:    Start at  19:12:40
+packages/kernel test:    Duration  1.11s (transform 493ms, setup 0ms, import 2.44s, tests 171ms, environment 0ms)
+packages/kernel test: Done
+packages/testing test$ vitest run --reporter verbose
+apps/cli test$ vitest run
+packages/testing test:  RUN  v4.1.9 E:/Claude_Projects/Projects/Fairy/OpenFairy/packages/testing
+apps/cli test:  RUN  v4.1.9 E:/Claude_Projects/Projects/Fairy/OpenFairy/apps/cli
+packages/testing test:  ↓ test/memory.canary.test.ts > memory.canary > is deferred until dream-cycle consolidation exists
+packages/testing test: (node:28068) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+packages/testing test: (Use `node --trace-warnings ...` to show where the warning was created)
+packages/testing test: (node:13352) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+packages/testing test: (Use `node --trace-warnings ...` to show where the warning was created)
+packages/testing test: (node:5428) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+packages/testing test: (Use `node --trace-warnings ...` to show where the warning was created)
+packages/testing test: (node:6548) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+packages/testing test: (Use `node --trace-warnings ...` to show where the warning was created)
+packages/testing test: (node:19284) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+packages/testing test: (Use `node --trace-warnings ...` to show where the warning was created)
+packages/testing test:  ✓ test/memory.leakage.test.ts > memory.leakage > records retrieval denials without leaking under-cleared personal text 130ms
+packages/testing test:  ✓ test/research.evals.test.ts > research.citation-precision > requires each cited claim to resolve to a supporting snapshot span 25ms
+packages/testing test:  ✓ test/research.evals.test.ts > research.zh-en-parity > reaches comparable seeded source grades and an overlapping canonical source 18ms
+packages/testing test:  ✓ test/research.evals.test.ts > injection.research-v0 > keeps malicious fetched instructions quarantined and out of memory records 103ms
+packages/testing test:  ✓ test/memory.deletion-permanence.test.ts > memory.deletion-permanence > keeps deleted memories tombstoned across rebuild and retrieval 197ms
+packages/testing test:  ✓ test/conformance.test.ts > conformance kit v1 > passes the mock OpenAI-compatible provider suite 175ms
+packages/testing test:  ✓ test/conformance.test.ts > conformance kit v1 > does not report live tool capability as pass when only done is observed 1ms
+packages/testing test:  ✓ test/index.test.ts > @fairy/testing > exposes the M0 protocol conformance manifest 2ms
+packages/testing test: (node:30696) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+packages/testing test: (Use `node --trace-warnings ...` to show where the warning was created)
+packages/testing test:  ✓ test/persona-affect.evals.test.ts > persona.consistency > renders allowed style markers and suppresses humor for distress 13ms
+packages/testing test:  ✓ test/persona-affect.evals.test.ts > persona.consistency > appraises assistant-directed criticism tersely without self-blame patterns 5ms
+packages/testing test:  ✓ test/persona-affect.evals.test.ts > substance.invariance > preserves tools, permissions, routing, and factual payload across affect extremes 23ms
+packages/testing test:  ✓ test/persona-affect.evals.test.ts > substance.invariance > preserves tools, permissions, routing, and factual payload under negative-feedback affect 8ms
+apps/cli test: (node:6344) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+apps/cli test: (Use `node --trace-warnings ...` to show where the warning was created)
+apps/cli test: (node:28792) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+apps/cli test: (Use `node --trace-warnings ...` to show where the warning was created)
+apps/cli test: (node:15396) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+apps/cli test: (Use `node --trace-warnings ...` to show where the warning was created)
+packages/testing test:  ✓ test/governance.evals.test.ts > label.conformance > enforces max/intersection derivation without automatic downgrade 2ms
+packages/testing test:  ✓ test/governance.evals.test.ts > label.conformance > treats routing hints as advisory and never as gates 0ms
+packages/testing test:  ✓ test/governance.evals.test.ts > label.conformance > pins the complete governance profile default tables 0ms
+packages/testing test:  ✓ test/governance.evals.test.ts > label.conformance > covers semantic escalation and near-miss non-escalation 2ms
+packages/testing test:  ✓ test/governance.evals.test.ts > label.conformance > keeps secret and personal local-only labels away from non-cleared model providers 19ms
+packages/testing test:  ✓ test/governance.evals.test.ts > label.conformance > blocks seeded secret content from outbound tool arguments and redacts diagnostics 2ms
+packages/testing test:  ✓ test/governance.evals.test.ts > governance.friction-canary > emits a deterministic parseable report for route-denied recovery 27ms
+packages/testing test:  ✓ test/gateway.e2e.test.ts > gateway M1 e2e > serves health/meta/sessions, streams a model-backed turn, and writes valid JSONL 2071ms
+packages/testing test:  ✓ test/gateway.e2e.test.ts > gateway M1 e2e > falls back to a configured secondary model with visible progress and trace 1259ms
+packages/testing test:  ✓ test/gateway.e2e.test.ts > gateway M1 e2e > denies a secret turn before provider I/O when no model has clearance 1050ms
+packages/testing test:  ✓ test/gateway.e2e.test.ts > gateway M1 e2e > skips a denied primary and routes a secret turn to an allowed local fallback 864ms
+packages/testing test:  ✓ test/gateway.e2e.test.ts > gateway M1 e2e > keeps history contamination gated while secret content remains in the assembled prompt 898ms
+packages/testing test:  ✓ test/gateway.e2e.test.ts > gateway M1 e2e > emits MemoryGate allow and memory.written for a safe explicit preference 950ms
+packages/testing test:  ✓ test/gateway.e2e.test.ts > gateway M1 e2e > emits MemoryGate deny and no memory.written for an explicit secret 850ms
+apps/cli test:  Test Files  8 passed (8)
+apps/cli test:       Tests  13 passed (13)
+apps/cli test:    Start at  19:12:42
+apps/cli test:    Duration  9.65s (transform 1.14s, setup 0ms, import 4.99s, tests 27.99s, environment 1ms)
+apps/cli test: Done
+packages/testing test:  ✓ test/gateway.e2e.test.ts > gateway M1 e2e > does not inject irrelevant memories into the memory zone 863ms
+packages/testing test:  ✓ test/gateway.e2e.test.ts > gateway M1 e2e > keeps personal local-only memory out of an under-cleared cloud route 842ms
+packages/testing test:  ✓ test/gateway.e2e.test.ts > gateway M1 e2e > admits personal local-only memory only when a cleared local fallback is selected 841ms
+packages/testing test:  ✓ test/gateway.e2e.test.ts > gateway M1 e2e > appends a synthetic interruption after restart and continues with the next turn number 1697ms
+packages/testing test:  ✓ test/gateway.e2e.test.ts > gateway M1 e2e > cancels an in-flight turn and emits turn.interrupted 921ms
+packages/testing test:  ✓ test/gateway.e2e.test.ts > gateway M1 e2e > uses deterministic ack and op-error transport frames for non-fact ops 795ms
+packages/testing test:  ✓ test/gateway.e2e.test.ts > gateway M1 e2e > runs an auto-allowed fs.read tool call, spills oversized results, and completes 864ms
+packages/testing test:  ✓ test/gateway.e2e.test.ts > gateway M1 e2e > runs prompted tool calls through the normal tool loop 916ms
+packages/testing test:  ✓ test/gateway.e2e.test.ts > gateway M1 e2e > repairs prompted tool calls before executing them 891ms
+packages/testing test:  ✓ test/gateway.e2e.test.ts > gateway M1 e2e > surfaces prompted tool repair exhaustion as an error envelope 882ms
+packages/testing test:  ✓ test/gateway.e2e.test.ts > gateway M1 e2e > continues gracefully when policy denies a tool call 898ms
+packages/testing test:  ✓ test/gateway.e2e.test.ts > gateway M1 e2e > returns audit rows through /audit?limit=N after an auto-allowed tool turn 910ms
+packages/testing test:  ✓ test/gateway.e2e.test.ts > gateway M1 e2e > drives context reduction manifests through L1-L3 and renders fairy replay manifests offline 1614ms
+packages/testing test:  ✓ test/gateway.e2e.test.ts > gateway M1 e2e > emits session.resumed as the replay sentinel on attach 914ms
+packages/testing test:  ✓ test/gateway.e2e.test.ts > gateway M1 e2e > runs research tools through the normal tool loop and renders replay 1664ms
+packages/testing test:  ✓ test/gateway.e2e.test.ts > gateway M1 e2e > keeps research injection pages quarantined through the TurnRunner tool loop 1958ms
+packages/testing test:  ✓ test/gateway.e2e.test.ts > gateway M1 e2e > blocks secret egress from malicious research content before outbound web fetch 1454ms
+packages/testing test:  ✓ test/gateway.e2e.test.ts > gateway M1 e2e > blocks shell.run secret commands before sandbox/container execution 820ms
+packages/testing test:  ✓ test/gateway.e2e.test.ts > gateway M1 e2e > allows safe public web.search queries through the normal tool loop 813ms
+packages/testing test:  ✓ test/gateway.e2e.test.ts > gateway M1 e2e > blocks personal research text from egress to global web tools 897ms
+packages/testing test:  ✓ test/gateway.e2e.test.ts > gateway M1 e2e > allows configured personal egress tools and audits the pass decision 902ms
+packages/testing test:  ✓ test/gateway.e2e.test.ts > gateway M1 e2e > records untrusted research provenance in permission audit context without narrowing by default 910ms
+packages/testing test:  ✓ test/gateway.e2e.test.ts > gateway M1 e2e > can deny explicitly untrusted-channel tool instructions through config rules 860ms
+packages/testing test:  ✓ test/gateway.e2e.test.ts > gateway M1 e2e > composes authenticated research snapshot labels before route clearance 902ms
+packages/testing test:  ✓ test/gateway.e2e.test.ts > gateway M1 e2e > perception.quarantine-v0 > runs vision describe/OCR tools, renders artifacts in replay, and spills long OCR 1567ms
+packages/testing test:  ✓ test/gateway.e2e.test.ts > gateway M1 e2e > perception.quarantine-v0 > keeps malicious OCR instructions quarantined and out of instruction roles 2119ms
+packages/testing test:  ✓ test/gateway.e2e.test.ts > gateway M1 e2e > perception.quarantine-v0 > routes OCR-derived fake API key text only to a cleared local fallback 883ms
+packages/testing test:  ✓ test/gateway.e2e.test.ts > gateway M1 e2e > perception.quarantine-v0 > blocks egress of OCR-derived fake API key text before outbound fetch 1478ms
+packages/testing test:  ✓ test/gateway.e2e.test.ts > gateway M1 e2e > context.compaction-regression > forces L4/L5, preserves decisions/refs/errors/quarantine, and renders replay 1976ms
+packages/testing test:  ✓ test/gateway.e2e.test.ts > gateway M1 e2e > context.compaction-regression > routes compaction through cleared summarizer fallback and keeps labels gating main 874ms
+packages/testing test:  ✓ test/gateway.e2e.test.ts > gateway M1 e2e > context.compaction-regression > skips model-backed compaction when no summarizer candidate is cleared and completes on the original context path 824ms
+packages/testing test:  ✓ test/gateway.e2e.test.ts > gateway M1 e2e > context.compaction-regression > falls back to the original context path when compactor output is invalid 847ms
+packages/testing test:  ✓ test/gateway.e2e.test.ts > gateway M1 e2e > chronicle.workspace-v0 > keeps append-only Chronicle records workspace-scoped 92ms
+packages/testing test:  ✓ test/gateway.e2e.test.ts > gateway M1 e2e > chronicle.workspace-v0 > runs chronicle.log and chronicle.query through the tool loop and renders replay 1444ms
+packages/testing test:  ✓ test/gateway.e2e.test.ts > gateway M1 e2e > chronicle.workspace-v0 > denies secret-like Chronicle writes without creating records 880ms
+packages/testing test:  ✓ test/gateway.e2e.test.ts > gateway M1 e2e > chronicle.workspace-v0 > injects only relevant Chronicle digest entries and gates under-cleared primary routing 799ms
+packages/testing test:  ✓ test/gateway.e2e.test.ts > gateway M1 e2e > dream-cycle.consolidation-v0 > creates deterministic manual reports with redaction, provenance, pending skills, and no scheduler 1869ms
+packages/testing test:  ✓ test/gateway.e2e.test.ts > gateway M1 e2e > logs affect.updated for an enabled persona turn without writing memory 840ms
+packages/testing test:  ✓ test/gateway.e2e.test.ts > gateway M1 e2e > keeps affect disabled silent while rendering a plain persona zone 782ms
+packages/testing test:  ✓ test/gateway.e2e.test.ts > gateway M1 e2e > does not change route clearance or permission outcome after distress affect state changes 835ms
+packages/testing test:  ✓ test/gateway.e2e.test.ts > gateway M1 e2e > asks once for shell.run, stores a session grant, and audits execution 1170ms
+packages/testing test:  Test Files  8 passed | 1 skipped (9)
+packages/testing test:       Tests  67 passed | 1 skipped (68)
+packages/testing test:    Start at  19:12:42
+packages/testing test:    Duration  53.69s (transform 1.38s, setup 0ms, import 4.78s, tests 53.02s, environment 1ms)
+packages/testing test: Done
