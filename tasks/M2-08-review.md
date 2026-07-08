@@ -132,3 +132,27 @@ None.
 ## Final decision
 
 M2-08 is closed. The M2 functional slices are now complete. Proceed to M2-08 code-level countersign and then M2 exit consolidation.
+
+---
+
+## Countersignature — Claude (Fable 5), 2026-07-08
+
+Code-level cross-check delegated to an opus subagent (12-item checklist at `5f3ef12`, file:line evidence, reads via `git show`). **12/12 PASS, zero vacuous assertions; every reviewer-gate clause from the brief gate is confirmed in code:**
+
+- **Both M2-07 carry-in tests landed** inside the existing `context.compaction-regression` suite: terminal no-cleared-summarizer fail-closed (`provider.requests===0`, no L4/L5 stages, turn completes uncompacted, denial visible) and invalid-compactor-output driven to completion on the original path (`context.compaction.skipped reason:/invalid/`). The M2-07 carry-in register is now fully discharged.
+- **Zero model calls in consolidation:** `consolidation.ts` imports only node builtins + chronicle; summaries are deterministic field extraction; `reportId = mrep_<hash of stable-stringified input>`; E2E asserts no tool.call in the consolidation path.
+- **No auto-supersession/deletion:** no emit path for `memory.superseded`/`memory.deleted` exists in consolidation; contradiction output is suggestions-only; the six deferred items (promotion/decay/index maintenance/scheduler/auto-supersession/skill activation) are recorded in the report's `deferred[]`; `memory.canary` remains `describe.skip` + throw — visibly deferred, not fake-passed.
+- **Report labels content-derived:** a fixture with a personal/local-only event yields a report artifact labeled `personal/local-only`, carried on the emitted `artifact.created`. Secret redaction **reuses kernel governance** (`escalateLabelsForContent` + `redactText` fingerprints) — no new detector; raw fake key asserted absent, `[REDACTED:secret:<fp>]` receipt asserted present.
+- **ChronicleStore:** append-only JSONL under the data dir per workspace; secret writes throw `ChroniclePolicyError("secret_denied")` via injected governance labeling; personal requires explicit `allowPersonal`; cross-workspace reads return empty (test); no auto personal-memory write (MemoryStore stays empty).
+- **Digest routing:** chronicle digest folds into the memory zone via the same `deriveMemoryLabels` join; E2E pins irrelevant-entry exclusion, `provider.requests===0` on the under-cleared primary, cleared fallback completion, manifest effective labels.
+- **Evidence:** extends `MemoryStore.evidence()` in place; denied branch returns exactly `{memory_id, ok:false, reason}` — chronicle/report refs cannot leak through a denial.
+- **Boundaries:** governance/persona/compaction byte-identical to parent; no docs; no new event types (`memory.consolidation.report` is a payload kind); new CJK regex uses codepoint escapes per M2-05c; weakening scan clean (tool-key assertion strengthened).
+
+Three non-blocking notes for the record: (1) consolidation appends its `artifact.created` into a **synthetic session directory** under `sessions/` (idempotent, dedup-guarded, never rewrites real logs) — replay accounting should remember these exist; (2) the chronicle digest is folded into the `memory` manifest zone rather than a separately-named zone — brief-compliant, revisit only if zone-level observability is wanted later; (3) `learned_skill_pending_dir` resolves under the workspace root (`extensions/skills/learned/pending`) — exactly what the spec mandates, but it is the one consolidation write landing in the repo tree; the primary review's CARRY-IN 4 (prefer owner-check paths for fixture artifacts) stands.
+
+Owner-reported post-review fixes (Windows `.bin` shim repair via node_modules reinstall; terminal mojibake profile fix) are environment-side with no source change — no re-evidence required, consistent with the review's §8 disposition.
+
+Docs pass applied with this countersignature (memory, context-engine, data-governance, evals, protocol). Handbook updated.
+
+**Countersigned: M2-08 ACCEPTED WITH NOTES / CLOSED.** M2 functional slices complete; next is M2-09 exit consolidation.
+

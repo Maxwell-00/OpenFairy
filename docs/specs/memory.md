@@ -88,6 +88,8 @@ A nightly workflow (orchestration spec) using cheap roles, inspired by sleep-tim
 
 Budgeted (tokens + wallclock), checkpointed, resumable — it's a normal workflow, no special machinery.
 
+*v0 implemented M2-08 — hand-triggered, fully deterministic (no model roles yet):* `fairy memory consolidate` reads session JSONL / MemoryStore / Chronicle and produces a user-reviewable **memory report artifact** (`artifact.created`, content-addressed `mrep_<hash>` id, idempotent re-runs) containing an episode summary, candidate memory observations with provenance quotes, contradiction/supersession **suggestions**, Chronicle candidates, and pending learned-skill drafts. Report labels derive max/intersection from included content; secret content is redacted with governance fingerprints (`[REDACTED:secret:<fp>]`), never persisted. **Explicitly deferred to the workflow-backed version:** promotion (candidates only — writes go solely through MemoryGate/explicit-remember), decay, index maintenance, scheduler/nightly autonomy, automatic supersession/deletion, and learned-skill activation. The canary/contradiction benchmarks stay visibly deferred until then.
+
 ## 6. Procedural memory (learned skills)
 
 When Fairy notices a repeated correction/pattern ("always use pnpm", "commit messages in English, imperative"), the consolidation daemon may draft a learned skill file. **Gated:** drafts land in `learned/pending/` and are proposed to the user before activation (prevents self-reinforcing bad habits — cf. Hermes self-improvement, but with a human gate).
@@ -99,6 +101,8 @@ Personal memory and project memory obey different physics: "user is allergic to 
 - Tools: `chronicle.log(entry)`, `chronicle.query(topic|file)`; auto-brief: coder/loop/reviewer contexts get a Chronicle digest for the files/topics they touch ("approach Y failed twice: see entries 41, 47").
 - Loop mode appends an entry per iteration (complements `PROGRESS.md`); the `no_progress` detector reads it.
 - Chronicle entries are `internal` sensitivity by default, workspace-scoped at the gate; research findings for a project also land here (research spec §4) rather than in personal memory.
+
+*v1 implemented M2-08:* append-only JSONL per workspace under the Fairy data dir (`chronicle/<workspace_id>/chronicle.jsonl`); record shape `{id, created_at, kind ∈ attempt|failure|decision|outcome|fragile-file|note, summary, details?, labels, workspace, files[], topics[], provenance, supersedes?/related?}`. `secret`-escalating writes are denied (`ChroniclePolicyError`, governance patterns — no separate detector); `personal` requires explicit admission; cross-workspace reads return nothing; Chronicle never auto-writes personal memory. `chronicle.log`/`chronicle.query` run through the normal tool loop with `tool:chronicle.*` provenance; the file/topic-relevant digest is bounded by `context.chronicle_digest_budget`, folds into the memory context zone, and its labels join effective prompt labels before route clearance (under-cleared providers get zero bytes). Evidence pull-through extends `MemoryStore.evidence()` with chronicle/report refs on the allowed branch only.
 
 ## 7. Privacy tiers & user control (FR-4)
 

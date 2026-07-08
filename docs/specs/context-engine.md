@@ -17,7 +17,7 @@ Every prompt is assembled from ordered **zones**, each with a budget (absolute t
 | 1 | System | Capabilities, rules, output contracts | fixed ~1.5k | never |
 | 2 | Persona + affect | Persona core + compact mood state line. *Implemented M2-05: populated from the loaded persona pack + one affect line; disabled persona renders a minimal plain-assistant zone; `context.manifest.zones[]` accounts `persona` tokens* | fixed ~800 | never |
 | 3 | Tool schemas | All registered tools (stable set, see §4) | fixed | mask, don't remove |
-| 4 | Memory digest | Working blocks + gate-admitted retrieval digest (specs/memory §4a) | ~1.5k | shrink digest first |
+| 4 | Memory digest | Working blocks + gate-admitted retrieval digest (specs/memory §4a). *Since M2-08 also carries the file/topic-relevant Chronicle digest (bounded by `context.chronicle_digest_budget`); chronicle labels join the same effective-label derivation — an under-cleared provider gets zero bytes* | ~1.5k | shrink digest first |
 | 5 | Skills index | Skill names + one-liners (bodies load on demand) | ~400 | fixed |
 | 6 | Task state | Plan/todo recitation block | ~600 | recompute, keep tail |
 | 7 | History | Turns, tool calls/results | remainder | the reduction ladder (§3) |
