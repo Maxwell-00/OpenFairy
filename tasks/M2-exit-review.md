@@ -1,6 +1,6 @@
 # M2 Exit Review
 
-DRAFT — pending Fable/Opus gate
+FINAL — gated and countersigned by Claude (Fable 5), 2026-07-08. Verdict: **M2 CLOSED WITH EXPLICIT DEFERRALS** (see gate countersignature at the end of this file). Codex's draft body below is preserved as delivered.
 
 Date: 2026-07-08
 
@@ -47,7 +47,7 @@ Owner checks and M2-09 evidence:
 Known CI links/status:
 
 - Historical review files record ubuntu + windows green CI for M2-01 through M2-08.
-- Current M2-09 GitHub Actions status is pending until this draft/evidence bundle is committed and pushed.
+- M2-09 GitHub Actions: run `28940423265` green on ubuntu + windows (commit `455f733`). [Updated at gate; the draft predated the push.]
 
 ## 3. Closed capabilities
 
@@ -113,3 +113,36 @@ English docs changed during M2 and need owner-maintained `docs-zh/` re-translati
 Recommendation: `M2 CLOSED WITH EXPLICIT DEFERRALS`.
 
 Rationale: all 13 deterministic PR-tier M2 named suites are visible and green; M2-01 through M2-08 are task-closed with reviews/countersigns; local M2-09 acceptance commands pass; and the remaining unsatisfied ROADMAP/eval items are explicit rather than hidden. This recommendation depends on Fable/Opus accepting the deferral register. Under a strict literal ROADMAP interpretation, the correct alternate verdict is `M2 NOT YET CLOSED` until S4 >=20 sessions, persona frozen style judge, and sqlite-vec vs LanceDB benchmark evidence are produced.
+
+
+---
+
+## M2 Exit Gate — Countersignature, Claude (Fable 5), 2026-07-08
+
+Gate verification: commit `455f733` contains evidence/closeout files only (16 files, no runtime source); all 13 named M2 suites individually visible and green in `testing-full.txt` (cross-checked name-by-name, not just the 67-passed tally); the exit matrix's six verdicts match the per-task reviews and countersignatures on file; the quirks register and docs-zh re-translation list required at brief gate are present; no deferred item is presented as a pass anywhere in the bundle. CI run `28940423265` green (ubuntu + windows).
+
+### Verdict: M2 CLOSED WITH EXPLICIT DEFERRALS
+
+Reasoning on the strict-vs-deferral question: the strict literal reading would require producing, today, (a) a 20-session S4 run, (b) a frozen-judge persona score, and (c) a 200k-record benchmark of a capability M2 never implemented. All three would be manufactured evidence — fixture sessions counted as usage, a judge that does not exist yet, a benchmark of an unbuilt vector path. This project's review discipline has consistently refused synthetic theater (fixture owner-evidence is accepted only where no real surface exists); applying that same standard, the honest deferral register preserves the ROADMAP criteria's intent better than literal compliance would. The PR-tier zero-tolerance trust suites — the actual point of the milestone — are all green, and every one of them was code-level countersigned during M2, not merely trusted.
+
+### Deferral register with binding landing gates
+
+A deferral without an expiry is just hidden debt. Each item below is bound to a named future gate and MUST be re-examined there; carrying one past its landing gate requires an explicit new decision recorded in that gate's review.
+
+| Deferral | Landing gate | Binding condition |
+|---|---|---|
+| S4 across ≥20 sessions | **M4 entry gate** | Counted from the owner's real M3-period sessions in the data dir (real usage accumulates during voice dogfooding); no fixture sessions count. Voice does not depend on it; proactivity/workflows (M4) do. |
+| Persona frozen style-judge ≥90% | **M4 exit gate** (or the first critic-role wiring task, whichever comes first) | Deterministic substitute (`persona.consistency` + `substance.invariance`) remains mandatory-green meanwhile; owner dogfooding notes during M3 feed the judge corpus. |
+| sqlite-vec vs LanceDB ≥200k benchmark | **Brief-gate precondition of the first vector-implementation task** (M3-prep at earliest, M5-hardening at latest) | No vector task may be dispatched without this benchmark in its brief's acceptance; benchmark shape per `vector-backend-decision.md`. FTS5 remains the retrieval path until then. |
+| `memory.canary` + full contradiction benchmark | **Model-backed consolidation task** (dream-cycle as real workflow, M4) | Stay `describe.skip`-visible until then; never fake-passed. |
+| Governance friction canary nightly/soak thresholds | **M5 soak** (per evals.md's own cadence) | PR-tier v0 stays mandatory-green meanwhile. |
+
+### M3 preconditions — accepted
+
+`M3-preconditions.md` is endorsed: no M2 deferral blocks voice. Hard preconditions for M3-01 (protocol + loopback transport skeleton) are already true: one-TurnRunner discipline, event registry closed with speech.* types pre-registered, replay/corrupt-tail tolerance, encoding guard, and the trust stack (labels/route clearance/egress) that voice audio paths must inherit. The M3-01 brief gets gated through the same process before dispatch.
+
+### Milestone note
+
+M2 was the trust milestone. What it actually shipped, verified at code level slice by slice: labels that derive over the whole assembled prompt and gate every provider call including summarizers; memory that cannot resurrect deleted facts and cannot leak denied text even through evidence pull-through; research and OCR content that stays quarantined through citation, compaction, and consolidation; an egress guard that blocks before execution and never echoes what it caught; and a persona layer that provably cannot alter substance. Every green gate above is backed by a countersignature with file:line evidence in the corresponding `tasks/M2-*-review.md`.
+
+**M2 CLOSED. Next: gate the M3-01 brief.**
