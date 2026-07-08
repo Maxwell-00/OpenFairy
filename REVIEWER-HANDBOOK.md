@@ -14,7 +14,7 @@ The loop, per task slice:
 
 Division of judgment, learned from experience: ChatGPT-Pro's delivery reviews reach correct verdicts but are **trust-based** (work report + owner artifacts, rarely code reading with file:line evidence). Its briefs are structurally good but weak on **spec fidelity** — it has invented config values not in any spec (`regions: [global]`, `local-preferred`), missed derivation subtleties (labels must compose over the WHOLE assembled prompt, not the current input), used wrong owner-environment examples (`home_regions` is `[cn]`), and skipped evals.md suite registration. Your verification and brief-gating exist precisely to cover these holes. Also: Codex and ChatGPT are the same vendor family — correlated blind spots are real (the dotted-tool-name incident was an OpenAI-convention blind spot). You are the cross-vendor eye.
 
-**Cost directive from the owner:** delegate sizable self-contained verification (delivery code-reads, multi-file audits) to an **opus subagent** with a tight evidence-checklist prompt; do inline only what is too small to amortize a subagent cold start. The M2-01 verification prompt (see that review's countersignature and the conversation records) is the template: read-only, explicit git commands, fixed return format with file:line evidence.
+**Cost directive from the owner:** delegate sizable self-contained verification (delivery code-reads, multi-file audits) to an **opus subagent** with a tight evidence-checklist prompt; do inline only what is too small to amortize a subagent cold start. The subagent verification prompt template is preserved in §8 of this handbook (conversation records do not survive account/session changes; the file does).
 
 ## 2. Where everything lives
 
@@ -67,3 +67,42 @@ M2-05 landed clean on its hard rails (deterministic affect, substance invariance
 
 Communicate in Chinese; keep docs/code English. Be direct about verdicts; the owner values honest root-cause narration over reassurance, and has consistently accepted "my previous fix caused this" when said plainly — say it plainly (this seat's own misfixes are logged in the M1-01 addenda; keep that tradition). Explain money-costing steps before running them. When CI fails: read the log first, locate the root cause, fix from git truth, and record the incident as a rule in the relevant review file. When the owner asks "能不能换掉你" — the answer that served well: give the honest structural argument, then defer; the review-file discipline, not any particular model, is the project's memory
                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           
+## 8. Subagent verification prompt template (refined M2-01 → M2-08)
+
+Every code-level countersignature in M2 was produced by an opus subagent given this shape. Reuse it; the refinements each came from an incident.
+
+```text
+Read-only code-level cross-check of the <TASK> delivery in the OpenFairy repo at <repo path>.
+ENVIRONMENT RULES (hard): mount serves stale/truncated working-tree reads — read ONLY via
+`git --no-optional-locks show <COMMIT>:<path>`, search ONLY via
+`git --no-optional-locks grep <pat> <COMMIT> -- <paths>`. Never use the Read tool on repo
+files; no git write commands.
+
+Context: commit <COMMIT> ("<msg>", parent <PARENT>) delivers "<slice>" per brief
+`tasks/<brief>.md` (read at <COMMIT> — it contains reviewer-gate clauses you must verify
+hard: <list the gate patches you added at brief gate>). Key files: <from the commit stat>.
+The primary (ChatGPT) review accepted trust-based; you are the code-level countersign.
+
+Verify with file:line evidence (quote decisive lines):
+1..N. <one numbered item per acceptance area; ALWAYS include:>
+  - the reviewer-gate clauses from the brief gate, marked "(gate item)" — highest priority;
+  - non-vacuity spot-checks: "would this test fail if the property broke?" — demand the
+    strongest assertions quoted (request counts, marker-presence-before-partition, etc.);
+  - BOUNDARIES + INVARIANTS at <COMMIT>: one TurnRunner; no vendor SDKs; no provider strings
+    in packages/kernel/src; governance.ts/persona.ts/<other frozen files> untouched vs parent;
+    no docs/docs-zh in commit; zero raw CJK in new src (new regex literals must be \u-escaped
+    per M2-05c); no new canonical event types (grep emitted type: strings vs
+    packages/protocol/schemas/registry.v1.json); no new eval suite names beyond the brief's;
+  - WEAKENING SCAN: diffs of pre-existing test files — no deleted/loosened assertions;
+    quote anything suspicious.
+
+Return: numbered verdicts with evidence; prominent FAILED/PARTIAL/vacuous list; findings
+outside the checklist; one-line overall verdict.
+```
+
+Grading the return: PARTIALs with "logic present, test missing" become carry-ins threaded into the next brief's Deliverable 0 (see M2-07 → M2-08 for the worked example). A FAIL on a gate item is a blocker regardless of CI color.
+
+## 9. Seat log
+
+- 2026-07-03 → 2026-07-08, Claude Fable 5 (first seat, two Cowork accounts' conversations): design docs through **M2 exit gate**. M2 closed with explicit deferrals — the deferral landing gates in `tasks/M2-exit-review.md` are this seat's most important handover; enforce them at the named gates. Incident-derived rules absorbed into §3/§5 during this tenure: mojibake/encoding class (§3.5), CJK-\b inertness, shell-quoting fail-closed behavior, mount tail-truncation signatures (git status showing phantom M/D on runtime files at session start — always hash-compare against HEAD before concluding anything).
+- <next seat: append your entry here when you take over.>
