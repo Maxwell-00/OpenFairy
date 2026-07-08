@@ -278,7 +278,9 @@ Required sections:
    - full contradiction/promotion/decay/index maintenance;
    - autonomous scheduler/workflow.
 5. Open risks.
-6. Recommendation:
+6. **Known accepted quirks / notes register** — consolidate the non-blocking notes recorded in countersignatures so M3+ does not rediscover them. At minimum: M2-06b D9 residency-causation unit granularity (accepted); M2-07 `session.compacted.summary_ref` uses an absolute artifact path rather than the `artifact://` convention; M2-08 consolidation's synthetic session directories under `sessions/`; Chronicle digest accounted inside the `memory` manifest zone; learned-skill pending drafts landing in the repo tree (`extensions/skills/learned/pending/`); evals nightly/soak activations (friction canary thresholds) pending real workloads. Pull the authoritative wording from the countersignature sections of the task reviews.
+7. **docs-zh re-translation TODO** — list every `docs/specs/*.md` (plus ROADMAP if touched) modified during M2 (`git log --name-only <M1-close>..HEAD -- docs/`), as the owner-maintained `docs-zh/` translations are now stale against six reviewer docs passes. Report the list only; do not touch `docs-zh/`.
+8. Recommendation:
    - either `M2 CLOSED WITH EXPLICIT DEFERRALS` or `M2 NOT YET CLOSED`;
    - include a reviewer-facing rationale.
 
