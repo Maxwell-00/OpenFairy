@@ -1,6 +1,7 @@
 # Task M3-02 — Duplex speech transport protocol + conformance interface
 
 > Paste this entire file as the task brief after Fable/Opus brief-gate review.
+> Gated 2026-07-09 by the reviewer (Claude Fable 5); gate record in `tasks/M3-02-brief-review.md`; edits RE-1..RE-6 applied in place.
 >
 > Repo: `E:\Claude_Projects\Projects\Fairy\OpenFairy`.
 > M0, M1, M2, and M3-01 are closed.
@@ -155,6 +156,12 @@ type VoiceControlFrame =
 
 You may adjust the exact type names if existing M3-01 code suggests a better shape. Document final choices in `tasks/M3-02-work.md`.
 
+**(gate RE-1)** `docs/specs/voice-pipeline.md` §2 already names the gateway⇄worker control frames: `start`, `partial`, `final`, `synthesize`, `cancel`, `mark`. The suggested kinds above diverge (e.g. `tts.request` vs the spec's `synthesize`). Whatever final vocabulary you choose, the proposed voice-pipeline.md docs edit MUST contain an explicit mapping/supersession table (spec §2 name ↔ implemented `kind`) so the spec never carries two unreconciled vocabularies; record the final names in the work-report Decisions.
+
+**(gate RE-2 — trust, load-bearing)** Labels carried on control frames (`session.start` / `utterance.start` / `tts.request`) are **advisory metadata only**. Effective labels are derived gateway-side: governance-profile voice floor + content escalation via the existing helper — one-way, exactly as M3-01. A frame-supplied label may raise above the floor; it must NEVER lower, replace, or bypass it. Without this clamp, a buggy or hostile client could launder spoken content below the floor.
+
+**(gate RE-4)** Adopt the frames discipline of protocol.md §7: control frames get runtime validation **plus golden valid/invalid fixtures** (fixtures may live in `packages/voice`). The docs proposal must state explicitly that voice duplex frames are a third frame family — deliberately outside both the canonical event registry and the client op-frame set in `packages/protocol/frames/` (those are the client⇄gateway plane; these are the gateway⇄worker plane).
+
 Required behavior:
 
 - Runtime validation for every control frame.
@@ -162,14 +169,16 @@ Required behavior:
 - Binary frame representation with max-size guard; do not store binary frame contents in JSONL.
 - `cancel` is protocol-only in this slice. It may be conformance-tested for cleanup/ordering but must not claim barge-in quality.
 - `error.message` must not contain raw secret/personal text; if content-derived, use existing redaction/fingerprint helpers.
+- **(gate RE-2)** Frame-supplied labels never lower/replace the profile-derived floor; the gateway clamp is the single source of effective labels.
 
 Acceptance:
 
-- Unit tests for valid/invalid control frames.
+- Unit tests for valid/invalid control frames (against the golden fixtures).
 - Unit tests for stable encode/decode.
 - Unit tests for binary-frame max-size guard.
 - Unit tests that frame logs/session JSONL contain no base64/raw audio.
 - Unit tests that invalid control frames fail closed.
+- **(gate RE-2)** Test: a control frame claiming `public / global-ok` labels under a balanced profile still yields `personal / region-restricted` (+ `prefer_local` hint) on the emitted `speech.asr.final` and `turn.input` — asserted on the emitted events, not on config.
 
 ### 2. Transport interface and in-memory deterministic implementation
 
@@ -275,9 +284,11 @@ Required behavior:
 
 - Uses the in-memory transport and mock speech worker.
 - Emits the same canonical speech events as M3-01, through the existing session JSONL path.
+- **(gate RE-3)** Reuses M3-01's single final-transcript submission path — the gateway `submitFinalTranscript` → `#acceptTurnInput` chain (`apps/gateway/src/server.ts:878/:751` at gate time). Do NOT duplicate `turn.input` envelope construction; if refactoring into a shared helper is cleaner, do that and justify in the work report. There must remain exactly one voice→turn envelope construction site.
 - Converts only `asr.final` to one normal `turn.input`.
 - ASR partials remain observability-only.
 - TTS chunks remain output-only.
+- **(gate RE-6)** A cancelled utterance (ASR cancel before final) leaves a well-formed, replayable session: no `turn.input`, no dangling turn, cancellation visible via `speech.mark` / existing event types only — no new canonical event types.
 - JSON output includes:
   - session id;
   - frame counts;
@@ -363,8 +374,8 @@ Required coverage:
 - ASR final enters the normal TurnRunner path exactly once;
 - partials do not call the model;
 - TTS output-only;
-- replay renders duplex-produced sessions;
-- label floor + route clearance;
+- replay renders duplex-produced sessions (including a cancelled-utterance session — clean render, no dangling turn);
+- label floor + route clearance, including the frame-label clamp (frame-supplied labels never lower the floor);
 - MemoryGate/egress inherited;
 - no raw audio/base64 in JSONL;
 - no real provider, microphone, speaker, socket, network, Python worker, or OS audio device in CI.
@@ -407,6 +418,7 @@ voice:
 Rules:
 
 - Extend existing config loader/schema only if necessary.
+- **(gate RE-5)** The existing `voice` schema block is `additionalProperties: true` — an unregistered `voice.duplex.*` key would pass validation silently. Therefore: if any duplex config lands, it MUST get an explicit schema entry (with `enum`/`minimum` constraints), invalid-value tests, and registration in the voice-pipeline.md docs proposal. The `65536` / `64` values above are placeholders, not spec values — final numbers are your decision, documented in Decisions.
 - Defaults must be deterministic and safe.
 - Invalid values fail validation.
 - No real provider keys.
