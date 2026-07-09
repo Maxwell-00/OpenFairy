@@ -1,0 +1,234 @@
+Scope: 14 of 15 workspace projects
+packages/memory test$ vitest run
+packages/config test$ vitest run
+packages/channels test$ vitest run
+packages/model-gateway test$ vitest run
+packages/memory test: [1m[30m[46m RUN [49m[39m[22m [36mv4.1.9 [39m[90mE:/Claude_Projects/Projects/Fairy/OpenFairy/packages/memory[39m
+packages/channels test: [1m[30m[46m RUN [49m[39m[22m [36mv4.1.9 [39m[90mE:/Claude_Projects/Projects/Fairy/OpenFairy/packages/channels[39m
+packages/model-gateway test: [1m[30m[46m RUN [49m[39m[22m [36mv4.1.9 [39m[90mE:/Claude_Projects/Projects/Fairy/OpenFairy/packages/model-gateway[39m
+packages/config test: [1m[30m[46m RUN [49m[39m[22m [36mv4.1.9 [39m[90mE:/Claude_Projects/Projects/Fairy/OpenFairy/packages/config[39m
+packages/channels test:  [32m✓[39m test/index.test.ts [2m([22m[2m1 test[22m[2m)[22m[32m 2[2mms[22m[39m
+packages/channels test: [2m Test Files [22m [1m[32m1 passed[39m[22m[90m (1)[39m
+packages/channels test: [2m      Tests [22m [1m[32m1 passed[39m[22m[90m (1)[39m
+packages/channels test: [2m   Start at [22m 17:27:19
+packages/channels test: [2m   Duration [22m 206ms[2m (transform 15ms, setup 0ms, import 25ms, tests 2ms, environment 0ms)[22m
+packages/channels test: Done
+packages/orchestrator test$ vitest run
+packages/memory test: (node:32068) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+packages/memory test: (Use `node --trace-warnings ...` to show where the warning was created)
+packages/orchestrator test: [1m[30m[46m RUN [49m[39m[22m [36mv4.1.9 [39m[90mE:/Claude_Projects/Projects/Fairy/OpenFairy/packages/orchestrator[39m
+packages/config test:  [32m✓[39m test/loader.test.ts [2m([22m[2m15 tests[22m[2m)[22m[32m 155[2mms[22m[39m
+packages/config test: [2m Test Files [22m [1m[32m1 passed[39m[22m[90m (1)[39m
+packages/config test: [2m      Tests [22m [1m[32m15 passed[39m[22m[90m (15)[39m
+packages/config test: [2m   Start at [22m 17:27:19
+packages/config test: [2m   Duration [22m 589ms[2m (transform 51ms, setup 0ms, import 259ms, tests 155ms, environment 0ms)[22m
+packages/config test: Done
+packages/perception test$ vitest run
+packages/model-gateway test:  [32m✓[39m test/index.test.ts [2m([22m[2m20 tests[22m[2m)[22m[32m 242[2mms[22m[39m
+packages/model-gateway test: [2m Test Files [22m [1m[32m1 passed[39m[22m[90m (1)[39m
+packages/model-gateway test: [2m      Tests [22m [1m[32m20 passed[39m[22m[90m (20)[39m
+packages/model-gateway test: [2m   Start at [22m 17:27:19
+packages/model-gateway test: [2m   Duration [22m 737ms[2m (transform 77ms, setup 0ms, import 318ms, tests 242ms, environment 0ms)[22m
+packages/orchestrator test:  [32m✓[39m test/index.test.ts [2m([22m[2m1 test[22m[2m)[22m[32m 2[2mms[22m[39m
+packages/orchestrator test: [2m Test Files [22m [1m[32m1 passed[39m[22m[90m (1)[39m
+packages/orchestrator test: [2m      Tests [22m [1m[32m1 passed[39m[22m[90m (1)[39m
+packages/orchestrator test: [2m   Start at [22m 17:27:19
+packages/orchestrator test: [2m   Duration [22m 195ms[2m (transform 13ms, setup 0ms, import 41ms, tests 2ms, environment 0ms)[22m
+packages/model-gateway test: Done
+packages/protocol test$ vitest run
+packages/orchestrator test: Done
+packages/research test$ vitest run
+packages/perception test: [1m[30m[46m RUN [49m[39m[22m [36mv4.1.9 [39m[90mE:/Claude_Projects/Projects/Fairy/OpenFairy/packages/perception[39m
+packages/protocol test: [1m[30m[46m RUN [49m[39m[22m [36mv4.1.9 [39m[90mE:/Claude_Projects/Projects/Fairy/OpenFairy/packages/protocol[39m
+packages/research test: [1m[30m[46m RUN [49m[39m[22m [36mv4.1.9 [39m[90mE:/Claude_Projects/Projects/Fairy/OpenFairy/packages/research[39m
+packages/perception test:  [32m✓[39m test/index.test.ts [2m([22m[2m5 tests[22m[2m)[22m[32m 46[2mms[22m[39m
+packages/perception test: [2m Test Files [22m [1m[32m1 passed[39m[22m[90m (1)[39m
+packages/perception test: [2m      Tests [22m [1m[32m5 passed[39m[22m[90m (5)[39m
+packages/perception test: [2m   Start at [22m 17:27:20
+packages/perception test: [2m   Duration [22m 307ms[2m (transform 32ms, setup 0ms, import 105ms, tests 46ms, environment 0ms)[22m
+packages/perception test: Done
+packages/research test:  [32m✓[39m test/index.test.ts [2m([22m[2m21 tests[22m[2m)[22m[32m 67[2mms[22m[39m
+packages/research test: [2m Test Files [22m [1m[32m1 passed[39m[22m[90m (1)[39m
+packages/research test: [2m      Tests [22m [1m[32m21 passed[39m[22m[90m (21)[39m
+packages/research test: [2m   Start at [22m 17:27:20
+packages/research test: [2m   Duration [22m 339ms[2m (transform 38ms, setup 0ms, import 114ms, tests 67ms, environment 0ms)[22m
+packages/research test: Done
+packages/protocol test:  [32m✓[39m test/conformance.test.ts [2m([22m[2m108 tests[22m[2m)[22m[32m 47[2mms[22m[39m
+packages/protocol test: [2m Test Files [22m [1m[32m1 passed[39m[22m[90m (1)[39m
+packages/protocol test: [2m      Tests [22m [1m[32m108 passed[39m[22m[90m (108)[39m
+packages/protocol test: [2m   Start at [22m 17:27:20
+packages/protocol test: [2m   Duration [22m 547ms[2m (transform 55ms, setup 0ms, import 339ms, tests 47ms, environment 0ms)[22m
+packages/protocol test: Done
+packages/memory test:  [32m✓[39m test/index.test.ts [2m([22m[2m14 tests[22m[2m)[22m[33m 1322[2mms[22m[39m
+packages/memory test:      [33m[2m✓[22m[39m inserts, deduplicates, deletes, and searches projection rows [33m 307[2mms[22m[39m
+packages/memory test: [2m Test Files [22m [1m[32m1 passed[39m[22m[90m (1)[39m
+packages/memory test: [2m      Tests [22m [1m[32m14 passed[39m[22m[90m (14)[39m
+packages/memory test: [2m   Start at [22m 17:27:19
+packages/memory test: [2m   Duration [22m 1.69s[2m (transform 60ms, setup 0ms, import 197ms, tests 1.32s, environment 0ms)[22m
+packages/memory test: Done
+packages/tools-std test$ vitest run
+packages/voice test$ vitest run
+packages/voice test: [1m[30m[46m RUN [49m[39m[22m [36mv4.1.9 [39m[90mE:/Claude_Projects/Projects/Fairy/OpenFairy/packages/voice[39m
+packages/tools-std test: [1m[30m[46m RUN [49m[39m[22m [36mv4.1.9 [39m[90mE:/Claude_Projects/Projects/Fairy/OpenFairy/packages/tools-std[39m
+packages/tools-std test: (node:36364) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+packages/tools-std test: (Use `node --trace-warnings ...` to show where the warning was created)
+packages/voice test:  [32m✓[39m test/index.test.ts [2m([22m[2m14 tests[22m[2m)[22m[32m 15[2mms[22m[39m
+packages/voice test: [2m Test Files [22m [1m[32m1 passed[39m[22m[90m (1)[39m
+packages/voice test: [2m      Tests [22m [1m[32m14 passed[39m[22m[90m (14)[39m
+packages/voice test: [2m   Start at [22m 17:27:21
+packages/voice test: [2m   Duration [22m 466ms[2m (transform 70ms, setup 0ms, import 303ms, tests 15ms, environment 0ms)[22m
+packages/voice test: Done
+packages/tools-std test:  [32m✓[39m test/index.test.ts [2m([22m[2m9 tests[22m[2m | [22m[33m3 skipped[39m[2m)[22m[33m 436[2mms[22m[39m
+packages/tools-std test: [2m Test Files [22m [1m[32m1 passed[39m[22m[90m (1)[39m
+packages/tools-std test: [2m      Tests [22m [1m[32m6 passed[39m[22m[2m | [22m[33m3 skipped[39m[90m (9)[39m
+packages/tools-std test: [2m   Start at [22m 17:27:21
+packages/tools-std test: [2m   Duration [22m 1.11s[2m (transform 85ms, setup 0ms, import 526ms, tests 436ms, environment 0ms)[22m
+packages/tools-std test: Done
+packages/kernel test$ vitest run
+packages/kernel test: [1m[30m[46m RUN [49m[39m[22m [36mv4.1.9 [39m[90mE:/Claude_Projects/Projects/Fairy/OpenFairy/packages/kernel[39m
+packages/kernel test:  [32m✓[39m test/provider-guard.test.ts [2m([22m[2m1 test[22m[2m)[22m[32m 3[2mms[22m[39m
+packages/kernel test: (node:33744) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+packages/kernel test: (Use `node --trace-warnings ...` to show where the warning was created)
+packages/kernel test: (node:20700) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+packages/kernel test: (Use `node --trace-warnings ...` to show where the warning was created)
+packages/kernel test: (node:31656) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+packages/kernel test: (Use `node --trace-warnings ...` to show where the warning was created)
+packages/kernel test:  [32m✓[39m test/context.test.ts [2m([22m[2m9 tests[22m[2m)[22m[32m 17[2mms[22m[39m
+packages/kernel test:  [32m✓[39m test/persona.test.ts [2m([22m[2m12 tests[22m[2m)[22m[32m 20[2mms[22m[39m
+packages/kernel test:  [32m✓[39m test/index.test.ts [2m([22m[2m14 tests[22m[2m)[22m[32m 127[2mms[22m[39m
+packages/kernel test: [2m Test Files [22m [1m[32m4 passed[39m[22m[90m (4)[39m
+packages/kernel test: [2m      Tests [22m [1m[32m36 passed[39m[22m[90m (36)[39m
+packages/kernel test: [2m   Start at [22m 17:27:22
+packages/kernel test: [2m   Duration [22m 1.17s[2m (transform 457ms, setup 0ms, import 2.63s, tests 168ms, environment 0ms)[22m
+packages/kernel test: Done
+packages/testing test$ vitest run --reporter verbose
+packages/testing test: [1m[30m[46m RUN [49m[39m[22m [36mv4.1.9 [39m[90mE:/Claude_Projects/Projects/Fairy/OpenFairy/packages/testing[39m
+packages/testing test:  [2m[90m↓[39m[22m test/memory.canary.test.ts[2m > [22mmemory.canary[2m > [22mis deferred until dream-cycle consolidation exists
+packages/testing test: (node:35564) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+packages/testing test: (Use `node --trace-warnings ...` to show where the warning was created)
+packages/testing test: (node:12060) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+packages/testing test: (Use `node --trace-warnings ...` to show where the warning was created)
+packages/testing test: (node:38664) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+packages/testing test: (Use `node --trace-warnings ...` to show where the warning was created)
+packages/testing test: (node:804) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+packages/testing test: (Use `node --trace-warnings ...` to show where the warning was created)
+packages/testing test: (node:34144) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+packages/testing test: (Use `node --trace-warnings ...` to show where the warning was created)
+packages/testing test: (node:17136) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+packages/testing test: (Use `node --trace-warnings ...` to show where the warning was created)
+packages/testing test:  [32m✓[39m test/memory.leakage.test.ts[2m > [22mmemory.leakage[2m > [22mrecords retrieval denials without leaking under-cleared personal text[32m 120[2mms[22m[39m
+packages/testing test:  [32m✓[39m test/research.evals.test.ts[2m > [22mresearch.citation-precision[2m > [22mrequires each cited claim to resolve to a supporting snapshot span[32m 23[2mms[22m[39m
+packages/testing test:  [32m✓[39m test/research.evals.test.ts[2m > [22mresearch.zh-en-parity[2m > [22mreaches comparable seeded source grades and an overlapping canonical source[32m 13[2mms[22m[39m
+packages/testing test: (node:28284) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+packages/testing test: (Use `node --trace-warnings ...` to show where the warning was created)
+packages/testing test: (node:7848) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+packages/testing test: (Use `node --trace-warnings ...` to show where the warning was created)
+packages/testing test:  [32m✓[39m test/research.evals.test.ts[2m > [22minjection.research-v0[2m > [22mkeeps malicious fetched instructions quarantined and out of memory records[32m 96[2mms[22m[39m
+packages/testing test:  [32m✓[39m test/memory.deletion-permanence.test.ts[2m > [22mmemory.deletion-permanence[2m > [22mkeeps deleted memories tombstoned across rebuild and retrieval[32m 188[2mms[22m[39m
+packages/testing test:  [32m✓[39m test/index.test.ts[2m > [22m@fairy/testing[2m > [22mexposes the M0 protocol conformance manifest[32m 2[2mms[22m[39m
+packages/testing test:  [32m✓[39m test/conformance.test.ts[2m > [22mconformance kit v1[2m > [22mpasses the mock OpenAI-compatible provider suite[32m 146[2mms[22m[39m
+packages/testing test:  [32m✓[39m test/conformance.test.ts[2m > [22mconformance kit v1[2m > [22mdoes not report live tool capability as pass when only done is observed[32m 1[2mms[22m[39m
+packages/testing test:  [32m✓[39m test/voice.duplex-transport.test.ts[2m > [22mvoice.duplex-transport-v0[2m > [22mcovers frame codec, in-memory transport, mock worker, and no raw audio serialization[32m 11[2mms[22m[39m
+packages/testing test:  [32m✓[39m test/persona-affect.evals.test.ts[2m > [22mpersona.consistency[2m > [22mrenders allowed style markers and suppresses humor for distress[32m 11[2mms[22m[39m
+packages/testing test:  [32m✓[39m test/persona-affect.evals.test.ts[2m > [22mpersona.consistency[2m > [22mappraises assistant-directed criticism tersely without self-blame patterns[32m 4[2mms[22m[39m
+packages/testing test:  [32m✓[39m test/persona-affect.evals.test.ts[2m > [22msubstance.invariance[2m > [22mpreserves tools, permissions, routing, and factual payload across affect extremes[32m 20[2mms[22m[39m
+packages/testing test:  [32m✓[39m test/persona-affect.evals.test.ts[2m > [22msubstance.invariance[2m > [22mpreserves tools, permissions, routing, and factual payload under negative-feedback affect[32m 5[2mms[22m[39m
+packages/testing test:  [32m✓[39m test/governance.evals.test.ts[2m > [22mlabel.conformance[2m > [22menforces max/intersection derivation without automatic downgrade[32m 2[2mms[22m[39m
+packages/testing test:  [32m✓[39m test/governance.evals.test.ts[2m > [22mlabel.conformance[2m > [22mtreats routing hints as advisory and never as gates[32m 0[2mms[22m[39m
+packages/testing test:  [32m✓[39m test/governance.evals.test.ts[2m > [22mlabel.conformance[2m > [22mpins the complete governance profile default tables[32m 0[2mms[22m[39m
+packages/testing test:  [32m✓[39m test/governance.evals.test.ts[2m > [22mlabel.conformance[2m > [22mcovers semantic escalation and near-miss non-escalation[32m 2[2mms[22m[39m
+packages/testing test:  [32m✓[39m test/governance.evals.test.ts[2m > [22mlabel.conformance[2m > [22mkeeps secret and personal local-only labels away from non-cleared model providers[32m 18[2mms[22m[39m
+packages/testing test:  [32m✓[39m test/governance.evals.test.ts[2m > [22mlabel.conformance[2m > [22mblocks seeded secret content from outbound tool arguments and redacts diagnostics[32m 2[2mms[22m[39m
+packages/testing test:  [32m✓[39m test/governance.evals.test.ts[2m > [22mgovernance.friction-canary[2m > [22memits a deterministic parseable report for route-denied recovery[32m 21[2mms[22m[39m
+packages/testing test:  [32m✓[39m test/gateway.e2e.test.ts[2m > [22mgateway M1 e2e[2m > [22mserves health/meta/sessions, streams a model-backed turn, and writes valid JSONL[33m 931[2mms[22m[39m
+packages/testing test:  [32m✓[39m test/voice.protocol-loopback.test.ts[2m > [22mvoice.protocol-loopback-v0[2m > [22mvalidates registered speech fixtures and loopback event ordering[33m 929[2mms[22m[39m
+packages/testing test:  [32m✓[39m test/voice.protocol-loopback.test.ts[2m > [22mvoice.protocol-loopback-v0[2m > [22mroutes spoken secret content away from an under-cleared primary[33m 837[2mms[22m[39m
+packages/testing test:  [32m✓[39m test/gateway.e2e.test.ts[2m > [22mgateway M1 e2e[2m > [22mfalls back to a configured secondary model with visible progress and trace[33m 834[2mms[22m[39m
+packages/testing test:  [32m✓[39m test/voice.protocol-loopback.test.ts[2m > [22mvoice.protocol-loopback-v0[2m > [22minherits MemoryGate admission and secret-deny behavior for voice turns[33m 808[2mms[22m[39m
+packages/testing test:  [32m✓[39m test/gateway.e2e.test.ts[2m > [22mgateway M1 e2e[2m > [22mdenies a secret turn before provider I/O when no model has clearance[33m 780[2mms[22m[39m
+packages/testing test:  [32m✓[39m test/voice.duplex-transport.test.ts[2m > [22mvoice.duplex-transport-v0[2m > [22mruns ASR final through the normal TurnRunner path once and clamps frame labels[33m 2658[2mms[22m[39m
+packages/testing test:  [32m✓[39m test/gateway.e2e.test.ts[2m > [22mgateway M1 e2e[2m > [22mskips a denied primary and routes a secret turn to an allowed local fallback[33m 897[2mms[22m[39m
+packages/testing test:  [32m✓[39m test/voice.protocol-loopback.test.ts[2m > [22mvoice.protocol-loopback-v0[2m > [22mblocks spoken secret egress and keeps TTS on visible final text only[33m 1533[2mms[22m[39m
+packages/testing test:  [32m✓[39m test/voice.duplex-transport.test.ts[2m > [22mvoice.duplex-transport-v0[2m > [22mleaves cancelled utterances replayable without turn.input, dangling turns, or model calls[33m 1401[2mms[22m[39m
+packages/testing test:  [32m✓[39m test/gateway.e2e.test.ts[2m > [22mgateway M1 e2e[2m > [22mkeeps history contamination gated while secret content remains in the assembled prompt[33m 806[2mms[22m[39m
+packages/testing test:  [32m✓[39m test/voice.duplex-transport.test.ts[2m > [22mvoice.duplex-transport-v0[2m > [22minherits route clearance, MemoryGate, egress guard, and visible-only TTS[33m 800[2mms[22m[39m
+packages/testing test:  [32m✓[39m test/gateway.e2e.test.ts[2m > [22mgateway M1 e2e[2m > [22memits MemoryGate allow and memory.written for a safe explicit preference[33m 769[2mms[22m[39m
+packages/testing test:  [32m✓[39m test/gateway.e2e.test.ts[2m > [22mgateway M1 e2e[2m > [22memits MemoryGate deny and no memory.written for an explicit secret[33m 728[2mms[22m[39m
+packages/testing test:  [32m✓[39m test/gateway.e2e.test.ts[2m > [22mgateway M1 e2e[2m > [22mdoes not inject irrelevant memories into the memory zone[33m 740[2mms[22m[39m
+packages/testing test:  [32m✓[39m test/gateway.e2e.test.ts[2m > [22mgateway M1 e2e[2m > [22mkeeps personal local-only memory out of an under-cleared cloud route[33m 786[2mms[22m[39m
+packages/testing test:  [32m✓[39m test/gateway.e2e.test.ts[2m > [22mgateway M1 e2e[2m > [22madmits personal local-only memory only when a cleared local fallback is selected[33m 746[2mms[22m[39m
+packages/testing test:  [32m✓[39m test/gateway.e2e.test.ts[2m > [22mgateway M1 e2e[2m > [22mappends a synthetic interruption after restart and continues with the next turn number[33m 1508[2mms[22m[39m
+packages/testing test:  [32m✓[39m test/gateway.e2e.test.ts[2m > [22mgateway M1 e2e[2m > [22mcancels an in-flight turn and emits turn.interrupted[33m 815[2mms[22m[39m
+packages/testing test:  [32m✓[39m test/gateway.e2e.test.ts[2m > [22mgateway M1 e2e[2m > [22muses deterministic ack and op-error transport frames for non-fact ops[33m 707[2mms[22m[39m
+packages/testing test:  [32m✓[39m test/gateway.e2e.test.ts[2m > [22mgateway M1 e2e[2m > [22mruns an auto-allowed fs.read tool call, spills oversized results, and completes[33m 743[2mms[22m[39m
+packages/testing test:  [32m✓[39m test/gateway.e2e.test.ts[2m > [22mgateway M1 e2e[2m > [22mruns prompted tool calls through the normal tool loop[33m 729[2mms[22m[39m
+packages/testing test:  [32m✓[39m test/gateway.e2e.test.ts[2m > [22mgateway M1 e2e[2m > [22mrepairs prompted tool calls before executing them[33m 768[2mms[22m[39m
+packages/testing test:  [32m✓[39m test/gateway.e2e.test.ts[2m > [22mgateway M1 e2e[2m > [22msurfaces prompted tool repair exhaustion as an error envelope[33m 779[2mms[22m[39m
+packages/testing test:  [32m✓[39m test/gateway.e2e.test.ts[2m > [22mgateway M1 e2e[2m > [22mcontinues gracefully when policy denies a tool call[33m 734[2mms[22m[39m
+packages/testing test:  [32m✓[39m test/gateway.e2e.test.ts[2m > [22mgateway M1 e2e[2m > [22mreturns audit rows through /audit?limit=N after an auto-allowed tool turn[33m 795[2mms[22m[39m
+packages/testing test:  [32m✓[39m test/gateway.e2e.test.ts[2m > [22mgateway M1 e2e[2m > [22mdrives context reduction manifests through L1-L3 and renders fairy replay manifests offline[33m 1411[2mms[22m[39m
+packages/testing test:  [32m✓[39m test/gateway.e2e.test.ts[2m > [22mgateway M1 e2e[2m > [22memits session.resumed as the replay sentinel on attach[33m 769[2mms[22m[39m
+packages/testing test:  [32m✓[39m test/gateway.e2e.test.ts[2m > [22mgateway M1 e2e[2m > [22mruns research tools through the normal tool loop and renders replay[33m 1353[2mms[22m[39m
+packages/testing test:  [32m✓[39m test/gateway.e2e.test.ts[2m > [22mgateway M1 e2e[2m > [22mkeeps research injection pages quarantined through the TurnRunner tool loop[33m 1786[2mms[22m[39m
+packages/testing test:  [32m✓[39m test/gateway.e2e.test.ts[2m > [22mgateway M1 e2e[2m > [22mblocks secret egress from malicious research content before outbound web fetch[33m 1299[2mms[22m[39m
+packages/testing test:  [32m✓[39m test/gateway.e2e.test.ts[2m > [22mgateway M1 e2e[2m > [22mblocks shell.run secret commands before sandbox/container execution[33m 774[2mms[22m[39m
+packages/testing test:  [32m✓[39m test/gateway.e2e.test.ts[2m > [22mgateway M1 e2e[2m > [22mallows safe public web.search queries through the normal tool loop[33m 803[2mms[22m[39m
+packages/testing test:  [32m✓[39m test/gateway.e2e.test.ts[2m > [22mgateway M1 e2e[2m > [22mblocks personal research text from egress to global web tools[33m 767[2mms[22m[39m
+packages/testing test:  [32m✓[39m test/gateway.e2e.test.ts[2m > [22mgateway M1 e2e[2m > [22mallows configured personal egress tools and audits the pass decision[33m 781[2mms[22m[39m
+packages/testing test:  [32m✓[39m test/gateway.e2e.test.ts[2m > [22mgateway M1 e2e[2m > [22mrecords untrusted research provenance in permission audit context without narrowing by default[33m 779[2mms[22m[39m
+packages/testing test:  [32m✓[39m test/gateway.e2e.test.ts[2m > [22mgateway M1 e2e[2m > [22mcan deny explicitly untrusted-channel tool instructions through config rules[33m 792[2mms[22m[39m
+packages/testing test:  [32m✓[39m test/gateway.e2e.test.ts[2m > [22mgateway M1 e2e[2m > [22mcomposes authenticated research snapshot labels before route clearance[33m 767[2mms[22m[39m
+packages/testing test:  [32m✓[39m test/gateway.e2e.test.ts[2m > [22mgateway M1 e2e[2m > [22mperception.quarantine-v0[2m > [22mruns vision describe/OCR tools, renders artifacts in replay, and spills long OCR[33m 1368[2mms[22m[39m
+packages/testing test:  [32m✓[39m test/gateway.e2e.test.ts[2m > [22mgateway M1 e2e[2m > [22mperception.quarantine-v0[2m > [22mkeeps malicious OCR instructions quarantined and out of instruction roles[33m 1832[2mms[22m[39m
+packages/testing test:  [32m✓[39m test/gateway.e2e.test.ts[2m > [22mgateway M1 e2e[2m > [22mperception.quarantine-v0[2m > [22mroutes OCR-derived fake API key text only to a cleared local fallback[33m 849[2mms[22m[39m
+packages/testing test:  [32m✓[39m test/gateway.e2e.test.ts[2m > [22mgateway M1 e2e[2m > [22mperception.quarantine-v0[2m > [22mblocks egress of OCR-derived fake API key text before outbound fetch[33m 1351[2mms[22m[39m
+packages/testing test:  [32m✓[39m test/gateway.e2e.test.ts[2m > [22mgateway M1 e2e[2m > [22mcontext.compaction-regression[2m > [22mforces L4/L5, preserves decisions/refs/errors/quarantine, and renders replay[33m 1846[2mms[22m[39m
+packages/testing test:  [32m✓[39m test/gateway.e2e.test.ts[2m > [22mgateway M1 e2e[2m > [22mcontext.compaction-regression[2m > [22mroutes compaction through cleared summarizer fallback and keeps labels gating main[33m 750[2mms[22m[39m
+packages/testing test:  [32m✓[39m test/gateway.e2e.test.ts[2m > [22mgateway M1 e2e[2m > [22mcontext.compaction-regression[2m > [22mskips model-backed compaction when no summarizer candidate is cleared and completes on the original context path[33m 741[2mms[22m[39m
+packages/testing test:  [32m✓[39m test/gateway.e2e.test.ts[2m > [22mgateway M1 e2e[2m > [22mcontext.compaction-regression[2m > [22mfalls back to the original context path when compactor output is invalid[33m 726[2mms[22m[39m
+packages/testing test:  [32m✓[39m test/gateway.e2e.test.ts[2m > [22mgateway M1 e2e[2m > [22mchronicle.workspace-v0[2m > [22mkeeps append-only Chronicle records workspace-scoped[32m 84[2mms[22m[39m
+packages/testing test:  [32m✓[39m test/gateway.e2e.test.ts[2m > [22mgateway M1 e2e[2m > [22mchronicle.workspace-v0[2m > [22mruns chronicle.log and chronicle.query through the tool loop and renders replay[33m 1286[2mms[22m[39m
+packages/testing test:  [32m✓[39m test/gateway.e2e.test.ts[2m > [22mgateway M1 e2e[2m > [22mchronicle.workspace-v0[2m > [22mdenies secret-like Chronicle writes without creating records[33m 729[2mms[22m[39m
+packages/testing test:  [32m✓[39m test/gateway.e2e.test.ts[2m > [22mgateway M1 e2e[2m > [22mchronicle.workspace-v0[2m > [22minjects only relevant Chronicle digest entries and gates under-cleared primary routing[33m 713[2mms[22m[39m
+packages/testing test:  [32m✓[39m test/gateway.e2e.test.ts[2m > [22mgateway M1 e2e[2m > [22mdream-cycle.consolidation-v0[2m > [22mcreates deterministic manual reports with redaction, provenance, pending skills, and no scheduler[33m 1859[2mms[22m[39m
+packages/testing test:  [32m✓[39m test/gateway.e2e.test.ts[2m > [22mgateway M1 e2e[2m > [22mlogs affect.updated for an enabled persona turn without writing memory[33m 780[2mms[22m[39m
+packages/testing test:  [32m✓[39m test/gateway.e2e.test.ts[2m > [22mgateway M1 e2e[2m > [22mkeeps affect disabled silent while rendering a plain persona zone[33m 711[2mms[22m[39m
+packages/testing test:  [32m✓[39m test/gateway.e2e.test.ts[2m > [22mgateway M1 e2e[2m > [22mdoes not change route clearance or permission outcome after distress affect state changes[33m 817[2mms[22m[39m
+packages/testing test:  [32m✓[39m test/gateway.e2e.test.ts[2m > [22mgateway M1 e2e[2m > [22masks once for shell.run, stores a session grant, and audits execution[33m 1558[2mms[22m[39m
+packages/testing test: [2m Test Files [22m [1m[32m10 passed[39m[22m[2m | [22m[33m1 skipped[39m[90m (11)[39m
+packages/testing test: [2m      Tests [22m [1m[32m75 passed[39m[22m[2m | [22m[33m1 skipped[39m[90m (76)[39m
+packages/testing test: [2m   Start at [22m 17:27:24
+packages/testing test: [2m   Duration [22m 46.50s[2m (transform 1.24s, setup 0ms, import 4.61s, tests 55.34s, environment 1ms)[22m
+packages/testing test: Done
+apps/cli test$ vitest run
+apps/cli test: [1m[30m[46m RUN [49m[39m[22m [36mv4.1.9 [39m[90mE:/Claude_Projects/Projects/Fairy/OpenFairy/apps/cli[39m
+apps/cli test: (node:27700) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+apps/cli test: (Use `node --trace-warnings ...` to show where the warning was created)
+apps/cli test: (node:26456) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+apps/cli test: (Use `node --trace-warnings ...` to show where the warning was created)
+apps/cli test: (node:19968) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+apps/cli test: (Use `node --trace-warnings ...` to show where the warning was created)
+apps/cli test: (node:32548) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+apps/cli test: (Use `node --trace-warnings ...` to show where the warning was created)
+apps/cli test:  [32m✓[39m test/replay.test.ts [2m([22m[2m6 tests[22m[2m)[22m[32m 47[2mms[22m[39m
+apps/cli test:  [32m✓[39m test/audit.test.ts [2m([22m[2m1 test[22m[2m)[22m[32m 47[2mms[22m[39m
+apps/cli test:  [32m✓[39m test/persona.test.ts [2m([22m[2m1 test[22m[2m)[22m[33m 1910[2mms[22m[39m
+apps/cli test:      [33m[2m✓[22m[39m inspects persona metadata and current affect state from JSONL [33m 1909[2mms[22m[39m
+apps/cli test:  [32m✓[39m test/doctor.test.ts [2m([22m[2m2 tests[22m[2m)[22m[33m 681[2mms[22m[39m
+apps/cli test:      [33m[2m✓[22m[39m prints a plain-text report [33m 678[2mms[22m[39m
+apps/cli test:  [32m✓[39m test/artifacts.test.ts [2m([22m[2m1 test[22m[2m)[22m[33m 2716[2mms[22m[39m
+apps/cli test:      [33m[2m✓[22m[39m lists and shows artifact registry entries without embedding blobs [33m 2714[2mms[22m[39m
+apps/cli test:  [32m✓[39m test/chronicle.test.ts [2m([22m[2m1 test[22m[2m)[22m[33m 3314[2mms[22m[39m
+apps/cli test:      [33m[2m✓[22m[39m logs, queries, lists, and shows workspace entries as stable JSON [33m 3312[2mms[22m[39m
+apps/cli test:  [32m✓[39m test/research.test.ts [2m([22m[2m1 test[22m[2m)[22m[33m 3389[2mms[22m[39m
+apps/cli test:      [33m[2m✓[22m[39m lists sources, snapshots, quarantined snapshot bodies, and citations [33m 3388[2mms[22m[39m
+apps/cli test:  [32m✓[39m test/voice.test.ts [2m([22m[2m2 tests[22m[2m)[22m[33m 2013[2mms[22m[39m
+apps/cli test:      [33m[2m✓[22m[39m runs loopback through the gateway and prints parseable JSON [33m 1117[2mms[22m[39m
+apps/cli test:      [33m[2m✓[22m[39m runs duplex conformance through the gateway and prints parseable JSON [33m 895[2mms[22m[39m
+apps/cli test:  [32m✓[39m test/memory.test.ts [2m([22m[2m1 test[22m[2m)[22m[33m 6946[2mms[22m[39m
+apps/cli test:      [33m[2m✓[22m[39m lists, searches, shows evidence, deletes, and rebuilds from JSONL [33m 6944[2mms[22m[39m
+apps/cli test: [2m Test Files [22m [1m[32m9 passed[39m[22m[90m (9)[39m
+apps/cli test: [2m      Tests [22m [1m[32m16 passed[39m[22m[90m (16)[39m
+apps/cli test: [2m   Start at [22m 17:28:10
+apps/cli test: [2m   Duration [22m 7.25s[2m (transform 1.37s, setup 0ms, import 6.81s, tests 21.06s, environment 1ms)[22m
+apps/cli test: Done
