@@ -57,6 +57,8 @@ const testLabeler: ChronicleContentLabeler = (text: string, labels: MemoryLabels
   return { labels };
 };
 
+const SQLITE_PROJECTION_CI_TIMEOUT_MS = 30_000;
+
 describe("@fairy/memory", () => {
   it("allows safe explicit memory by default", () => {
     const result = new MemoryGate().evaluate(candidate());
@@ -125,7 +127,7 @@ describe("@fairy/memory", () => {
       text: "API_KEY=sk_test_1234567890abcdef"
     }))).toThrow(/secret/);
     expect(store.list()).toEqual([]);
-  });
+  }, SQLITE_PROJECTION_CI_TIMEOUT_MS);
 
   it("inserts, deduplicates, deletes, and searches projection rows", async () => {
     const dataDir = await mkdtemp(join(tmpdir(), "fairy-memory-store-"));
@@ -142,7 +144,7 @@ describe("@fairy/memory", () => {
 
     store.delete("mem_shell", { event_id: "evt_delete", reason: "user_deleted" });
     expect(store.list()).toEqual([]);
-  });
+  }, SQLITE_PROJECTION_CI_TIMEOUT_MS);
 
   it("rebuilds from JSONL memory events and keeps deleted memories tombstoned", async () => {
     const dataDir = await mkdtemp(join(tmpdir(), "fairy-memory-rebuild-"));
