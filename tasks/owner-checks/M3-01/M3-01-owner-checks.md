@@ -3,7 +3,7 @@
 Date: 2026-07-09
 Repo: Maxwell-00/OpenFairy
 Implementation commit: bf6896e
-Owner evidence commit: <fill after commit>
+Owner evidence commit: <a550464>
 GitHub Actions: GREEN on ubuntu + windows
 
 ## 1. Voice suite visibility

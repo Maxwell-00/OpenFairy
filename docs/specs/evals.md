@@ -34,6 +34,7 @@ Eval requirements were scattered across seven specs; external review rightly not
 | **Citation precision** | claims resolve to supporting snapshot spans ≥ 90% (judge + human sample) | research | M2 |
 | **zh/en research parity** | comparable source quality both languages | research | M2 |
 | Injection corpus | direct/indirect/OCR/MCP attacks held | sandbox-security | v0 at M2, full M5 |
+| **Voice protocol loopback** | deterministic loopback: registered-schema conformance of emitted speech events, partial/final ordering + id linkage, exactly one `turn.input` per final transcript, voice label floor + zero-byte under-cleared denial, MemoryGate hold/deny for spoken remember, egress denial with redacted diagnostics, TTS visibility boundary, replay incl. corrupt-tail | voice-pipeline | M3-01+ every PR |
 | Voice latency bench | stage budgets + e2e p50/p95 on synthetic zh/en/mixed corpus | voice-pipeline | M3 nightly |
 | Interrupt quality | barge-in ≤ 250 ms, correct `unspoken` accounting | voice-pipeline | M3 |
 | ASR quality (zh focus) | WER/CER on zh + code-switching corpus across providers (FunASR vs faster-whisper vs cloud) | voice-pipeline | M3 benchmark task |
@@ -45,6 +46,8 @@ Eval requirements were scattered across seven specs; external review rightly not
 | Proactivity contract | per-class × channel quotas; digest schema + TTL (`delivery.expired` receipts, no silent drops); storm collapse by `storm_key` (repeat counter, one thread); voice overlay ≤ 2/day; quiet hours; "why" line present | COMPANION-CONTRACT / protocol §2 Delivery | M4 |
 | Cost ledger accuracy | within 2% of provider billing | ARCHITECTURE §10 | M4 |
 | Soak | 2 weeks, ≥ 5 daily workflows, unplanned interventions = 0 | ROADMAP M5 | M5 |
+
+**M3-01 registration status:** `voice.protocol-loopback-v0` — deterministic PR-tier gateway E2E suite in `packages/testing` (mock providers, no audio device/network/LLM judge): emitted speech events schema-validated against the registered `speech.*.v1` schemas; loopback ordering + `utterance_id`/`chunk_id`/`mark_id` linkage; exactly one `turn.input` (provenance `user`, channel `voice`) per final transcript with ASR partials producing zero model calls; balanced voice floor on the emitted turn.input with under-cleared-primary zero-request denial + cleared fallback; spoken remember → MemoryGate `personal_default_hold` (safe) / `secret_denied` (secret), no `memory.written`; spoken-secret egress denial with redacted diagnostics; TTS chunks derived only from visible `turn.final` text (hidden reasoning/denial text asserted absent); replay text/JSON rendering with corrupt-tail tolerance unchanged. The three M3 voice benches above (latency, interrupt, ASR quality) remain **future M3 slices — visibly deferred, never fake-passed**.
 
 **M2-03 registration status:** `research.citation-precision` (deterministic v1 — each cited claim must resolve to a snapshot span containing required support terms; **no LLM judge in CI**, judge + human sampling stubbed for later), `research.zh-en-parity` (seeded bilingual fixtures; asserts comparable source grades plus ≥ 1 overlapping canonical source / source family), and `injection.research-v0` (research-page corpus asserted through the TurnRunner tool loop; see sandbox-security §4) run as named deterministic suites in `packages/testing` on every PR, mock providers only.
 

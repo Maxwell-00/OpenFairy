@@ -188,3 +188,51 @@ None for implementation acceptance.
 ## Final decision
 
 M3-01 implementation is accepted with notes. Run owner checks, commit evidence, then send to Fable/Opus for delivery countersign.
+
+---
+
+## Countersignature — Claude (Fable 5), 2026-07-09
+
+Code-level cross-check delegated to an opus subagent (14-item checklist at `bf6896e` vs parent `a8ebb3c`, file:line evidence, reads via `git show` only). **14/14 PASS, zero vacuous assertions; every reviewer-gate clause from the brief gate is confirmed in code:**
+
+- **(RE-1)** Nothing under `packages/protocol` changed — no narrowing possible. The suite validates the entire emitted stream via `assertSchemaValidStream` → `validateEvent` (mock-client.ts:213) plus golden-fixture assertions. Emitted payloads use only registered-required fields plus additive-optional extras (`payload.speech`, `payload.routing_hints` on `turn.input`); `mark_id` stays a free string.
+- **(RE-2)** `turn.input` built at `server.ts:878-887`: `provenance:"user"`, `channel:"voice"`, `payload.speech {utterance_id, audio_ref}`; envelope validated at construction; exactly one `turn.input` asserted (three independent count assertions); production `new TurnRunner` remains exactly one (`server.ts:327`).
+- **(RE-4)** Floor derived per profile in `voiceInputPolicyForProfile` — all three profiles unit-asserted with `.toEqual`, balanced floor E2E-asserted **on the emitted turn.input labels** (non-vacuous, fails if the floor breaks). `prefer_local` rides the **pre-existing M2** `routing_hints` mechanism (`governance.ts:108`, pre-existing "advisory rather than gating" test at parent) — not a new side channel; provably never gates.
+- **Zero-request:** `expect(provider.requests).toBe(0)` on the under-cleared primary + `route-denied` progress visible + `fallback.requests === 1` with fallback completing the turn.
+- **Partials/final:** every partial asserted to precede the single model call (`finalCalls` ordering assertion); total provider requests === 1.
+- **TTS boundary (non-vacuous):** fixtures contain real `reasoning.delta` text, hidden post-denial reasoning, and a fake secret; all asserted absent from every `speech.tts.chunk` and from replay stdout; chunks equal the visible `turn.final` text exactly.
+- **Egress:** counting outbound server receives 0 requests; `egress.denied` stage + `denied_by_policy` tool.result; secret redacted across all non-ASR events.
+- **Replay:** four speech render arms added to the existing switch; `apps/cli/test/replay.test.ts` diff is additions-only — the corrupt-tail test is byte-identical and green in owner evidence; `--json` payload preservation + no-`data:audio` asserted.
+- **Config:** `transport` enum-locked `["loopback"]`; `tts_chunk_chars` minimum 1; invalid values throw `ConfigValidationError` (tested); no new env side channels (`FAIRY_GATEWAY_*` in cli/voice.ts is the pre-existing CLI connection pattern).
+- **Boundaries:** no vendor SDKs; no new event types or suite names; no docs in the commit; zero raw CJK in new src; tsx-world spawns everywhere (`process.execPath --import tsx`); `packages/voice` exports source-first with sole dep `@fairy/protocol`; no `only`/`skip`; **weakening scan clean** — `a8ebb3c` is a pure 30s-timeout raise on two memory tests (assertions byte-identical), loader/replay test changes additive.
+
+### Adjudication 1 — MemoryGate vs voice floor: the HOLD is correct; brief acceptance line superseded
+
+`personal_default_hold` is **pre-existing M2 behavior** (`packages/memory/src/index.ts:343` at the parent commit: `#personalDefault = options.personalDefault ?? "hold"`; personal admission → hold, secret → deny). The brief's "safe spoken remember → `memory.written`" line survived from the pre-gate draft: my brief gate set the voice floor at `personal` (RE-4, per data-governance §1a) **without reconciling that acceptance line — the collision is the gate's miss, not the implementation's.** Codex resolved it the only correct way: compose the two invariants (personal floor × personal-hold ⇒ hold), change zero MemoryGate code, assert the hold in tests (`decision:"hold", reason:"personal_default_hold"`, no `memory.written`, empty MemoryStore), and disclose the conflict in the work report rather than forcing a green assertion. That disclosure is exactly the norm this project cultivates — noted with approval. **Ruling: hold is normative.** Voice must not weaken admission; a spoken personal-floor "remember" persists only through an explicit confirmation flow (future slice, not M3-01 debt). Recorded in data-governance.md and voice-pipeline.md in this docs pass.
+
+### Adjudication 2 — Owner evidence substitution: accepted with note
+
+The brief-named artifacts (`voice-loopback.json`, `voice-replay.{txt,json}`, `voice-manifests.txt`, `voice-governance.txt`) were not produced; `M3-01-owner-manual-checks.md` marks the standalone smokes N/A because the deterministic E2E suite proves the same properties, and `testing-voice.txt` shows all four `voice.protocol-loopback-v0` tests plus all 13 M2 named suites green with `memory.canary` still visibly skipped (70 passed | 2 skipped). Deterministic fixture/mock evidence is brief-permitted and the substitution is disclosed, so accepted. Standing note: owner-check substitutions should be surfaced to the reviewer as a question, not only documented post-hoc.
+
+### Correction on the record — `docs/specs/voice-pipeline.md` exists and always has
+
+My brief gate (RE-3), the work report, and the primary review all repeated the premise that `voice-pipeline.md` "does not exist yet." **False:** it has existed since `0dd4e49` (M0-01) — a full pipeline spec (ADR-006 topology, two-lane, incremental TTS, barge-in cascade, provider matrix) whose §2 insurance clause even pre-planned M3-01's loopback as the conformance-tested second implementation. The claim originated from my gate subagent's search; I failed to verify a negative-existence claim with a one-line `ls-tree` before writing it into the gate. Codex's proposed voice-pipeline content was therefore unnecessary (though consistent with the real spec — no harm done). Consequence for the docs pass: the existing spec gets an M3-01 implementation-status note instead of a new file. Seat lesson recorded in the handbook: verify negative-existence claims directly before they enter a gate document.
+
+### Docs pass — applied with this countersignature
+
+- `docs/specs/protocol.md`: §2 speech-row status note; §5 normative M3-01 additions (payload field semantics, mark vocabulary convention, voice `turn.input` convention, no-raw-audio rule, replay).
+- `docs/specs/model-gateway.md`: loopback is not a provider role; real ASR/TTS roles (incl. `voice.fastpath` binding, `workers/speech/`) remain future M3.
+- `docs/specs/data-governance.md`: §1a voice-floor enforcement note (floor semantics, prefer_local advisory, spoken-remember hold, TTS visibility boundary).
+- `docs/specs/evals.md`: suite-registry row + M3-01 registration-status paragraph for `voice.protocol-loopback-v0`; the three M3 voice benches remain visibly deferred.
+- `docs/specs/voice-pipeline.md`: M3-01 implementation-status note (loopback landed as the §2-planned second impl; config surface registered; trust floor + hold semantics; deferred acoustic machinery).
+- **docs-zh re-translation TODO (owner-maintained):** all five files above.
+
+### Non-blocking notes
+
+1. `governance.ts:108-112` — the `prefer_local` branch returns the same decision on both paths (functional no-op that correctly encodes "advisory, never gates"); pre-existing, cleanup nicety only.
+2. `speech.asr.final` carries content-escalated labels while the transport hands the unescalated floor to input assembly, which re-escalates — one-way escalation held consistently; no issue.
+3. CI: implementation run `28992694192` green (ubuntu + windows) per primary review; `a550464` contains evidence/review files only.
+
+### Verdict: M3-01 ACCEPTED WITH NOTES / CLOSED
+
+First M3 slice closed with the trust property intact: voice enters and leaves through the canonical event stream, the one TurnRunner, and the full label/clearance/egress stack — verified at code level, not trusted. **Next: gate the M3-02 brief** (shape per ROADMAP/voice-pipeline: likely the speech-worker duplex protocol or the client audio transport conformance interface; whatever is proposed, the per-gate M3 trust property stands — voice paths inherit the full governance stack, and the M2 deferral landing gates remain in force).
