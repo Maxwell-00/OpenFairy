@@ -4,6 +4,7 @@ import { readFile } from "node:fs/promises";
 import WebSocket from "ws";
 
 interface VoiceOptions {
+  readonly command: "duplex" | "loopback";
   readonly gateway: string;
   readonly json: boolean;
   readonly scriptPath: string;
@@ -103,12 +104,16 @@ class VoiceGatewayClient {
     return this.#events;
   }
 
+  frames(): readonly TransportFrame[] {
+    return this.#frames;
+  }
+
   send(value: unknown): void {
     this.#socket.send(JSON.stringify(value));
   }
 
   close(): void {
-    this.#socket.close(1000, "voice loopback done");
+    this.#socket.close(1000, "voice command done");
     this.#socket.terminate();
   }
 
@@ -168,7 +173,7 @@ class VoiceGatewayClient {
   }
 }
 
-const summaryFromEvents = (sid: string, events: readonly EventEnvelope[]): TransportFrame => {
+const summaryFromEvents = (sid: string, op: string, events: readonly EventEnvelope[]): TransportFrame => {
   const finalAsr = events.find((event) => event.type === "speech.asr.final");
   const finalTurn = events.filter((event) => event.type === "turn.final").at(-1);
   const asrPayload = isRecord(finalAsr?.payload) ? finalAsr.payload : {};
@@ -176,7 +181,7 @@ const summaryFromEvents = (sid: string, events: readonly EventEnvelope[]): Trans
     assistant_final_text: finalTurn ? payloadText(finalTurn.payload) : "",
     event_counts: eventCounts(events),
     kind: "ack",
-    op: "voice.loopback",
+    op,
     replay_command: `fairy replay ${sid}`,
     sid,
     transcript_text: typeof asrPayload.text === "string" ? asrPayload.text : "",
@@ -186,15 +191,16 @@ const summaryFromEvents = (sid: string, events: readonly EventEnvelope[]): Trans
 
 export const parseVoiceOptions = (args: readonly string[], env: NodeJS.ProcessEnv = process.env): VoiceOptions => {
   const [subcommand] = args;
-  if (subcommand !== "loopback") {
-    throw new Error("Usage: fairy voice loopback --script path [--session sid] [--gateway url] [--token token] [--json]");
+  if (subcommand !== "loopback" && subcommand !== "duplex") {
+    throw new Error("Usage: fairy voice <loopback|duplex> --script path [--session sid] [--gateway url] [--token token] [--json]");
   }
   const session = readOption(args, "--session");
   const scriptPath = readOption(args, "--script");
   if (!scriptPath) {
-    throw new Error("fairy voice loopback requires --script path");
+    throw new Error(`fairy voice ${subcommand} requires --script path`);
   }
   return {
+    command: subcommand,
     gateway: readOption(args, "--gateway") ?? env.FAIRY_GATEWAY_URL ?? "ws://127.0.0.1:8787",
     json: hasFlag(args, "--json"),
     scriptPath,
@@ -219,18 +225,17 @@ export const runVoice = async (args: readonly string[]): Promise<void> => {
   }
 
   const before = client.events().length;
-  client.send({ op: "voice.loopback", script, sid });
-  const completion = client.waitForEvent((event) =>
-    event.sid === sid &&
-    event.type === "speech.mark" &&
-    client.events().indexOf(event) >= before &&
-    isRecord(event.payload) &&
-    event.payload.mark_id === "turn-boundary");
-  await completion;
+  const beforeFrames = client.frames().length;
+  const op = `voice.${options.command}`;
+  client.send({ op, script, sid });
+  const ack = await client.waitForFrame((frame) =>
+    frame.kind === "ack" &&
+    frame.op === op &&
+    client.frames().indexOf(frame) >= beforeFrames);
   const voiceEvents = client.events().slice(before);
   client.close();
   assertNoRawAudioPayloads(voiceEvents);
-  const summary = summaryFromEvents(sid, voiceEvents);
+  const summary = isRecord(ack) ? ack : summaryFromEvents(sid, op, voiceEvents);
 
   if (options.json) {
     console.log(JSON.stringify(summary));

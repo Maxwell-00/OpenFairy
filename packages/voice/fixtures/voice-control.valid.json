@@ -1,0 +1,69 @@
+[
+  {
+    "kind": "session.start",
+    "labels": {
+      "residency": "global-ok",
+      "sensitivity": "public"
+    },
+    "profile": "balanced",
+    "session_id": "ses_01ARZ3NDEKTSV4RRFFQ69G5FAV",
+    "stream_id": "stream_fixture"
+  },
+  {
+    "audio_ref": "duplex://audio/utt_fixture",
+    "kind": "utterance.start",
+    "labels": {
+      "residency": "global-ok",
+      "sensitivity": "public"
+    },
+    "stream_id": "stream_fixture",
+    "utterance_id": "utt_fixture"
+  },
+  {
+    "kind": "asr.partial",
+    "text": "hello",
+    "utterance_id": "utt_fixture"
+  },
+  {
+    "audio_ref": "duplex://audio/utt_fixture",
+    "kind": "asr.final",
+    "text": "hello world",
+    "utterance_id": "utt_fixture"
+  },
+  {
+    "kind": "tts.request",
+    "labels": {
+      "residency": "region-restricted",
+      "sensitivity": "personal"
+    },
+    "text": "visible answer",
+    "utterance_id": "utt_fixture"
+  },
+  {
+    "audio_ref": "duplex://tts/utt_fixture:tts:001",
+    "chunk_id": "utt_fixture:tts:001",
+    "kind": "tts.chunk",
+    "text": "visible answer"
+  },
+  {
+    "kind": "mark",
+    "mark_id": "turn-boundary",
+    "position_ms": 0,
+    "utterance_id": "utt_fixture"
+  },
+  {
+    "kind": "cancel",
+    "reason": "scripted_cancel",
+    "target": "asr"
+  },
+  {
+    "code": "mock_error",
+    "kind": "error",
+    "message": "speech worker error",
+    "retryable": false
+  },
+  {
+    "kind": "session.end",
+    "reason": "done"
+  }
+]

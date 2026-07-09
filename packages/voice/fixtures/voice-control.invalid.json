@@ -1,0 +1,24 @@
+[
+  {
+    "kind": "asr.final",
+    "utterance_id": "utt_missing_text"
+  },
+  {
+    "kind": "tts.request",
+    "labels": {
+      "residency": "local-preferred",
+      "sensitivity": "public"
+    },
+    "text": "answer",
+    "utterance_id": "utt_bad_labels"
+  },
+  {
+    "kind": "voice.frame.binary",
+    "stream_id": "stream_bad"
+  },
+  {
+    "kind": "mark",
+    "mark_id": "bad-position",
+    "position_ms": -1
+  }
+]

@@ -15,7 +15,7 @@ import {
   type Provenance
 } from "@fairy/protocol";
 import { createStandardToolRegistry } from "@fairy/tools-std";
-import { LoopbackVoiceTransport, normalizeLoopbackScript } from "@fairy/voice";
+import { DuplexVoiceTransport, LoopbackVoiceTransport, normalizeDuplexScript, normalizeLoopbackScript, type SubmitFinalTranscriptInput } from "@fairy/voice";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import { join } from "node:path";
 import { WebSocket, WebSocketServer } from "ws";
@@ -641,6 +641,19 @@ export class MinimalGateway {
       return;
     }
 
+    if (message.op === "voice.duplex") {
+      if (!isSessionId(message.sid)) {
+        this.#sendOpError(socket, op, "voice.duplex requires sid");
+        return;
+      }
+      if (!this.#sessions.has(message.sid)) {
+        this.#sendOpError(socket, op, `unknown session ${message.sid}`, { sid: message.sid });
+        return;
+      }
+      await this.#runVoiceDuplex(socket, message.sid, message.script, op);
+      return;
+    }
+
     if (message.op === "event") {
       const result = validateEvent(message.event);
       if (!result.ok || result.event.type !== "turn.input") {
@@ -835,6 +848,30 @@ export class MinimalGateway {
     return emitted;
   }
 
+  async #submitVoiceFinalTranscript(
+    socket: WebSocket,
+    sid: `ses_${string}`,
+    input: SubmitFinalTranscriptInput,
+    turn: number
+  ): Promise<{ assistantFinalText: string; labels: Labels; turnEvents: readonly EventEnvelope[] }> {
+    const payload: Record<string, unknown> = {
+      channel: "voice",
+      content: [{ kind: "text", text: input.text }],
+      ...(input.routingHints ? { routing_hints: input.routingHints } : {}),
+      speech: {
+        audio_ref: input.audioRef,
+        utterance_id: input.utteranceId
+      }
+    };
+    const turnEvents = await this.#acceptTurnInput(socket, sid, payload, input.labels, input.routingHints, turn);
+    const final = turnEvents.filter((event) => event.type === "turn.final").at(-1);
+    return {
+      assistantFinalText: final ? payloadText(final.payload) : "",
+      labels: final?.labels ?? input.labels,
+      turnEvents
+    };
+  }
+
   async #runVoiceLoopback(socket: WebSocket, sid: `ses_${string}`, scriptValue: unknown, op: string): Promise<void> {
     if (!this.#config.voiceConfig.enabled) {
       this.#sendOpError(socket, op, "voice loopback is disabled", { sid });
@@ -876,20 +913,11 @@ export class MinimalGateway {
       profile,
       script,
       submitFinalTranscript: async (input) => {
-        const payload: Record<string, unknown> = {
-          channel: "voice",
-          content: [{ kind: "text", text: input.text }],
-          ...(input.routingHints ? { routing_hints: input.routingHints } : {}),
-          speech: {
-            audio_ref: input.audioRef,
-            utterance_id: input.utteranceId
-          }
-        };
-        turnEvents = await this.#acceptTurnInput(socket, sid, payload, input.labels, input.routingHints, turn);
-        const final = turnEvents.filter((event) => event.type === "turn.final").at(-1);
+        const submitted = await this.#submitVoiceFinalTranscript(socket, sid, input, turn);
+        turnEvents = submitted.turnEvents;
         return {
-          assistantFinalText: final ? payloadText(final.payload) : "",
-          labels: final?.labels ?? input.labels
+          assistantFinalText: submitted.assistantFinalText,
+          labels: submitted.labels
         };
       },
       turn
@@ -903,6 +931,76 @@ export class MinimalGateway {
         ...eventCounts(allEvents)
       },
       log_path: join(this.#config.dataDir, "sessions", sid, "log.jsonl"),
+      replay_command: `fairy replay ${sid} --data-dir ${this.#config.dataDir}`,
+      sid,
+      transcript_text: result.transcriptText,
+      tts_chunk_count: result.ttsChunkCount,
+      turn
+    });
+  }
+
+  async #runVoiceDuplex(socket: WebSocket, sid: `ses_${string}`, scriptValue: unknown, op: string): Promise<void> {
+    if (!this.#config.voiceConfig.enabled) {
+      this.#sendOpError(socket, op, "voice duplex is disabled", { sid });
+      return;
+    }
+    let script;
+    try {
+      script = normalizeDuplexScript(scriptValue);
+    } catch (error) {
+      this.#sendOpError(socket, op, error instanceof Error ? error.message : String(error), { sid });
+      return;
+    }
+    const state = this.#sessions.get(sid);
+    if (!state) {
+      throw new Error(`unknown session ${sid}`);
+    }
+    const profile = governanceProfile(this.#config.config);
+    const turn = state.turn + 1;
+    const speechEvents: EventEnvelope[] = [];
+    let turnEvents: readonly EventEnvelope[] = [];
+    const transport = new DuplexVoiceTransport({
+      ttsChunkChars: this.#config.voiceConfig.loopback.ttsChunkChars
+    });
+
+    const result = await transport.run({
+      emit: async (event) => {
+        const envelope = await this.#emit({
+          actor: event.actor,
+          labels: event.labels,
+          payload: event.payload,
+          provenance: event.provenance,
+          sid,
+          turn: event.turn,
+          type: event.type
+        });
+        speechEvents.push(envelope);
+      },
+      labelFinalTranscript: (text, floorLabels) => escalateLabelsForContent(text, floorLabels).labels,
+      profile,
+      script,
+      submitFinalTranscript: async (input) => {
+        const submitted = await this.#submitVoiceFinalTranscript(socket, sid, input, turn);
+        turnEvents = submitted.turnEvents;
+        return {
+          assistantFinalText: submitted.assistantFinalText,
+          labels: submitted.labels
+        };
+      },
+      turn
+    });
+
+    const allEvents = [...speechEvents, ...turnEvents];
+    this.#sendAck(socket, op, {
+      assistant_final_text: result.assistantFinalText,
+      cancelled: result.cancelled,
+      event_counts: {
+        ...result.eventCounts,
+        ...eventCounts(allEvents)
+      },
+      frame_counts: result.frameCounts,
+      log_path: join(this.#config.dataDir, "sessions", sid, "log.jsonl"),
+      model_request_count: allEvents.filter((event) => event.type === "turn.final").length,
       replay_command: `fairy replay ${sid} --data-dir ${this.#config.dataDir}`,
       sid,
       transcript_text: result.transcriptText,
