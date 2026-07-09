@@ -144,3 +144,35 @@ None for primary close.
 ## Final decision
 
 M3-02 is closed at primary-review level. Send `8ca9e48`, `fe8afc3`, and this final review to Fable/Opus for delivery countersign and docs pass.
+
+---
+
+## Countersignature — Claude (Fable 5), 2026-07-09
+
+Code-level cross-check delegated to an opus subagent (12-item checklist at `fe8afc3` vs parent `adf8b33`, file:line evidence, reads via `git show` only). **12/12 PASS, zero vacuous assertions; every reviewer-gate clause from the brief gate is confirmed in code:**
+
+- **(RE-2, the load-bearing gate)** Clamp implemented as a one-way per-axis max (`clampVoiceFrameLabels`, `packages/voice/src/index.ts:590-598` — rank tables + `Math.max`, advisory can only raise). Effective floor computed gateway/transport-side (`:918-920`); every emitted event's labels come from `effectiveFloor`/`finalLabels`/`ttsLabels` — **no code path copies frame labels into an envelope** (frame labels travel only on the advisory `session.start`/`utterance.start` frames to the worker). E2E asserts on the **emitted** `speech.asr.final` and `turn.input`: `public/global-ok` frame under balanced ⇒ `personal/region-restricted` + `prefer_local` (`voice.duplex-transport.test.ts:258-292`); stricter-raises proven at unit level (`secret/local-only` honored).
+- **(RE-3)** Single construction site: `#submitVoiceFinalTranscript` (`server.ts:851-873`) → the one generic `#acceptTurnInput` (`:764-826`, sole `type: "turn.input"` constructor); both `voice.loopback` and `voice.duplex` call it; grep confirms no second builder. Refactor verified behavior-preserving (payload keys, label/routing handling identical to M3-01).
+- **(RE-1)** Ten implemented frame kinds match the work report; the §2 mapping table (`start`→`session.start`+`utterance.start`, `synthesize`→`tts.request`, …) is in both Decisions and the proposed voice-pipeline docs edit — accurate vs code.
+- **(RE-4)** Golden fixtures: 10 valid (one per kind), 4 invalid (missing required, bad residency enum, unregistered `voice.frame.binary` kind, negative `position_ms`); test iterates all with fail-closed decode/validate (throws on bad JSON and invalid frames).
+- **(RE-6)** Cancelled utterance: event stream exactly `[mark, asr.partial, mark]` with final `mark_id:"asr-cancelled"`, **no `turn.input`**, `provider.requests === 0`, replay renders it cleanly and raw log greps clean, whole stream schema-validated. The new mark id lives in an additive `duplexMarkVocabulary`; M3-01's `loopbackMarkVocabulary` and its assertions are untouched.
+- **(RE-5)** No config changes in the commit; the duplex path reuses `voice.enabled`/`voice.loopback.tts_chunk_chars` — nothing rides `additionalProperties: true`, exactly as gated.
+- **Frames out of canon:** no `voice.frame.*`/`speech.worker.*` emissions anywhere; JSONL asserted free of them, of `data:audio/`, and of base64 runs; binary `VoiceAudioFrame` never reaches the event emitter (coordinator registers `onControl` only); metadata-only helper exposes counts, never bytes; `packages/protocol` untouched.
+- **Transport/worker:** FIFO (control + per-stream audio), closed-endpoint rejection, deterministic overflow, 65536-byte guard all quoted; no timers, no socket/device/navigator imports (independent grep, plus an in-source scan test); worker `error` frames are generic (`"speech worker error"`) with the fixture secret asserted absent; final only emitted after a final audio frame.
+- **Trust E2Es non-vacuous:** fixtures contain real hidden-reasoning text and a fake secret; `personal_default_hold` / `secret_denied` asserted with empty MemoryStore; egress blocked with `outbound.requests() === 0` before tool I/O; TTS text exactly the visible final, hidden/secret asserted absent; `speech.asr.final` escalates to `secret/local-only` on secret content.
+- **Boundaries + weakening scan:** one production TurnRunner (`server.ts:327`); no vendor SDKs; no docs/config changes; no new env reads; zero raw CJK; tsx-world spawns; no `only`/`skip`; only new suite name is `voice.duplex-transport-v0`; pre-existing test files additions-only; `replay.test.ts` and `voice.protocol-loopback.test.ts` untouched (corrupt-tail byte-identical by absence).
+
+### Non-blocking notes (for the record)
+
+1. The brief's literal "`provider.requests === 0`" is asserted as a **per-turn delta** in the duplex suite (the primary is legitimately cleared for one safe personal turn first) — stronger than the literal form, which lives on in the M3-01 suite. No action.
+2. Per-stream audio FIFO is implemented keyed by `stream_id` but tested single-stream only. Thin coverage, not wrong — a natural assertion to add when the real WS transport lands. Carry as a nice-to-have for the WS slice brief.
+3. The in-source no-socket scan test doesn't check `navigator`/`AudioContext`; independent grep confirms none exist. Breadth nit only.
+4. Owner evidence hygiene NIT (single-line markdown, blank evidence-commit field) noted by the primary review stands; raw evidence files + CI runs compensate. Evidence shows 75 passed | 1 skipped with both voice suites and all 13 M2 suites green, `memory.canary` visibly skipped.
+
+### Docs pass — applied with this countersignature
+
+`voice-pipeline.md` (M3-02 status note: third frame family, vocabulary mapping/supersession table, clamp semantics, cancel-is-not-barge-in, no-config statement), `protocol.md` (§5 `asr-cancelled` addition to the mark-vocabulary convention; §7 third-frame-family note — replay surface stays canonical `speech.*` only), `data-governance.md` (§1a duplex frame-label clamp note), `evals.md` (`voice.duplex-transport-v0` registry row + M3-02 registration status), `model-gateway.md` (`MockSpeechDuplexWorker` is not a provider role). **docs-zh re-translation TODO (owner-maintained): all five files.**
+
+### Verdict: M3-02 ACCEPTED WITH NOTES / CLOSED
+
+The worker-plane contract is now conformance-tested with the trust stack intact end-to-end: frame labels cannot lower the floor, frames cannot reach the canon, cancellation cannot dangle a turn, and the single voice→turn construction site held through the refactor. **Next: gate the M3-03 brief** (natural candidates per voice-pipeline: the real WS duplex transport behind the same conformance interface, or the first `workers/speech` Python worker skeleton — owner/ChatGPT to propose; the per-gate M3 trust property stands, and the M2 deferral landing gates remain in force).
