@@ -1,6 +1,7 @@
 # Task M3-04 — Speech worker process scaffold + Python mock worker conformance
 
 > Paste this entire file as the task brief after Fable/Opus brief-gate review.
+> Gated 2026-07-09 by the reviewer (Claude Fable 5); gate record in `tasks/M3-04-brief-review.md`; edits RE-1..RE-5 applied in place.
 >
 > Repo: `E:\Claude_Projects\Projects\Fairy\OpenFairy`.
 > M0, M1, M2, M3-01, M3-02, and M3-03 are closed.
@@ -198,6 +199,10 @@ type SpeechWorkerWireMessage =
 
 You may adjust the exact names, but document the final shape in `tasks/M3-04-work.md`.
 
+**(gate RE-1)** `docs/specs/voice-pipeline.md` §2 (line 31) states gateway⇄speech-workers run "the same duplex protocol over **local WS**". This slice's stdio wire diverges from that sentence and the divergence must be a recorded reconciliation, not a silent one (fourth instance of this pattern — same rule as M3-01 payload shapes, M3-02 frame names, M3-03 binary framing). The voice-pipeline docs proposal MUST state: stdio NDJSON is the **v0 wire for locally-supervised child workers**; §2's local-WS duplex (with the M3-03 auth machinery) remains the transport for **remote/decoupled workers** (§9's remote-GPU-box case) and is not replaced. The docs proposal must also include a **mapping table** between `SpeechWorkerWireMessage` kinds and the M3-02 `VoiceControlFrame` kinds, explicitly marking which wire kinds are **mock-conformance-only** (`asr.script`, `tts.script` — a real worker receives audio frames and synthesize requests, not scripts) and which are durable protocol (`asr.partial`, `asr.final`, `tts.chunk`, `cancel`, `error`, lifecycle). The v0 wire must not silently ossify mock semantics into the future real-worker contract.
+
+**(gate RE-2 — Windows stdio hygiene; incident-class)** Newline-delimited JSON over Windows pipes has two classic failure modes this brief must preempt: (a) **CRLF translation** — Python text-mode stdout writes `\r\n`, and a TS reader splitting on `\n` gets a trailing `\r` that breaks `JSON.parse`; (b) **pipe-buffer deadlock** — unflushed Python stdout + an undrained stderr fills the pipe and both processes wait forever (deadlines would catch it late; the root cause must be prevented). Therefore: spawn Python with `-u` (unbuffered) AND the worker writes each message as UTF-8 via `sys.stdout.buffer.write(... + b"\n")` (or equivalent explicit binary-mode write + flush per message), never bare `print`; no BOM; the TS reader strips a trailing `\r` before parse; the supervisor drains stdout and stderr **concurrently** from spawn. A test must run a full session on Windows CI (the acceptance matrix already requires it) — treat any `\r`-related parse failure as this clause's regression.
+
 Required behavior:
 
 - Runtime validation for every inbound/outbound message on the TS side.
@@ -232,15 +237,17 @@ class SpeechWorkerProcess {
 }
 ```
 
+**(gate RE-3 — placement)** The supervisor lives **gateway-side** (`apps/gateway`, per voice-pipeline §9: "Python workers under gateway supervision") or in a new dedicated module — NOT in `packages/voice/src/index.ts`. Reason: the voice package's source-scan guard (`packages/voice/test/index.test.ts:658`) forbids `node:child_process` in that file and was already relaxed once at M3-03 for `ws`/`node:http`; a second relaxation of the same guard for the same file starts eroding it. If a dedicated `packages/voice` submodule is used instead of the gateway, the guard must keep covering `src/index.ts` unchanged and the new module gets its own explicit scan scope — do not weaken the existing assertion.
+
 Required behavior:
 
 - Spawns Python without shell interpolation.
   - Use `spawn(command, args, { shell: false })`.
   - No user-provided shell strings.
 - Python executable discovery is deterministic:
-  - test override may use `FAIRY_TEST_PYTHON`;
-  - otherwise documented candidates such as `python3`, `python`, `py -3`.
-  - Discovery must have explicit deadlines and clear error messages.
+  - **(gate RE-4)** test override may use `FAIRY_TEST_PYTHON`, narrowly: read only at supervisor construction, used **only as `argv[0]`** (never split/parsed as a shell string, never combined with `shell: true`), and its use surfaced in test logs / JSON output so evidence shows which interpreter ran. This is a test-only escape hatch, not production config — the production path uses only the fixed candidate list below.
+  - otherwise documented candidates such as `python3`, `python`, `py -3` (in that order; `py -3` on win32 only).
+  - Discovery must have explicit deadlines and clear error messages, and the `ready` handshake should echo the Python version for diagnosability.
 - Worker path is controlled by the repo/package, not arbitrary config.
 - Handshake deadline.
 - Per-request deadline.
@@ -356,8 +363,9 @@ Required behavior:
 - Worker crash before ASR final:
   - no `turn.input`;
   - no model request;
-  - visible safe error/progress if existing event types support it;
+  - visible safe error/progress **via existing event types only** — **(gate RE-5)** use `progress.update` with a documented stage string (e.g. `stage: "voice.worker.failed"`, following the `egress.denied` stage-string precedent) and/or the existing `error` envelope; no new canonical event type;
   - session replayable.
+- **(gate RE-5)** Crash simulation follows standing rule §5.3: kill the **worker process itself** (direct child-pid kill, or a scripted worker self-exit directive in the fixture) — never a wrapper process, and there is no shell wrapper to begin with (`shell: false`).
 - Worker timeout:
   - supervisor terminates worker;
   - no dangling process;
@@ -511,6 +519,7 @@ If reviewer asks for docs pass, they will apply it after delivery.
 
 - Use PowerShell 7 / UTF-8 no-BOM evidence where possible.
 - Valid UTF-8 Chinese text in fixtures is permitted only if testing zh behavior; otherwise prefer English.
+- **(gate RE-5)** Python source files are **ASCII-only** (the repo's encoding guard scans `.ts`/protocol `.json` but not `.py` — do not rely on it; use `\uXXXX`-style escapes inside Python strings if non-ASCII is ever needed).
 - New `.ts` regex literals with CJK must use `\uXXXX` escapes.
 - Verification commands targeting non-ASCII strings must use ASCII `node -e` scripts with escapes.
 - New CLI tests must use the existing source-first TS execution world (`scripts/run-cli.mjs` / `node --import tsx`), not plain `node` on `.ts`.
