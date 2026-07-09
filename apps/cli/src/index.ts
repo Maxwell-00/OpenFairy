@@ -6,4 +6,5 @@ export { parseMemoryOptions, runMemory } from "./memory.js";
 export { parseAffectOptions, parsePersonaOptions, runAffect, runPersona } from "./persona.js";
 export { parseResearchOptions, runResearch } from "./research.js";
 export { parseReplayOptions, readReplayLog, renderReplay, runReplay } from "./replay.js";
+export { parseVoiceOptions, runVoice } from "./voice.js";
 export type { DoctorReport } from "./doctor.js";

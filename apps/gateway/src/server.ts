@@ -15,7 +15,9 @@ import {
   type Provenance
 } from "@fairy/protocol";
 import { createStandardToolRegistry } from "@fairy/tools-std";
+import { LoopbackVoiceTransport, normalizeLoopbackScript } from "@fairy/voice";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
+import { join } from "node:path";
 import { WebSocket, WebSocketServer } from "ws";
 
 import { EventLog } from "./event-log.js";
@@ -46,6 +48,7 @@ interface ClientMessage {
   readonly replay_from?: unknown;
   readonly request_id?: unknown;
   readonly routing_hints?: unknown;
+  readonly script?: unknown;
 }
 
 const json = (response: ServerResponse, status: number, body: unknown): void => {
@@ -197,6 +200,14 @@ const renderContent = async (content: unknown, registry: ArtifactRegistry): Prom
 
 const payloadText = (payload: unknown): string =>
   isRecord(payload) ? renderContentSync(payload.content).text : "";
+
+const eventCounts = (events: readonly EventEnvelope[]): Record<string, number> => {
+  const counts: Record<string, number> = {};
+  for (const event of events) {
+    counts[event.type] = (counts[event.type] ?? 0) + 1;
+  }
+  return counts;
+};
 
 const governanceProfile = (config: Record<string, unknown>): "balanced" | "sovereign" | "cloud-friendly" => {
   const governance = config.governance;
@@ -617,6 +628,19 @@ export class MinimalGateway {
       return;
     }
 
+    if (message.op === "voice.loopback") {
+      if (!isSessionId(message.sid)) {
+        this.#sendOpError(socket, op, "voice.loopback requires sid");
+        return;
+      }
+      if (!this.#sessions.has(message.sid)) {
+        this.#sendOpError(socket, op, `unknown session ${message.sid}`, { sid: message.sid });
+        return;
+      }
+      await this.#runVoiceLoopback(socket, message.sid, message.script, op);
+      return;
+    }
+
     if (message.op === "event") {
       const result = validateEvent(message.event);
       if (!result.ok || result.event.type !== "turn.input") {
@@ -729,8 +753,23 @@ export class MinimalGateway {
     sid: `ses_${string}`,
     payload: Record<string, unknown>,
     inputLabels?: Labels,
-    routingHints?: RoutingHints
-  ): Promise<void> {
+    routingHints?: RoutingHints,
+    turnOverride?: number
+  ): Promise<readonly EventEnvelope[]> {
+    const emitted: EventEnvelope[] = [];
+    const emitAndCapture = async (event: {
+      actor: Actor;
+      labels?: Labels;
+      payload: Record<string, unknown>;
+      provenance: Provenance;
+      sid: `ses_${string}`;
+      turn: number;
+      type: string;
+    }): Promise<EventEnvelope> => {
+      const envelope = await this.#emit(event);
+      emitted.push(envelope);
+      return envelope;
+    };
     const state = this.#sessions.get(sid);
     if (!state) {
       throw new Error(`unknown session ${sid}`);
@@ -739,14 +778,14 @@ export class MinimalGateway {
     this.#subscribe(socket, sid);
     if (this.#runner.isRunning(sid)) {
       await this.#emitError(socket, sid, "A turn is already in flight for this session.");
-      return;
+      return emitted;
     }
 
     const rendered = await renderContent(payload.content, new ArtifactRegistry(this.#config.artifactsDir));
     const text = rendered.text;
     if (!text) {
       this.#sendOpError(socket, "turn.input", "turn.input content must include at least one text or artifact part.", { sid });
-      return;
+      return emitted;
     }
 
     const baseLabels = inputLabels ?? this.#defaultLabels();
@@ -758,8 +797,8 @@ export class MinimalGateway {
     const labels = labelEscalation.labels;
     const channelTrust = channelTrustFromPayload(payload);
     const history: TurnRunnerHistory = { messages: [...state.history] };
-    const turn = state.turn + 1;
-    await this.#emit({
+    const turn = turnOverride ?? state.turn + 1;
+    await emitAndCapture({
       actor: "user",
       labels,
       payload: {
@@ -774,7 +813,7 @@ export class MinimalGateway {
 
     const run = this.#runner.runTurn({
       emit: (event) =>
-        this.#emit({
+        emitAndCapture({
           actor: actorForKernelEvent(event.type),
           ...(event.labels ? { labels: event.labels } : {}),
           payload: event.payload,
@@ -793,6 +832,83 @@ export class MinimalGateway {
     });
     this.#turns.add(run);
     await run.finally(() => this.#turns.delete(run));
+    return emitted;
+  }
+
+  async #runVoiceLoopback(socket: WebSocket, sid: `ses_${string}`, scriptValue: unknown, op: string): Promise<void> {
+    if (!this.#config.voiceConfig.enabled) {
+      this.#sendOpError(socket, op, "voice loopback is disabled", { sid });
+      return;
+    }
+    let script;
+    try {
+      script = normalizeLoopbackScript(scriptValue);
+    } catch (error) {
+      this.#sendOpError(socket, op, error instanceof Error ? error.message : String(error), { sid });
+      return;
+    }
+    const state = this.#sessions.get(sid);
+    if (!state) {
+      throw new Error(`unknown session ${sid}`);
+    }
+    const profile = governanceProfile(this.#config.config);
+    const turn = state.turn + 1;
+    const speechEvents: EventEnvelope[] = [];
+    let turnEvents: readonly EventEnvelope[] = [];
+    const transport = new LoopbackVoiceTransport({
+      ttsChunkChars: this.#config.voiceConfig.loopback.ttsChunkChars
+    });
+
+    const result = await transport.run({
+      emit: async (event) => {
+        const envelope = await this.#emit({
+          actor: event.actor,
+          labels: event.labels,
+          payload: event.payload,
+          provenance: event.provenance,
+          sid,
+          turn: event.turn,
+          type: event.type
+        });
+        speechEvents.push(envelope);
+      },
+      labelFinalTranscript: (text, floorLabels) => escalateLabelsForContent(text, floorLabels).labels,
+      profile,
+      script,
+      submitFinalTranscript: async (input) => {
+        const payload: Record<string, unknown> = {
+          channel: "voice",
+          content: [{ kind: "text", text: input.text }],
+          ...(input.routingHints ? { routing_hints: input.routingHints } : {}),
+          speech: {
+            audio_ref: input.audioRef,
+            utterance_id: input.utteranceId
+          }
+        };
+        turnEvents = await this.#acceptTurnInput(socket, sid, payload, input.labels, input.routingHints, turn);
+        const final = turnEvents.filter((event) => event.type === "turn.final").at(-1);
+        return {
+          assistantFinalText: final ? payloadText(final.payload) : "",
+          labels: final?.labels ?? input.labels
+        };
+      },
+      turn
+    });
+
+    const allEvents = [...speechEvents, ...turnEvents];
+    this.#sendAck(socket, op, {
+      assistant_final_text: result.assistantFinalText,
+      event_counts: {
+        ...result.eventCounts,
+        ...eventCounts(allEvents)
+      },
+      log_path: join(this.#config.dataDir, "sessions", sid, "log.jsonl"),
+      replay_command: `fairy replay ${sid} --data-dir ${this.#config.dataDir}`,
+      sid,
+      transcript_text: result.transcriptText,
+      tts_chunk_count: result.ttsChunkCount,
+      turn
+    });
   }
 
   #subscribe(socket: WebSocket, sid: `ses_${string}`): void {

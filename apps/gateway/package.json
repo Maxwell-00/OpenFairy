@@ -22,6 +22,7 @@
     "@fairy/perception": "workspace:*",
     "@fairy/protocol": "workspace:*",
     "@fairy/tools-std": "workspace:*",
+    "@fairy/voice": "workspace:*",
     "ws": "^8.18.3"
   },
   "devDependencies": {

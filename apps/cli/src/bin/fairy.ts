@@ -7,6 +7,7 @@ import { runAffect, runPersona } from "../persona.js";
 import { runResearch } from "../research.js";
 import { runReplay } from "../replay.js";
 import { runArtifacts } from "../artifacts.js";
+import { runVoice } from "../voice.js";
 
 const [command, ...args] = process.argv.slice(2);
 
@@ -66,5 +67,10 @@ if (command === "affect") {
   process.exit(0);
 }
 
-console.error("Usage: fairy <doctor|chat|sessions|audit|artifacts|replay|memory|chronicle|research|persona|affect>");
+if (command === "voice") {
+  await runVoice(args);
+  process.exit(0);
+}
+
+console.error("Usage: fairy <doctor|chat|sessions|audit|artifacts|replay|memory|chronicle|research|persona|affect|voice>");
 process.exit(1);

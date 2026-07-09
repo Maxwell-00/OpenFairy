@@ -187,6 +187,22 @@ export const configSchema = {
         enabled: { type: "boolean" }
       }
     },
+    voice: {
+      type: "object",
+      additionalProperties: true,
+      properties: {
+        enabled: { type: "boolean" },
+        transport: { type: "string", enum: ["loopback"] },
+        loopback: {
+          type: "object",
+          additionalProperties: true,
+          properties: {
+            tts_chunk_chars: { type: "integer", minimum: 1 }
+          }
+        }
+      },
+      required: ["enabled", "transport", "loopback"]
+    },
     workspace: {
       type: "object",
       additionalProperties: true,

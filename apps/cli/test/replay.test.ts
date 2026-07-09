@@ -36,6 +36,108 @@ describe("fairy replay", () => {
     expect(rendered).toContain("hello replay");
   });
 
+  it("renders speech events compactly and preserves speech payloads in JSON output", async () => {
+    const dataDir = join(tmpdir(), `fairy-replay-speech-${Date.now()}`);
+    const sid = "ses_01J00000000000000000000000";
+    const sessionDir = join(dataDir, "sessions", sid);
+    await mkdir(sessionDir, { recursive: true });
+    const events = [
+      {
+        actor: "system",
+        id: "evt_01J00000000000000000000101",
+        labels: { residency: "region-restricted", sensitivity: "personal" },
+        payload: { mark_id: "asr-start", position_ms: 0 },
+        provenance: "agent",
+        sid,
+        ts: "2026-07-02T10:00:00.000Z",
+        turn: 1,
+        type: "speech.mark",
+        v: 1
+      },
+      {
+        actor: "user",
+        id: "evt_01J00000000000000000000102",
+        labels: { residency: "region-restricted", sensitivity: "personal" },
+        payload: { text: "hel", utterance_id: "utt_replay" },
+        provenance: "user",
+        sid,
+        ts: "2026-07-02T10:00:00.001Z",
+        turn: 1,
+        type: "speech.asr.partial",
+        v: 1
+      },
+      {
+        actor: "user",
+        id: "evt_01J00000000000000000000103",
+        labels: { residency: "region-restricted", sensitivity: "personal" },
+        payload: { audio_ref: "loopback://audio/utt_replay", text: "hello voice", utterance_id: "utt_replay" },
+        provenance: "user",
+        sid,
+        ts: "2026-07-02T10:00:00.002Z",
+        turn: 1,
+        type: "speech.asr.final",
+        v: 1
+      },
+      {
+        actor: "user",
+        id: "evt_01J00000000000000000000104",
+        labels: { residency: "region-restricted", sensitivity: "personal" },
+        payload: {
+          channel: "voice",
+          content: [{ kind: "text", text: "hello voice" }],
+          routing_hints: { prefer_local: true },
+          speech: { audio_ref: "loopback://audio/utt_replay", utterance_id: "utt_replay" }
+        },
+        provenance: "user",
+        sid,
+        ts: "2026-07-02T10:00:00.003Z",
+        turn: 1,
+        type: "turn.input",
+        v: 1
+      },
+      {
+        actor: "agent",
+        id: "evt_01J00000000000000000000105",
+        labels: { residency: "region-restricted", sensitivity: "personal" },
+        payload: { audio_ref: "loopback://tts/utt_replay:tts:001", chunk_id: "utt_replay:tts:001", text: "voice answer" },
+        provenance: "agent",
+        sid,
+        ts: "2026-07-02T10:00:00.004Z",
+        turn: 1,
+        type: "speech.tts.chunk",
+        v: 1
+      },
+      {
+        actor: "agent",
+        id: "evt_01J00000000000000000000106",
+        labels: { residency: "region-restricted", sensitivity: "personal" },
+        payload: { content: [{ kind: "text", text: "voice answer" }], finish_reason: "stop", usage: { estimated: true, input_tokens: 1, output_tokens: 1 } },
+        provenance: "agent",
+        sid,
+        ts: "2026-07-02T10:00:00.005Z",
+        turn: 1,
+        type: "turn.final",
+        v: 1
+      }
+    ];
+    await writeFile(join(sessionDir, "log.jsonl"), events.map((event) => JSON.stringify(event)).join("\n"), "utf8");
+
+    const result = await readReplayLog({ dataDir, sid });
+    const rendered = renderReplay(result, { json: false, manifests: false });
+    const json = renderReplay(result, { json: true, manifests: false });
+
+    expect(rendered).toContain("speech.mark asr-start 0ms");
+    expect(rendered).toContain("speech.asr.partial utt_replay hel");
+    expect(rendered).toContain("speech.asr.final utt_replay hello voice");
+    expect(rendered).toContain("speech.tts.chunk utt_replay:tts:001 voice answer");
+    expect(rendered).toContain("turn 1 > hello voice");
+    expect(rendered).toContain("turn 1 < voice answer");
+    expect(json).toContain("\"type\":\"speech.asr.final\"");
+    expect(json).toContain("\"audio_ref\":\"loopback://audio/utt_replay\"");
+    expect(json).toContain("\"routing_hints\":{\"prefer_local\":true}");
+    expect(json).not.toContain("data:audio/");
+  });
+
   it("renders trust decisions offline and preserves payloads in JSON output", async () => {
     const dataDir = join(tmpdir(), `fairy-replay-trust-${Date.now()}`);
     const sid = "ses_01J00000000000000000000000";

@@ -21,8 +21,17 @@ export interface GatewayRuntimeConfig {
   readonly permissionRules: readonly PermissionRule[];
   readonly personaRuntime: PersonaRuntime;
   readonly systemPrompt: string;
+  readonly voiceConfig: VoiceRuntimeConfig;
   readonly port: number;
   readonly workspaceRoot: string;
+}
+
+export interface VoiceRuntimeConfig {
+  readonly enabled: boolean;
+  readonly transport: "loopback";
+  readonly loopback: {
+    readonly ttsChunkChars: number;
+  };
 }
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
@@ -124,6 +133,18 @@ const readWorkspaceRoot = (config: Record<string, unknown>, cwd: string): string
   return resolve(typeof workspace.root === "string" ? workspace.root : cwd);
 };
 
+const readVoiceConfig = (config: Record<string, unknown>): VoiceRuntimeConfig => {
+  const voice = readBlock(config, "voice");
+  const loopback = isRecord(voice.loopback) ? voice.loopback : {};
+  return {
+    enabled: typeof voice.enabled === "boolean" ? voice.enabled : true,
+    transport: "loopback",
+    loopback: {
+      ttsChunkChars: typeof loopback.tts_chunk_chars === "number" ? loopback.tts_chunk_chars : 80
+    }
+  };
+};
+
 const resolveSecretRefForDevGateway = (ref: string, env: NodeJS.ProcessEnv): string => {
   const name = ref.slice("secret://".length);
   const normalized = name.toUpperCase().replace(/[^A-Z0-9]/g, "_");
@@ -204,6 +225,7 @@ export const loadGatewayConfig = (
     permissionRules: readPermissionRules(loaded.config),
     personaRuntime: loadPersonaRuntime(loaded.config, cwd),
     systemPrompt: readSystemPrompt(loaded.config),
+    voiceConfig: readVoiceConfig(loaded.config),
     port: options.port ?? configuredPort,
     workspaceRoot: readWorkspaceRoot(loaded.config, cwd)
   };

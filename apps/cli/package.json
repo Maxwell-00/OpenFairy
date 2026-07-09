@@ -19,9 +19,11 @@
     "@fairy/perception": "workspace:*",
     "@fairy/protocol": "workspace:*",
     "@fairy/research": "workspace:*",
+    "@fairy/voice": "workspace:*",
     "ws": "^8.18.3"
   },
   "devDependencies": {
+    "@fairy/testing": "workspace:*",
     "@types/ws": "^8.18.1"
   }
 }

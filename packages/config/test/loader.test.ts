@@ -30,7 +30,8 @@ describe("loadConfig", () => {
       roles: {},
       gateway: { port: 8787, auth: { token: "dev-token" } },
       governance: { home_regions: ["cn"] },
-      sandbox: { default_profile: "safe" }
+      sandbox: { default_profile: "safe" },
+      voice: { enabled: true, loopback: { tts_chunk_chars: 80 }, transport: "loopback" }
     });
     expect(loaded.sources.map((source) => [source.name, source.found])).toEqual([
       ["defaults", true],
@@ -291,6 +292,45 @@ describe("loadConfig", () => {
       ].join("\n")
     );
 
+    expect(() => loadConfig({ cwd, userConfigPath })).toThrow(ConfigValidationError);
+  });
+
+  it("validates loopback voice config", () => {
+    const cwd = makeTempDir();
+    const userConfigPath = join(cwd, "fairy.yaml");
+    writeFileSync(
+      userConfigPath,
+      [
+        "voice:",
+        "  enabled: false",
+        "  transport: loopback",
+        "  loopback:",
+        "    tts_chunk_chars: 12"
+      ].join("\n")
+    );
+
+    expect(loadConfig({ cwd, userConfigPath }).config).toMatchObject({
+      voice: { enabled: false, loopback: { tts_chunk_chars: 12 }, transport: "loopback" }
+    });
+
+    writeFileSync(
+      userConfigPath,
+      [
+        "voice:",
+        "  enabled: true",
+        "  transport: cloud"
+      ].join("\n")
+    );
+    expect(() => loadConfig({ cwd, userConfigPath })).toThrow(ConfigValidationError);
+
+    writeFileSync(
+      userConfigPath,
+      [
+        "voice:",
+        "  loopback:",
+        "    tts_chunk_chars: 0"
+      ].join("\n")
+    );
     expect(() => loadConfig({ cwd, userConfigPath })).toThrow(ConfigValidationError);
   });
 

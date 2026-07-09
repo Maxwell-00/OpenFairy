@@ -48,6 +48,11 @@ persona:
   root: extensions/personas
 affect:
   enabled: true
+voice:
+  enabled: true
+  transport: loopback
+  loopback:
+    tts_chunk_chars: 80
 search:
   engine:
     kind: mock

@@ -108,6 +108,14 @@ const renderChronological = (events: readonly EventEnvelope[]): string[] => {
     }
     if (event.type === "turn.input") {
       lines.push(`turn ${event.turn} > ${short(redactText(payloadText(event.payload)))}`);
+    } else if (event.type === "speech.asr.partial" && isRecord(event.payload)) {
+      lines.push(`turn ${event.turn} speech.asr.partial ${String(event.payload.utterance_id ?? "?")} ${short(redactText(String(event.payload.text ?? "")))}`);
+    } else if (event.type === "speech.asr.final" && isRecord(event.payload)) {
+      lines.push(`turn ${event.turn} speech.asr.final ${String(event.payload.utterance_id ?? "?")} ${short(redactText(String(event.payload.text ?? "")))}`);
+    } else if (event.type === "speech.tts.chunk" && isRecord(event.payload)) {
+      lines.push(`turn ${event.turn} speech.tts.chunk ${String(event.payload.chunk_id ?? "?")} ${short(redactText(String(event.payload.text ?? "")))}`);
+    } else if (event.type === "speech.mark" && isRecord(event.payload)) {
+      lines.push(`turn ${event.turn} speech.mark ${String(event.payload.mark_id ?? "?")} ${String(event.payload.position_ms ?? "?")}ms`);
     } else if (event.type === "tool.call" && isRecord(event.payload)) {
       lines.push(`turn ${event.turn} tool.call ${String(event.payload.tool ?? "?")} ${String(event.payload.call_id ?? "")}`);
     } else if (event.type === "tool.result" && isRecord(event.payload)) {
