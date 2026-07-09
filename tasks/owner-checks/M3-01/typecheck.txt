@@ -1,0 +1,29 @@
+Scope: 14 of 15 workspace projects
+packages/channels typecheck$ tsc -p tsconfig.json --noEmit
+packages/config typecheck$ tsc -p tsconfig.json --noEmit
+packages/memory typecheck$ tsc -p tsconfig.json --noEmit
+packages/model-gateway typecheck$ tsc -p tsconfig.json --noEmit
+packages/channels typecheck: Done
+packages/orchestrator typecheck$ tsc -p tsconfig.json --noEmit
+packages/config typecheck: Done
+packages/perception typecheck$ tsc -p tsconfig.json --noEmit
+packages/memory typecheck: Done
+packages/protocol typecheck$ tsc -p tsconfig.json --noEmit
+packages/model-gateway typecheck: Done
+packages/research typecheck$ tsc -p tsconfig.json --noEmit
+packages/orchestrator typecheck: Done
+packages/perception typecheck: Done
+packages/protocol typecheck: Done
+packages/research typecheck: Done
+packages/tools-std typecheck$ tsc -p tsconfig.json --noEmit
+packages/voice typecheck$ tsc -p tsconfig.json --noEmit
+packages/voice typecheck: Done
+packages/tools-std typecheck: Done
+packages/kernel typecheck$ tsc -p tsconfig.json --noEmit
+packages/kernel typecheck: Done
+apps/gateway typecheck$ tsc -p tsconfig.json --noEmit
+packages/testing typecheck$ tsc -p tsconfig.json --noEmit
+apps/gateway typecheck: Done
+packages/testing typecheck: Done
+apps/cli typecheck$ tsc -p tsconfig.json --noEmit
+apps/cli typecheck: Done

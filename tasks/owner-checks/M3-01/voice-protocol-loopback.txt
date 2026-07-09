@@ -1,0 +1,96 @@
+$ vitest run --reporter verbose "--reporter=verbose" "-t" "voice.protocol-loopback-v0"
+
+[1m[30m[46m RUN [49m[39m[22m [36mv4.1.9 [39m[90mE:/Claude_Projects/Projects/Fairy/OpenFairy/packages/testing[39m
+
+(node:28096) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:23888) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:13904) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+ [2m[90m↓[39m[22m test/memory.canary.test.ts[2m > [22mmemory.canary[2m > [22mis deferred until dream-cycle consolidation exists
+ [2m[90m↓[39m[22m test/memory.leakage.test.ts[2m > [22mmemory.leakage[2m > [22mrecords retrieval denials without leaking under-cleared personal text
+ [2m[90m↓[39m[22m test/memory.deletion-permanence.test.ts[2m > [22mmemory.deletion-permanence[2m > [22mkeeps deleted memories tombstoned across rebuild and retrieval
+ [2m[90m↓[39m[22m test/research.evals.test.ts[2m > [22mresearch.citation-precision[2m > [22mrequires each cited claim to resolve to a supporting snapshot span
+ [2m[90m↓[39m[22m test/research.evals.test.ts[2m > [22mresearch.zh-en-parity[2m > [22mreaches comparable seeded source grades and an overlapping canonical source
+ [2m[90m↓[39m[22m test/research.evals.test.ts[2m > [22minjection.research-v0[2m > [22mkeeps malicious fetched instructions quarantined and out of memory records
+(node:13280) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:8824) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:34952) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:27056) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+ [2m[90m↓[39m[22m test/conformance.test.ts[2m > [22mconformance kit v1[2m > [22mpasses the mock OpenAI-compatible provider suite
+ [2m[90m↓[39m[22m test/conformance.test.ts[2m > [22mconformance kit v1[2m > [22mdoes not report live tool capability as pass when only done is observed
+ [2m[90m↓[39m[22m test/index.test.ts[2m > [22m@fairy/testing[2m > [22mexposes the M0 protocol conformance manifest
+ [2m[90m↓[39m[22m test/gateway.e2e.test.ts[2m > [22mgateway M1 e2e[2m > [22mserves health/meta/sessions, streams a model-backed turn, and writes valid JSONL
+ [2m[90m↓[39m[22m test/gateway.e2e.test.ts[2m > [22mgateway M1 e2e[2m > [22mfalls back to a configured secondary model with visible progress and trace
+ [2m[90m↓[39m[22m test/gateway.e2e.test.ts[2m > [22mgateway M1 e2e[2m > [22mdenies a secret turn before provider I/O when no model has clearance
+ [2m[90m↓[39m[22m test/gateway.e2e.test.ts[2m > [22mgateway M1 e2e[2m > [22mskips a denied primary and routes a secret turn to an allowed local fallback
+ [2m[90m↓[39m[22m test/gateway.e2e.test.ts[2m > [22mgateway M1 e2e[2m > [22mkeeps history contamination gated while secret content remains in the assembled prompt
+ [2m[90m↓[39m[22m test/gateway.e2e.test.ts[2m > [22mgateway M1 e2e[2m > [22memits MemoryGate allow and memory.written for a safe explicit preference
+ [2m[90m↓[39m[22m test/gateway.e2e.test.ts[2m > [22mgateway M1 e2e[2m > [22memits MemoryGate deny and no memory.written for an explicit secret
+ [2m[90m↓[39m[22m test/gateway.e2e.test.ts[2m > [22mgateway M1 e2e[2m > [22mdoes not inject irrelevant memories into the memory zone
+ [2m[90m↓[39m[22m test/gateway.e2e.test.ts[2m > [22mgateway M1 e2e[2m > [22mkeeps personal local-only memory out of an under-cleared cloud route
+ [2m[90m↓[39m[22m test/gateway.e2e.test.ts[2m > [22mgateway M1 e2e[2m > [22madmits personal local-only memory only when a cleared local fallback is selected
+ [2m[90m↓[39m[22m test/gateway.e2e.test.ts[2m > [22mgateway M1 e2e[2m > [22mappends a synthetic interruption after restart and continues with the next turn number
+ [2m[90m↓[39m[22m test/gateway.e2e.test.ts[2m > [22mgateway M1 e2e[2m > [22mcancels an in-flight turn and emits turn.interrupted
+ [2m[90m↓[39m[22m test/gateway.e2e.test.ts[2m > [22mgateway M1 e2e[2m > [22muses deterministic ack and op-error transport frames for non-fact ops
+ [2m[90m↓[39m[22m test/gateway.e2e.test.ts[2m > [22mgateway M1 e2e[2m > [22mruns an auto-allowed fs.read tool call, spills oversized results, and completes
+ [2m[90m↓[39m[22m test/gateway.e2e.test.ts[2m > [22mgateway M1 e2e[2m > [22mruns prompted tool calls through the normal tool loop
+ [2m[90m↓[39m[22m test/gateway.e2e.test.ts[2m > [22mgateway M1 e2e[2m > [22mrepairs prompted tool calls before executing them
+ [2m[90m↓[39m[22m test/gateway.e2e.test.ts[2m > [22mgateway M1 e2e[2m > [22msurfaces prompted tool repair exhaustion as an error envelope
+ [2m[90m↓[39m[22m test/gateway.e2e.test.ts[2m > [22mgateway M1 e2e[2m > [22mcontinues gracefully when policy denies a tool call
+ [2m[90m↓[39m[22m test/gateway.e2e.test.ts[2m > [22mgateway M1 e2e[2m > [22mreturns audit rows through /audit?limit=N after an auto-allowed tool turn
+ [2m[90m↓[39m[22m test/gateway.e2e.test.ts[2m > [22mgateway M1 e2e[2m > [22mdrives context reduction manifests through L1-L3 and renders fairy replay manifests offline
+ [2m[90m↓[39m[22m test/gateway.e2e.test.ts[2m > [22mgateway M1 e2e[2m > [22memits session.resumed as the replay sentinel on attach
+ [2m[90m↓[39m[22m test/gateway.e2e.test.ts[2m > [22mgateway M1 e2e[2m > [22mruns research tools through the normal tool loop and renders replay
+ [2m[90m↓[39m[22m test/gateway.e2e.test.ts[2m > [22mgateway M1 e2e[2m > [22mkeeps research injection pages quarantined through the TurnRunner tool loop
+ [2m[90m↓[39m[22m test/gateway.e2e.test.ts[2m > [22mgateway M1 e2e[2m > [22mblocks secret egress from malicious research content before outbound web fetch
+ [2m[90m↓[39m[22m test/gateway.e2e.test.ts[2m > [22mgateway M1 e2e[2m > [22mblocks shell.run secret commands before sandbox/container execution
+ [2m[90m↓[39m[22m test/gateway.e2e.test.ts[2m > [22mgateway M1 e2e[2m > [22mallows safe public web.search queries through the normal tool loop
+ [2m[90m↓[39m[22m test/gateway.e2e.test.ts[2m > [22mgateway M1 e2e[2m > [22mblocks personal research text from egress to global web tools
+ [2m[90m↓[39m[22m test/gateway.e2e.test.ts[2m > [22mgateway M1 e2e[2m > [22mallows configured personal egress tools and audits the pass decision
+ [2m[90m↓[39m[22m test/gateway.e2e.test.ts[2m > [22mgateway M1 e2e[2m > [22mrecords untrusted research provenance in permission audit context without narrowing by default
+ [2m[90m↓[39m[22m test/gateway.e2e.test.ts[2m > [22mgateway M1 e2e[2m > [22mcan deny explicitly untrusted-channel tool instructions through config rules
+ [2m[90m↓[39m[22m test/gateway.e2e.test.ts[2m > [22mgateway M1 e2e[2m > [22mcomposes authenticated research snapshot labels before route clearance
+ [2m[90m↓[39m[22m test/gateway.e2e.test.ts[2m > [22mgateway M1 e2e[2m > [22mperception.quarantine-v0[2m > [22mruns vision describe/OCR tools, renders artifacts in replay, and spills long OCR
+ [2m[90m↓[39m[22m test/gateway.e2e.test.ts[2m > [22mgateway M1 e2e[2m > [22mperception.quarantine-v0[2m > [22mkeeps malicious OCR instructions quarantined and out of instruction roles
+ [2m[90m↓[39m[22m test/gateway.e2e.test.ts[2m > [22mgateway M1 e2e[2m > [22mperception.quarantine-v0[2m > [22mroutes OCR-derived fake API key text only to a cleared local fallback
+ [2m[90m↓[39m[22m test/gateway.e2e.test.ts[2m > [22mgateway M1 e2e[2m > [22mperception.quarantine-v0[2m > [22mblocks egress of OCR-derived fake API key text before outbound fetch
+ [2m[90m↓[39m[22m test/gateway.e2e.test.ts[2m > [22mgateway M1 e2e[2m > [22mcontext.compaction-regression[2m > [22mforces L4/L5, preserves decisions/refs/errors/quarantine, and renders replay
+ [2m[90m↓[39m[22m test/gateway.e2e.test.ts[2m > [22mgateway M1 e2e[2m > [22mcontext.compaction-regression[2m > [22mroutes compaction through cleared summarizer fallback and keeps labels gating main
+ [2m[90m↓[39m[22m test/gateway.e2e.test.ts[2m > [22mgateway M1 e2e[2m > [22mcontext.compaction-regression[2m > [22mskips model-backed compaction when no summarizer candidate is cleared and completes on the original context path
+ [2m[90m↓[39m[22m test/gateway.e2e.test.ts[2m > [22mgateway M1 e2e[2m > [22mcontext.compaction-regression[2m > [22mfalls back to the original context path when compactor output is invalid
+ [2m[90m↓[39m[22m test/gateway.e2e.test.ts[2m > [22mgateway M1 e2e[2m > [22mchronicle.workspace-v0[2m > [22mkeeps append-only Chronicle records workspace-scoped
+ [2m[90m↓[39m[22m test/gateway.e2e.test.ts[2m > [22mgateway M1 e2e[2m > [22mchronicle.workspace-v0[2m > [22mruns chronicle.log and chronicle.query through the tool loop and renders replay
+ [2m[90m↓[39m[22m test/gateway.e2e.test.ts[2m > [22mgateway M1 e2e[2m > [22mchronicle.workspace-v0[2m > [22mdenies secret-like Chronicle writes without creating records
+ [2m[90m↓[39m[22m test/gateway.e2e.test.ts[2m > [22mgateway M1 e2e[2m > [22mchronicle.workspace-v0[2m > [22minjects only relevant Chronicle digest entries and gates under-cleared primary routing
+ [2m[90m↓[39m[22m test/gateway.e2e.test.ts[2m > [22mgateway M1 e2e[2m > [22mdream-cycle.consolidation-v0[2m > [22mcreates deterministic manual reports with redaction, provenance, pending skills, and no scheduler
+ [2m[90m↓[39m[22m test/gateway.e2e.test.ts[2m > [22mgateway M1 e2e[2m > [22mlogs affect.updated for an enabled persona turn without writing memory
+ [2m[90m↓[39m[22m test/gateway.e2e.test.ts[2m > [22mgateway M1 e2e[2m > [22mkeeps affect disabled silent while rendering a plain persona zone
+ [2m[90m↓[39m[22m test/gateway.e2e.test.ts[2m > [22mgateway M1 e2e[2m > [22mdoes not change route clearance or permission outcome after distress affect state changes
+ [2m[90m↓[39m[22m test/gateway.e2e.test.ts[2m > [22mgateway M1 e2e[2m > [22masks once for shell.run, stores a session grant, and audits execution
+ [2m[90m↓[39m[22m test/persona-affect.evals.test.ts[2m > [22mpersona.consistency[2m > [22mrenders allowed style markers and suppresses humor for distress
+ [2m[90m↓[39m[22m test/persona-affect.evals.test.ts[2m > [22mpersona.consistency[2m > [22mappraises assistant-directed criticism tersely without self-blame patterns
+ [2m[90m↓[39m[22m test/persona-affect.evals.test.ts[2m > [22msubstance.invariance[2m > [22mpreserves tools, permissions, routing, and factual payload across affect extremes
+ [2m[90m↓[39m[22m test/persona-affect.evals.test.ts[2m > [22msubstance.invariance[2m > [22mpreserves tools, permissions, routing, and factual payload under negative-feedback affect
+ [2m[90m↓[39m[22m test/governance.evals.test.ts[2m > [22mlabel.conformance[2m > [22menforces max/intersection derivation without automatic downgrade
+ [2m[90m↓[39m[22m test/governance.evals.test.ts[2m > [22mlabel.conformance[2m > [22mtreats routing hints as advisory and never as gates
+ [2m[90m↓[39m[22m test/governance.evals.test.ts[2m > [22mlabel.conformance[2m > [22mpins the complete governance profile default tables
+ [2m[90m↓[39m[22m test/governance.evals.test.ts[2m > [22mlabel.conformance[2m > [22mcovers semantic escalation and near-miss non-escalation
+ [2m[90m↓[39m[22m test/governance.evals.test.ts[2m > [22mlabel.conformance[2m > [22mkeeps secret and personal local-only labels away from non-cleared model providers
+ [2m[90m↓[39m[22m test/governance.evals.test.ts[2m > [22mlabel.conformance[2m > [22mblocks seeded secret content from outbound tool arguments and redacts diagnostics
+ [2m[90m↓[39m[22m test/governance.evals.test.ts[2m > [22mgovernance.friction-canary[2m > [22memits a deterministic parseable report for route-denied recovery
+ [32m✓[39m test/voice.protocol-loopback.test.ts[2m > [22mvoice.protocol-loopback-v0[2m > [22mvalidates registered speech fixtures and loopback event ordering[33m 1023[2mms[22m[39m
+ [32m✓[39m test/voice.protocol-loopback.test.ts[2m > [22mvoice.protocol-loopback-v0[2m > [22mroutes spoken secret content away from an under-cleared primary[33m 1009[2mms[22m[39m
+ [32m✓[39m test/voice.protocol-loopback.test.ts[2m > [22mvoice.protocol-loopback-v0[2m > [22minherits MemoryGate admission and secret-deny behavior for voice turns[33m 963[2mms[22m[39m
+ [32m✓[39m test/voice.protocol-loopback.test.ts[2m > [22mvoice.protocol-loopback-v0[2m > [22mblocks spoken secret egress and keeps TTS on visible final text only[33m 1516[2mms[22m[39m
+
+[2m Test Files [22m [1m[32m1 passed[39m[22m[2m | [22m[33m9 skipped[39m[90m (10)[39m
+[2m      Tests [22m [1m[32m4 passed[39m[22m[2m | [22m[33m68 skipped[39m[90m (72)[39m
+[2m   Start at [22m 14:07:24
+[2m   Duration [22m 5.26s[2m (transform 1.25s, setup 0ms, import 4.32s, tests 4.51s, environment 1ms)[22m
+
