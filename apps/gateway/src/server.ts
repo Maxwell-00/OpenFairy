@@ -15,7 +15,7 @@ import {
   type Provenance
 } from "@fairy/protocol";
 import { createStandardToolRegistry } from "@fairy/tools-std";
-import { DuplexVoiceTransport, LoopbackVoiceTransport, normalizeDuplexScript, normalizeLoopbackScript, type SubmitFinalTranscriptInput } from "@fairy/voice";
+import { DuplexVoiceTransport, LoopbackVoiceTransport, normalizeDuplexScript, normalizeLoopbackScript, WebSocketVoiceTransport, type SubmitFinalTranscriptInput } from "@fairy/voice";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import { join } from "node:path";
 import { WebSocket, WebSocketServer } from "ws";
@@ -654,6 +654,19 @@ export class MinimalGateway {
       return;
     }
 
+    if (message.op === "voice.ws") {
+      if (!isSessionId(message.sid)) {
+        this.#sendOpError(socket, op, "voice.ws requires sid");
+        return;
+      }
+      if (!this.#sessions.has(message.sid)) {
+        this.#sendOpError(socket, op, `unknown session ${message.sid}`, { sid: message.sid });
+        return;
+      }
+      await this.#runVoiceWebSocket(socket, message.sid, message.script, op);
+      return;
+    }
+
     if (message.op === "event") {
       const result = validateEvent(message.event);
       if (!result.ok || result.event.type !== "turn.input") {
@@ -1006,6 +1019,77 @@ export class MinimalGateway {
       transcript_text: result.transcriptText,
       tts_chunk_count: result.ttsChunkCount,
       turn
+    });
+  }
+
+  async #runVoiceWebSocket(socket: WebSocket, sid: `ses_${string}`, scriptValue: unknown, op: string): Promise<void> {
+    if (!this.#config.voiceConfig.enabled) {
+      this.#sendOpError(socket, op, "voice websocket is disabled", { sid });
+      return;
+    }
+    let script;
+    try {
+      script = normalizeDuplexScript(scriptValue);
+    } catch (error) {
+      this.#sendOpError(socket, op, error instanceof Error ? error.message : String(error), { sid });
+      return;
+    }
+    const state = this.#sessions.get(sid);
+    if (!state) {
+      throw new Error(`unknown session ${sid}`);
+    }
+    const profile = governanceProfile(this.#config.config);
+    const turn = state.turn + 1;
+    const speechEvents: EventEnvelope[] = [];
+    let turnEvents: readonly EventEnvelope[] = [];
+    const transport = new WebSocketVoiceTransport({
+      ttsChunkChars: this.#config.voiceConfig.loopback.ttsChunkChars
+    });
+
+    const result = await transport.run({
+      emit: async (event) => {
+        const envelope = await this.#emit({
+          actor: event.actor,
+          labels: event.labels,
+          payload: event.payload,
+          provenance: event.provenance,
+          sid,
+          turn: event.turn,
+          type: event.type
+        });
+        speechEvents.push(envelope);
+      },
+      labelFinalTranscript: (text, floorLabels) => escalateLabelsForContent(text, floorLabels).labels,
+      profile,
+      script,
+      submitFinalTranscript: async (input) => {
+        const submitted = await this.#submitVoiceFinalTranscript(socket, sid, input, turn);
+        turnEvents = submitted.turnEvents;
+        return {
+          assistantFinalText: submitted.assistantFinalText,
+          labels: submitted.labels
+        };
+      },
+      turn
+    });
+
+    const allEvents = [...speechEvents, ...turnEvents];
+    this.#sendAck(socket, op, {
+      assistant_final_text: result.assistantFinalText,
+      cancelled: result.cancelled,
+      event_counts: {
+        ...result.eventCounts,
+        ...eventCounts(allEvents)
+      },
+      frame_counts: result.frameCounts,
+      log_path: join(this.#config.dataDir, "sessions", sid, "log.jsonl"),
+      model_request_count: allEvents.filter((event) => event.type === "turn.final").length,
+      replay_command: `fairy replay ${sid} --data-dir ${this.#config.dataDir}`,
+      sid,
+      transcript_text: result.transcriptText,
+      tts_chunk_count: result.ttsChunkCount,
+      turn,
+      websocket_frame_counts: result.websocketFrameCounts
     });
   }
 

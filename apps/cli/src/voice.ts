@@ -4,7 +4,7 @@ import { readFile } from "node:fs/promises";
 import WebSocket from "ws";
 
 interface VoiceOptions {
-  readonly command: "duplex" | "loopback";
+  readonly command: "duplex" | "loopback" | "ws";
   readonly gateway: string;
   readonly json: boolean;
   readonly scriptPath: string;
@@ -191,8 +191,8 @@ const summaryFromEvents = (sid: string, op: string, events: readonly EventEnvelo
 
 export const parseVoiceOptions = (args: readonly string[], env: NodeJS.ProcessEnv = process.env): VoiceOptions => {
   const [subcommand] = args;
-  if (subcommand !== "loopback" && subcommand !== "duplex") {
-    throw new Error("Usage: fairy voice <loopback|duplex> --script path [--session sid] [--gateway url] [--token token] [--json]");
+  if (subcommand !== "loopback" && subcommand !== "duplex" && subcommand !== "ws") {
+    throw new Error("Usage: fairy voice <loopback|duplex|ws> --script path [--session sid] [--gateway url] [--token token] [--json]");
   }
   const session = readOption(args, "--session");
   const scriptPath = readOption(args, "--script");

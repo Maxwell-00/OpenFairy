@@ -257,4 +257,115 @@ describe("fairy voice CLI", () => {
       await stopGateway(gateway);
     }
   }, CLI_VOICE_E2E_TIMEOUT_MS);
+
+  it("runs websocket conformance through the gateway and prints parseable JSON", async () => {
+    provider = await MockOpenAIChatServer.start({
+      reasoning: ["hidden websocket plan"],
+      text: ["voice websocket answer"],
+      usage: { completion_tokens: 3, prompt_tokens: 4, total_tokens: 7 }
+    });
+    const temp = await mkdtemp(join(tmpdir(), "fairy-voice-websocket-cli-"));
+    const dataDir = join(temp, "data");
+    const configPath = join(temp, "fairy.yaml");
+    const scriptPath = join(temp, "script.json");
+    const token = "voice-websocket-cli-token";
+    await writeFile(configPath, [
+      "models:",
+      "  - id: mock-main",
+      "    transport: openai-chat",
+      `    base_url: ${JSON.stringify(provider.url)}`,
+      "    model: mock-model",
+      "    data_clearance:",
+      "      max_sensitivity: personal",
+      "      residency: [region-restricted]",
+      "      regions: [cn]",
+      "roles:",
+      "  main:",
+      "    model: mock-main",
+      "gateway:",
+      "  port: 0",
+      `  data_dir: ${JSON.stringify(dataDir.replace(/\\/g, "/"))}`,
+      "  auth:",
+      `    token: ${JSON.stringify(token)}`,
+      "affect:",
+      "  enabled: false",
+      "persona:",
+      "  enabled: false"
+    ].join("\n"), "utf8");
+    await writeFile(scriptPath, JSON.stringify({
+      audio_frame_bytes: [8, 8],
+      frame_labels: { residency: "global-ok", sensitivity: "public" },
+      partials: ["voice", "voice websocket"],
+      text: "voice websocket request",
+      utterance_id: "utt_cli_websocket"
+    }), "utf8");
+    const gateway = startGateway(configPath);
+
+    try {
+      const port = await waitForGateway(gateway);
+      const outputLines: string[] = [];
+      const originalLog = console.log;
+      console.log = (value?: unknown): void => {
+        outputLines.push(String(value ?? ""));
+      };
+      try {
+        await runVoice([
+          "ws",
+          "--gateway",
+          `ws://127.0.0.1:${port}`,
+          "--token",
+          token,
+          "--script",
+          scriptPath,
+          "--json"
+        ]);
+      } finally {
+        console.log = originalLog;
+      }
+      const parsed = JSON.parse(outputLines.join("\n").trim()) as {
+        assistant_final_text: string;
+        event_counts: Record<string, number>;
+        frame_counts: Record<string, number>;
+        log_path?: string;
+        model_request_count: number;
+        sid: string;
+        transcript_text: string;
+        tts_chunk_count: number;
+        websocket_frame_counts: Record<string, number>;
+      };
+
+      expect(parsed.sid).toMatch(/^ses_/);
+      expect(outputLines.join("\n")).not.toContain("hidden websocket plan");
+      expect(parsed.transcript_text).toBe("voice websocket request");
+      expect(parsed.assistant_final_text).toBe("voice websocket answer");
+      expect(parsed.model_request_count).toBe(1);
+      expect(parsed.frame_counts).toMatchObject({
+        "control.asr.final": 1,
+        "control.asr.partial": 2,
+        "control.tts.request": 1,
+        audio: 3
+      });
+      expect(parsed.websocket_frame_counts).toMatchObject({
+        "audio.received": 3,
+        "audio.sent": 3
+      });
+      expect(parsed.event_counts).toMatchObject({
+        "speech.asr.final": 1,
+        "speech.asr.partial": 2,
+        "speech.tts.chunk": 1,
+        "turn.input": 1,
+        "turn.final": 1
+      });
+      const rawLog = await readFile(parsed.log_path ?? join(dataDir, "sessions", parsed.sid, "log.jsonl"), "utf8");
+      expect(rawLog).toContain("\"type\":\"speech.asr.final\"");
+      expect(rawLog).toContain("\"channel\":\"voice\"");
+      expect(rawLog).not.toContain("voice.ws.");
+      expect(rawLog).not.toContain("voice.frame.");
+      expect(rawLog).not.toContain("speech.worker.");
+      expect(rawLog).not.toContain("data:audio/");
+      expect(rawLog).not.toMatch(/[A-Za-z0-9+/]{120,}={0,2}/);
+    } finally {
+      await stopGateway(gateway);
+    }
+  }, CLI_VOICE_E2E_TIMEOUT_MS);
 });

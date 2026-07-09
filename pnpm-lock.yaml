@@ -206,6 +206,13 @@ importers:
       '@fairy/protocol':
         specifier: workspace:*
         version: link:../protocol
+      ws:
+        specifier: ^8.18.3
+        version: 8.21.0
+    devDependencies:
+      '@types/ws':
+        specifier: ^8.18.1
+        version: 8.18.1
 
 packages:
 

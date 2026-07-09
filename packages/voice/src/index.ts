@@ -1,4 +1,7 @@
 import { stableStringify, type Actor, type EventEnvelope, type Labels, type Provenance } from "@fairy/protocol";
+import { randomUUID } from "node:crypto";
+import { createServer, type IncomingMessage } from "node:http";
+import WebSocket, { WebSocketServer, type RawData } from "ws";
 
 export type GovernanceProfile = "balanced" | "sovereign" | "cloud-friendly";
 
@@ -354,8 +357,56 @@ export interface MockSpeechDuplexWorkerOptions {
   readonly ttsChunkChars?: number;
 }
 
+export interface VoiceWebSocketCodecOptions {
+  readonly maxFrameBytes?: number;
+}
+
+export interface VoiceWebSocketFrameCounter {
+  readonly direction: "received" | "sent";
+  readonly family: "audio" | "control";
+}
+
+export interface WebSocketVoiceDuplexTransportOptions extends VoiceDuplexPairOptions {
+  readonly onWebSocketFrame?: (frame: VoiceWebSocketFrameCounter) => void;
+}
+
+export interface LocalVoiceWebSocketEndpoint {
+  readonly host: typeof voiceWebSocketLoopbackHost;
+  readonly port: number;
+  readonly url: string;
+  acceptedConnections(): readonly WebSocketVoiceDuplexTransport[];
+  close(): Promise<void>;
+  rejectedConnections(): number;
+}
+
+export interface LocalVoiceWebSocketEndpointOptions extends WebSocketVoiceDuplexTransportOptions {
+  readonly onConnection?: (transport: WebSocketVoiceDuplexTransport) => void | Promise<void>;
+  readonly token: string;
+}
+
+export interface WebSocketVoiceDuplexPair {
+  readonly client: WebSocketVoiceDuplexTransport;
+  close(reason?: string): Promise<void>;
+  readonly endpoint: LocalVoiceWebSocketEndpoint;
+  readonly server: WebSocketVoiceDuplexTransport;
+  websocketFrameCounts(): Readonly<Record<string, number>>;
+}
+
+export interface WebSocketVoicePairOptions extends VoiceDuplexPairOptions {
+  readonly token?: string;
+}
+
+export interface WebSocketVoiceTransportRunResult extends DuplexVoiceTransportRunResult {
+  readonly websocketFrameCounts: Readonly<Record<string, number>>;
+}
+
+export interface WebSocketVoiceTransportOptions extends DuplexVoiceTransportOptions {
+  readonly token?: string;
+}
+
 export const defaultVoiceMaxFrameBytes = 65_536;
 export const defaultVoiceMaxQueueFrames = 64;
+export const voiceWebSocketLoopbackHost = "127.0.0.1" as const;
 
 export const duplexMarkVocabulary = [
   "asr-start",
@@ -712,6 +763,406 @@ export const createVoiceDuplexPair = (
   left.attachPeer(right);
   right.attachPeer(left);
   return [left, right];
+};
+
+const textEncoder = new TextEncoder();
+const textDecoder = new TextDecoder();
+
+const countRecord = (counts: Record<string, number>, key: string): void => {
+  counts[key] = (counts[key] ?? 0) + 1;
+};
+
+const safeWebSocketErrorFrame = (code: string): VoiceControlFrame => ({
+  code,
+  kind: "error",
+  message: "invalid voice websocket message",
+  retryable: false
+});
+
+const requestToken = (request: IncomingMessage): string | undefined => {
+  const authorization = request.headers.authorization;
+  if (authorization?.startsWith("Bearer ")) {
+    return authorization.slice("Bearer ".length);
+  }
+  const parsed = new URL(request.url ?? "/", `ws://${voiceWebSocketLoopbackHost}`);
+  return parsed.searchParams.get("token") ?? undefined;
+};
+
+const rawDataBytes = (data: RawData): Uint8Array => {
+  if (Array.isArray(data)) {
+    const length = data.reduce((total, item) => total + item.byteLength, 0);
+    const output = new Uint8Array(length);
+    let offset = 0;
+    for (const item of data) {
+      output.set(item, offset);
+      offset += item.byteLength;
+    }
+    return output;
+  }
+  if (data instanceof ArrayBuffer) {
+    return new Uint8Array(data);
+  }
+  return new Uint8Array(data.buffer, data.byteOffset, data.byteLength);
+};
+
+const asBytes = (value: Uint8Array | ArrayBuffer): Uint8Array =>
+  value instanceof Uint8Array ? value : new Uint8Array(value);
+
+const websocketSend = (socket: WebSocket, data: string | Uint8Array, binary = false): Promise<void> =>
+  new Promise((resolve, reject) => {
+    socket.send(data, { binary }, (error) => {
+      if (error) {
+        reject(error);
+        return;
+      }
+      resolve();
+    });
+  });
+
+const withVoiceWebSocketDeadline = async <T>(
+  name: string,
+  promise: Promise<T>,
+  timeoutMs = 5000
+): Promise<T> => {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      promise,
+      new Promise<never>((_resolve, reject) => {
+        timer = setTimeout(() => reject(new Error(`timed out waiting for voice websocket ${name}`)), timeoutMs);
+      })
+    ]);
+  } finally {
+    if (timer) {
+      clearTimeout(timer);
+    }
+  }
+};
+
+export const encodeVoiceWebSocketControlMessage = (frame: VoiceControlFrame): string =>
+  encodeVoiceControlFrame(frame);
+
+export const decodeVoiceWebSocketControlMessage = (message: string): VoiceControlFrame =>
+  decodeVoiceControlFrame(message);
+
+export const encodeVoiceWebSocketAudioMessage = (
+  frame: VoiceAudioFrame,
+  options: VoiceWebSocketCodecOptions = {}
+): Uint8Array => {
+  const result = validateVoiceAudioFrame(frame, options.maxFrameBytes === undefined ? {} : { maxBytes: options.maxFrameBytes });
+  if (!result.ok) {
+    throw new Error(`invalid voice websocket audio frame: ${result.issues.map((issue) => `${issue.path} ${issue.message}`).join("; ")}`);
+  }
+  const header = stableStringify({
+    ...(frame.final !== undefined ? { final: frame.final } : {}),
+    seq: frame.sequence,
+    stream_id: frame.stream_id
+  });
+  const headerBytes = textEncoder.encode(header);
+  const output = new Uint8Array(4 + headerBytes.byteLength + frame.data.byteLength);
+  const view = new DataView(output.buffer, output.byteOffset, output.byteLength);
+  view.setUint32(0, headerBytes.byteLength, false);
+  output.set(headerBytes, 4);
+  output.set(frame.data, 4 + headerBytes.byteLength);
+  return output;
+};
+
+export const decodeVoiceWebSocketAudioMessage = (
+  message: Uint8Array | ArrayBuffer,
+  options: VoiceWebSocketCodecOptions = {}
+): VoiceAudioFrame => {
+  const bytes = asBytes(message);
+  if (bytes.byteLength < 4) {
+    throw new Error("invalid voice websocket audio frame: missing header length");
+  }
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  const headerLength = view.getUint32(0, false);
+  if (headerLength === 0 || headerLength > bytes.byteLength - 4) {
+    throw new Error("invalid voice websocket audio frame: invalid header length");
+  }
+  let header: unknown;
+  try {
+    header = JSON.parse(textDecoder.decode(bytes.slice(4, 4 + headerLength))) as unknown;
+  } catch {
+    throw new Error("invalid voice websocket audio frame: malformed header");
+  }
+  if (!isRecord(header)) {
+    throw new Error("invalid voice websocket audio frame: header must be an object");
+  }
+  const frame = {
+    data: bytes.slice(4 + headerLength),
+    ...(header.final !== undefined ? { final: header.final } : {}),
+    sequence: header.seq,
+    stream_id: header.stream_id
+  };
+  const result = validateVoiceAudioFrame(frame, options.maxFrameBytes === undefined ? {} : { maxBytes: options.maxFrameBytes });
+  if (!result.ok) {
+    throw new Error(`invalid voice websocket audio frame: ${result.issues.map((issue) => `${issue.path} ${issue.message}`).join("; ")}`);
+  }
+  return result.frame;
+};
+
+export class WebSocketVoiceDuplexTransport implements VoiceDuplexTransport {
+  readonly #audioChains = new Map<string, Promise<void>>();
+  readonly #audioHandlers = new Set<(frame: VoiceAudioFrame) => void | Promise<void>>();
+  #closed = false;
+  readonly #controlHandlers = new Set<(frame: VoiceControlFrame) => void | Promise<void>>();
+  #controlChain = Promise.resolve();
+  readonly #maxFrameBytes: number;
+  readonly #maxQueueFrames: number;
+  readonly #onWebSocketFrame: ((frame: VoiceWebSocketFrameCounter) => void) | undefined;
+  #queuedFrames = 0;
+  readonly #socket: WebSocket;
+
+  constructor(socket: WebSocket, options: WebSocketVoiceDuplexTransportOptions = {}) {
+    this.#socket = socket;
+    this.#maxFrameBytes = options.maxFrameBytes ?? defaultVoiceMaxFrameBytes;
+    this.#maxQueueFrames = options.maxQueueFrames ?? defaultVoiceMaxQueueFrames;
+    this.#onWebSocketFrame = options.onWebSocketFrame;
+    this.#socket.on("message", (data, isBinary) => {
+      void this.#handleMessage(data, isBinary).catch(() => {
+        void this.#sendSafeError("invalid_message");
+      });
+    });
+    this.#socket.on("close", () => {
+      this.#closed = true;
+    });
+  }
+
+  onControl(handler: (frame: VoiceControlFrame) => void | Promise<void>): () => void {
+    this.#controlHandlers.add(handler);
+    return () => this.#controlHandlers.delete(handler);
+  }
+
+  onAudio(handler: (frame: VoiceAudioFrame) => void | Promise<void>): () => void {
+    this.#audioHandlers.add(handler);
+    return () => this.#audioHandlers.delete(handler);
+  }
+
+  async sendControl(frame: VoiceControlFrame): Promise<void> {
+    if (this.#closed || this.#socket.readyState !== WebSocket.OPEN) {
+      throw new Error("voice websocket transport is closed");
+    }
+    const result = validateVoiceControlFrame(frame);
+    if (!result.ok) {
+      throw new Error(`invalid voice control frame: ${result.issues.map((issue) => `${issue.path} ${issue.message}`).join("; ")}`);
+    }
+    await websocketSend(this.#socket, encodeVoiceWebSocketControlMessage(result.frame), false);
+    this.#onWebSocketFrame?.({ direction: "sent", family: "control" });
+  }
+
+  async sendAudio(frame: VoiceAudioFrame): Promise<void> {
+    if (this.#closed || this.#socket.readyState !== WebSocket.OPEN) {
+      throw new Error("voice websocket transport is closed");
+    }
+    const encoded = encodeVoiceWebSocketAudioMessage(frame, { maxFrameBytes: this.#maxFrameBytes });
+    await websocketSend(this.#socket, encoded, true);
+    this.#onWebSocketFrame?.({ direction: "sent", family: "audio" });
+  }
+
+  async close(reason = "voice websocket transport closed"): Promise<void> {
+    this.#closed = true;
+    if (this.#socket.readyState === WebSocket.OPEN || this.#socket.readyState === WebSocket.CONNECTING) {
+      this.#socket.close(1000, reason);
+    }
+    await this.#controlChain.catch(() => undefined);
+    await Promise.all([...this.#audioChains.values()].map((chain) => chain.catch(() => undefined)));
+  }
+
+  async #handleMessage(data: RawData, isBinary: boolean): Promise<void> {
+    if (isBinary) {
+      let frame: VoiceAudioFrame;
+      try {
+        frame = decodeVoiceWebSocketAudioMessage(rawDataBytes(data), { maxFrameBytes: this.#maxFrameBytes });
+      } catch {
+        await this.#sendSafeError("invalid_audio_frame");
+        return;
+      }
+      this.#onWebSocketFrame?.({ direction: "received", family: "audio" });
+      await this.#enqueueAudio(frame);
+      return;
+    }
+
+    let frame: VoiceControlFrame;
+    try {
+      frame = decodeVoiceWebSocketControlMessage(data.toString());
+    } catch {
+      await this.#sendSafeError("invalid_control_frame");
+      return;
+    }
+    this.#onWebSocketFrame?.({ direction: "received", family: "control" });
+    await this.#enqueueControl(frame);
+  }
+
+  async #sendSafeError(code: string): Promise<void> {
+    if (this.#closed || this.#socket.readyState !== WebSocket.OPEN) {
+      return;
+    }
+    await this.sendControl(safeWebSocketErrorFrame(code)).catch(() => undefined);
+  }
+
+  #ensureReceivable(): boolean {
+    if (this.#closed || this.#socket.readyState === WebSocket.CLOSED) {
+      return false;
+    }
+    if (this.#queuedFrames >= this.#maxQueueFrames) {
+      void this.#sendSafeError("queue_overflow");
+      return false;
+    }
+    return true;
+  }
+
+  #enqueueControl(frame: VoiceControlFrame): Promise<void> {
+    if (!this.#ensureReceivable()) {
+      return Promise.resolve();
+    }
+    this.#queuedFrames += 1;
+    const delivery = this.#controlChain.then(async () => {
+      try {
+        for (const handler of this.#controlHandlers) {
+          await handler(frame);
+        }
+      } finally {
+        this.#queuedFrames -= 1;
+      }
+    });
+    this.#controlChain = delivery.catch(() => undefined);
+    return delivery;
+  }
+
+  #enqueueAudio(frame: VoiceAudioFrame): Promise<void> {
+    if (!this.#ensureReceivable()) {
+      return Promise.resolve();
+    }
+    this.#queuedFrames += 1;
+    const previous = this.#audioChains.get(frame.stream_id) ?? Promise.resolve();
+    const delivery = previous.then(async () => {
+      try {
+        for (const handler of this.#audioHandlers) {
+          await handler(frame);
+        }
+      } finally {
+        this.#queuedFrames -= 1;
+      }
+    });
+    this.#audioChains.set(frame.stream_id, delivery.catch(() => undefined));
+    return delivery;
+  }
+}
+
+export const startLocalVoiceWebSocketEndpoint = async (
+  options: LocalVoiceWebSocketEndpointOptions
+): Promise<LocalVoiceWebSocketEndpoint> => {
+  const server = createServer();
+  const wss = new WebSocketServer({ server });
+  const accepted: WebSocketVoiceDuplexTransport[] = [];
+  let rejected = 0;
+
+  wss.on("connection", (socket, request) => {
+    if (requestToken(request) !== options.token) {
+      rejected += 1;
+      socket.close(4401, "unauthorized");
+      return;
+    }
+    const transport = new WebSocketVoiceDuplexTransport(socket, options);
+    accepted.push(transport);
+    void options.onConnection?.(transport);
+  });
+
+  await withVoiceWebSocketDeadline("listen", new Promise<void>((resolve, reject) => {
+    server.once("error", reject);
+    server.listen(0, voiceWebSocketLoopbackHost, () => {
+      server.off("error", reject);
+      resolve();
+    });
+  }));
+  const address = server.address();
+  if (!address || typeof address !== "object") {
+    throw new Error("voice websocket endpoint did not bind");
+  }
+
+  return {
+    acceptedConnections: () => accepted,
+    close: async () => {
+      await Promise.all(accepted.map((transport) => transport.close("voice endpoint closing")));
+      for (const client of wss.clients) {
+        client.close(1001, "voice endpoint closing");
+      }
+      await withVoiceWebSocketDeadline("server close", new Promise<void>((resolve) => wss.close(() => resolve())));
+      await withVoiceWebSocketDeadline("http close", new Promise<void>((resolve) => server.close(() => resolve())));
+    },
+    host: voiceWebSocketLoopbackHost,
+    port: address.port,
+    rejectedConnections: () => rejected,
+    url: `ws://${voiceWebSocketLoopbackHost}:${address.port}/voice`
+  };
+};
+
+const openVoiceWebSocket = (url: string): Promise<WebSocket> =>
+  withVoiceWebSocketDeadline("open", new Promise((resolve, reject) => {
+    const socket = new WebSocket(url);
+    let settled = false;
+    const settle = (fn: () => void): void => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      socket.off("error", onError);
+      socket.off("close", onClose);
+      socket.off("open", onOpen);
+      fn();
+    };
+    const onOpen = (): void => settle(() => resolve(socket));
+    const onError = (error: Error): void => settle(() => reject(error));
+    const onClose = (code: number, reason: Buffer): void => {
+      if (code !== 1000 && code !== 1001) {
+        settle(() => reject(new Error(`voice websocket closed before open: ${code} ${reason.toString()}`)));
+      }
+    };
+    socket.once("open", onOpen);
+    socket.once("error", onError);
+    socket.once("close", onClose);
+  }));
+
+export const createWebSocketVoiceDuplexPair = async (
+  options: WebSocketVoicePairOptions = {}
+): Promise<WebSocketVoiceDuplexPair> => {
+  const token = options.token ?? `voice-ws-${randomUUID()}`;
+  const websocketFrameCounts: Record<string, number> = {};
+  const countWebSocketFrame = (frame: VoiceWebSocketFrameCounter): void => {
+    countRecord(websocketFrameCounts, `${frame.family}.${frame.direction}`);
+  };
+  let serverTransport: WebSocketVoiceDuplexTransport | undefined;
+  const endpoint = await startLocalVoiceWebSocketEndpoint({
+    ...options,
+    onConnection: (transport) => {
+      serverTransport = transport;
+    },
+    onWebSocketFrame: countWebSocketFrame,
+    token
+  });
+  const url = new URL(endpoint.url);
+  url.searchParams.set("token", token);
+  const socket = await openVoiceWebSocket(url.toString());
+  const client = new WebSocketVoiceDuplexTransport(socket, {
+    ...options,
+    onWebSocketFrame: countWebSocketFrame
+  });
+  if (!serverTransport) {
+    await endpoint.close();
+    throw new Error("voice websocket server did not accept the paired client");
+  }
+  return {
+    client,
+    close: async (reason = "voice websocket pair closing") => {
+      await client.close(reason);
+      await serverTransport?.close(reason);
+      await endpoint.close();
+    },
+    endpoint,
+    server: serverTransport,
+    websocketFrameCounts: () => ({ ...websocketFrameCounts })
+  };
 };
 
 const numberArray = (value: unknown): number[] =>
@@ -1078,5 +1529,233 @@ export class DuplexVoiceTransport implements VoiceTransport {
       transcriptText: finalFrame.text,
       ttsChunkCount: emitted.filter((event) => event.type === "speech.tts.chunk").length
     };
+  }
+}
+
+export class WebSocketVoiceTransport implements VoiceTransport {
+  readonly #maxFrameBytes: number;
+  readonly #maxQueueFrames: number;
+  readonly #token: string | undefined;
+  readonly #ttsChunkChars: number;
+
+  constructor(options: WebSocketVoiceTransportOptions = {}) {
+    this.#maxFrameBytes = options.maxFrameBytes ?? defaultVoiceMaxFrameBytes;
+    this.#maxQueueFrames = options.maxQueueFrames ?? defaultVoiceMaxQueueFrames;
+    this.#token = options.token;
+    this.#ttsChunkChars = options.ttsChunkChars ?? defaultTtsChunkChars;
+  }
+
+  async run(options: DuplexVoiceTransportRunOptions): Promise<WebSocketVoiceTransportRunResult> {
+    const policy = voiceInputPolicyForProfile(options.profile);
+    const effectiveFloor = clampVoiceFrameLabels(policy.labels, options.script.frameLabels);
+    const finalLabels = options.labelFinalTranscript?.(options.script.text, effectiveFloor) ?? effectiveFloor;
+    const emitted: SpeechEventInput[] = [];
+    const frameCounts: Record<string, number> = {};
+    const pair = await createWebSocketVoiceDuplexPair({
+      maxFrameBytes: this.#maxFrameBytes,
+      maxQueueFrames: this.#maxQueueFrames,
+      ...(this.#token ? { token: this.#token } : {})
+    });
+    const worker = new MockSpeechDuplexWorker(pair.server, options.script, {
+      ttsChunkChars: this.#ttsChunkChars
+    });
+    let finalFrame: Extract<VoiceControlFrame, { kind: "asr.final" }> | undefined;
+    let ttsLabels = finalLabels;
+    let resolveAsrStarted: (() => void) | undefined;
+    let resolveAsrCancelled: (() => void) | undefined;
+    let resolveAsrFinal: (() => void) | undefined;
+    let resolveTurnBoundary: (() => void) | undefined;
+    const asrStarted = new Promise<void>((resolve) => {
+      resolveAsrStarted = resolve;
+    });
+    const asrCancelled = new Promise<void>((resolve) => {
+      resolveAsrCancelled = resolve;
+    });
+    const asrFinal = new Promise<void>((resolve) => {
+      resolveAsrFinal = resolve;
+    });
+    const turnBoundary = new Promise<void>((resolve) => {
+      resolveTurnBoundary = resolve;
+    });
+
+    const countFrame = (name: string): void => {
+      frameCounts[name] = (frameCounts[name] ?? 0) + 1;
+    };
+    const emit = async (event: SpeechEventInput): Promise<void> => {
+      emitted.push(event);
+      await options.emit(event);
+    };
+    const waitFor = async (name: string, promise: Promise<void>): Promise<void> => {
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      try {
+        await Promise.race([
+          promise,
+          new Promise<never>((_resolve, reject) => {
+            timer = setTimeout(() => reject(new Error(`timed out waiting for voice websocket ${name}`)), 5000);
+          })
+        ]);
+      } finally {
+        if (timer) {
+          clearTimeout(timer);
+        }
+      }
+    };
+
+    pair.client.onControl(async (frame) => {
+      countFrame(`control.${frame.kind}`);
+      if (frame.kind === "mark") {
+        const labels = frame.mark_id.startsWith("tts") || frame.mark_id === "turn-boundary"
+          ? ttsLabels
+          : frame.mark_id === "asr-start" || frame.mark_id === "asr-cancelled"
+            ? effectiveFloor
+            : finalLabels;
+        await emit({
+          actor: "system",
+          labels,
+          payload: {
+            mark_id: frame.mark_id,
+            position_ms: frame.position_ms
+          },
+          provenance: "agent",
+          turn: options.turn,
+          type: "speech.mark"
+        });
+        if (frame.mark_id === "asr-start") {
+          resolveAsrStarted?.();
+        }
+        if (frame.mark_id === "asr-cancelled") {
+          resolveAsrCancelled?.();
+        }
+        if (frame.mark_id === "turn-boundary") {
+          resolveTurnBoundary?.();
+        }
+        return;
+      }
+      if (frame.kind === "asr.partial") {
+        await emit({
+          actor: "user",
+          labels: effectiveFloor,
+          payload: {
+            text: frame.text,
+            utterance_id: frame.utterance_id
+          },
+          provenance: "user",
+          turn: options.turn,
+          type: "speech.asr.partial"
+        });
+        return;
+      }
+      if (frame.kind === "asr.final") {
+        finalFrame = frame;
+        await emit({
+          actor: "user",
+          labels: finalLabels,
+          payload: {
+            audio_ref: frame.audio_ref,
+            text: frame.text,
+            utterance_id: frame.utterance_id
+          },
+          provenance: "user",
+          turn: options.turn,
+          type: "speech.asr.final"
+        });
+        resolveAsrFinal?.();
+        return;
+      }
+      if (frame.kind === "tts.chunk") {
+        await emit({
+          actor: "agent",
+          labels: ttsLabels,
+          payload: {
+            ...(frame.audio_ref ? { audio_ref: frame.audio_ref } : {}),
+            chunk_id: frame.chunk_id,
+            text: frame.text
+          },
+          provenance: "agent",
+          turn: options.turn,
+          type: "speech.tts.chunk"
+        });
+      }
+    });
+
+    const sendControl = async (frame: VoiceControlFrame): Promise<void> => {
+      countFrame(`control.${frame.kind}`);
+      await pair.client.sendControl(frame);
+    };
+    const sendAudio = async (frame: VoiceAudioFrame): Promise<void> => {
+      countFrame("audio");
+      await pair.client.sendAudio(frame);
+    };
+
+    try {
+      const frameLabels = options.script.frameLabels ?? policy.labels;
+      await sendControl({
+        kind: "session.start",
+        labels: frameLabels,
+        profile: options.profile,
+        stream_id: options.script.streamId
+      });
+      await sendControl({
+        audio_ref: options.script.audioRef,
+        kind: "utterance.start",
+        labels: frameLabels,
+        stream_id: options.script.streamId,
+        utterance_id: options.script.utteranceId
+      });
+      await waitFor("asr-start", asrStarted);
+      for (const [index, byteLength] of options.script.audioFrameBytes.entries()) {
+        await sendAudio(syntheticAudioFrame(options.script.streamId, index, byteLength, false));
+      }
+      if (options.script.cancelAsrBeforeFinal) {
+        await sendControl({ kind: "cancel", reason: "scripted_asr_cancel", target: "asr" });
+        await waitFor("asr-cancelled", asrCancelled);
+        assertNoRawAudioPayloads(emitted);
+        return {
+          assistantFinalText: "",
+          cancelled: true,
+          eventCounts: countEvents(emitted),
+          frameCounts,
+          transcriptText: "",
+          ttsChunkCount: 0,
+          websocketFrameCounts: pair.websocketFrameCounts()
+        };
+      }
+
+      await sendAudio(syntheticAudioFrame(options.script.streamId, options.script.audioFrameBytes.length, 1, true));
+      await waitFor("asr.final", asrFinal);
+      if (!finalFrame) {
+        throw new Error("websocket worker completed without asr.final");
+      }
+
+      const turn = await options.submitFinalTranscript({
+        audioRef: finalFrame.audio_ref,
+        labels: effectiveFloor,
+        ...(policy.routingHints ? { routingHints: policy.routingHints } : {}),
+        text: finalFrame.text,
+        utteranceId: finalFrame.utterance_id
+      });
+      ttsLabels = turn.labels ?? finalLabels;
+      await sendControl({
+        kind: "tts.request",
+        labels: ttsLabels,
+        text: turn.assistantFinalText,
+        utterance_id: finalFrame.utterance_id
+      });
+      await worker.flushPendingTts();
+      await waitFor("turn-boundary", turnBoundary);
+      assertNoRawAudioPayloads(emitted);
+
+      return {
+        assistantFinalText: turn.assistantFinalText,
+        cancelled: false,
+        eventCounts: countEvents(emitted),
+        frameCounts,
+        transcriptText: finalFrame.text,
+        ttsChunkCount: emitted.filter((event) => event.type === "speech.tts.chunk").length,
+        websocketFrameCounts: pair.websocketFrameCounts()
+      };
+    } finally {
+      await pair.close("done");
+    }
   }
 }
