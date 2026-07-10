@@ -1,7 +1,9 @@
 # M3-04 Owner Checks
 
-- Commit: e3e8089f996f810f6722537225eca0d411391646
-- Actions run: 29071874462
+- Implementation commit: e3e8089f996f810f6722537225eca0d411391646
+- Owner-evidence commit: d170407
+- Implementation CI run: 29071874462
+- Owner-evidence CI run: 29079889389
 - Owner platform: Windows 11 / PowerShell 7
 - Date: 2026/7/10
 - Overall result: PASS 
@@ -26,20 +28,21 @@
 | ASCII/std-lib/mock-only static checks         | PASS   | python-*.txt                 |
 | Windows stdio/spawn hygiene                   | PASS   | stdio-spawn-evidence.txt     |
 | Gateway supervisor placement                  | PASS   | supervisor-placement.txt     |
-| No docs/docs-zh implementation edits          | N/A    | docs-diff.txt                |
+| No English docs implementation edits | PASS | Reviewer-verified from committed diff |
 
 ## Optional CLI/replay evidence
 
 - CLI smoke: PASS
-- Replay smoke: PASS
-- Reason when not run:
+- Replay smoke: NOT RUN
+- Reason when not run: Optional replay smoke was not preserved as committed evidence; deterministic replay tests passed.
 
 ## Python version note
 
-- Production discovery selected:
-- Python 3.11 compatibility result:
+- Production discovery selected: `python`, Python `3.13.9`, source `discovered`
+- Python 3.11 compatibility result: PASS with `D:\miniconda3\envs\fairy-py311\python.exe`, Python `3.11.15`, source `test-override`
 - The selected workstation version is evidence only and is not a pinned project requirement.
 
 ## Deviations or failures
 
-- None / describe exactly.
+- The initial Python 3.11 focused-suite attempt failed because the production-discovery assertion expected `source: "discovered"` while the explicit test override correctly reported `source: "test-override"`.
+- A corrected override handshake and three-test integration subset passed under Python 3.11.15.
