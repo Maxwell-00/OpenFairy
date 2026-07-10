@@ -1,0 +1,5 @@
+$ node ../../scripts/start-gateway.mjs
+(node:4988) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+Fairy gateway listening on http://127.0.0.1:8787
+gateway.started {"host":"127.0.0.1","port":8787}

@@ -1,0 +1,21 @@
+=== Get-Command python3 ===
+
+Name    : python3.exe
+Source  : C:\Users\13415\AppData\Local\Microsoft\WindowsApps\python3.exe
+Version : 0.0.0.0
+
+
+=== Get-Command python ===
+
+Name    : python.exe
+Source  : D:\miniconda3\python.exe
+Version : 3.13.9150.1013
+
+
+=== Get-Command py ===
+
+=== py launcher inventory ===
+=== direct versions ===
+
+Python 3.13.9
+

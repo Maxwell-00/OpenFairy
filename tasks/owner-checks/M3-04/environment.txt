@@ -1,0 +1,8 @@
+checked_at=2026-07-10T15:30:12.9718141+08:00
+head=e3e8089f996f810f6722537225eca0d411391646
+branch=main
+node=v24.14.1
+pnpm=11.7.0
+powershell=7.6.3
+os=Microsoft Windows NT 10.0.26200.0
+ci_run=29071874462

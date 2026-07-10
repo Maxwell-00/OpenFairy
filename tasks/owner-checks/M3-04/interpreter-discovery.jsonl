@@ -1,0 +1,4 @@
+(node:7932) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+{"ready":{"capabilities":["asr.script","tts.script","cancel","shutdown"],"interpreter":{"args":[],"argv0":"python","source":"discovered","version":"3.13.9"},"processId":18168,"pythonVersion":"3.13.9","workerId":"speech-mock-v0"}}
+{"alive":false}

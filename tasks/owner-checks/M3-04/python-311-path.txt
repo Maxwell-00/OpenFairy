@@ -1,0 +1,1 @@
+python311=D:\miniconda3\envs\fairy-py311\python.exe

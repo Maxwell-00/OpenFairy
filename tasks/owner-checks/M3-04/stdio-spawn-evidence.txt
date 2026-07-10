@@ -1,0 +1,14 @@
+E:\Claude_Projects\Projects\Fairy\OpenFairy\workers\speech\mock_worker.py:29: sys.stdout.buffer.write(encoded_message + b"\n")
+E:\Claude_Projects\Projects\Fairy\OpenFairy\workers\speech\mock_worker.py:30: sys.stdout.buffer.flush()
+E:\Claude_Projects\Projects\Fairy\OpenFairy\workers\speech\mock_worker.py:34: sys.stdout.buffer.write(b"{malformed-worker-output\n")
+E:\Claude_Projects\Projects\Fairy\OpenFairy\workers\speech\mock_worker.py:35: sys.stdout.buffer.flush()
+E:\Claude_Projects\Projects\Fairy\OpenFairy\apps\gateway\src\speech-worker-process.ts:364: const normalized = line.endsWith("\r") ? line.slice(0, -1) : line;
+E:\Claude_Projects\Projects\Fairy\OpenFairy\apps\gateway\src\speech-worker-process.ts:429: const child = spawn(candidate.argv0, [...candidate.args, "-u", "-B", "-c", program], {
+E:\Claude_Projects\Projects\Fairy\OpenFairy\apps\gateway\src\speech-worker-process.ts:432: shell: false,
+E:\Claude_Projects\Projects\Fairy\OpenFairy\apps\gateway\src\speech-worker-process.ts:438: child.stdout.on("data", (chunk: Buffer) => {
+E:\Claude_Projects\Projects\Fairy\OpenFairy\apps\gateway\src\speech-worker-process.ts:441: child.stderr.on("data", (chunk: Buffer) => {
+E:\Claude_Projects\Projects\Fairy\OpenFairy\apps\gateway\src\speech-worker-process.ts:509: ? process.env.FAIRY_TEST_PYTHON
+E:\Claude_Projects\Projects\Fairy\OpenFairy\apps\gateway\src\speech-worker-process.ts:522: "-u",
+E:\Claude_Projects\Projects\Fairy\OpenFairy\apps\gateway\src\speech-worker-process.ts:530: shell: false,
+E:\Claude_Projects\Projects\Fairy\OpenFairy\apps\gateway\src\speech-worker-process.ts:536: child.stdout.on("data", (chunk: Buffer) => this.#consumeStdout(chunk));
+E:\Claude_Projects\Projects\Fairy\OpenFairy\apps\gateway\src\speech-worker-process.ts:537: child.stderr.on("data", (chunk: Buffer) => {

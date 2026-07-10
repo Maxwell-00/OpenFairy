@@ -1,0 +1,11 @@
+=== changed protected files from brief baseline ===
+
+=== tracked node:child_process locations ===
+apps/gateway/src/speech-worker-process.ts:3:import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
+packages/testing/test/gateway.e2e.test.ts:7:import { spawn, spawnSync, type ChildProcessByStdio } from "node:child_process";
+packages/testing/test/voice.duplex-transport.test.ts:1:import { spawn, spawnSync, type ChildProcessByStdio } from "node:child_process";
+packages/testing/test/voice.protocol-loopback.test.ts:6:import { spawn, spawnSync, type ChildProcessByStdio } from "node:child_process";
+packages/testing/test/voice.websocket-transport.test.ts:1:import { spawn, spawnSync, type ChildProcessByStdio } from "node:child_process";
+packages/testing/test/voice.worker-process.test.ts:1:import { spawn, spawnSync, type ChildProcessByStdio } from "node:child_process";
+packages/testing/test/voice.worker-process.test.ts:379:    expect(readFileSync(join(repoRoot, "packages", "voice", "src", "index.ts"), "utf8")).not.toContain("node:child_process");
+

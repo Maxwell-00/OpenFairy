@@ -1,0 +1,37 @@
+$ vitest run "--reporter=verbose"
+
+[1m[30m[46m RUN [49m[39m[22m [36mv4.1.9 [39m[90mE:/Claude_Projects/Projects/Fairy/OpenFairy/apps/cli[39m
+
+(node:28788) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:25820) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:29512) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:29628) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+ [32m✓[39m test/audit.test.ts[2m > [22mfairy audit[2m > [22mprints redacted egress denial details in text and JSON modes[32m 50[2mms[22m[39m
+ [32m✓[39m test/voice.test.ts[2m > [22mfairy voice CLI[2m > [22mdoes not accept a user-controlled worker executable or script path[32m 3[2mms[22m[39m
+ [32m✓[39m test/replay.test.ts[2m > [22mfairy replay[2m > [22mreports a corrupt trailing line and still renders earlier events[32m 19[2mms[22m[39m
+ [32m✓[39m test/replay.test.ts[2m > [22mfairy replay[2m > [22mrenders speech events compactly and preserves speech payloads in JSON output[32m 23[2mms[22m[39m
+ [32m✓[39m test/replay.test.ts[2m > [22mfairy replay[2m > [22mrenders trust decisions offline and preserves payloads in JSON output[32m 25[2mms[22m[39m
+ [32m✓[39m test/replay.test.ts[2m > [22mfairy replay[2m > [22mrenders perception artifacts and vision tool results compactly[32m 17[2mms[22m[39m
+ [32m✓[39m test/replay.test.ts[2m > [22mfairy replay[2m > [22mrenders affect updates compactly and includes persona tokens in manifest view[32m 17[2mms[22m[39m
+ [32m✓[39m test/replay.test.ts[2m > [22mfairy replay[2m > [22mrenders compaction artifacts, session.compacted, and L4/L5 manifest stages[32m 19[2mms[22m[39m
+ [32m✓[39m test/persona.test.ts[2m > [22mfairy persona and affect CLI[2m > [22minspects persona metadata and current affect state from JSONL[33m 1735[2mms[22m[39m
+ [32m✓[39m test/doctor.test.ts[2m > [22mfairy doctor[2m > [22mchecks Node major version[32m 2[2mms[22m[39m
+ [32m✓[39m test/doctor.test.ts[2m > [22mfairy doctor[2m > [22mprints a plain-text report[33m 688[2mms[22m[39m
+ [32m✓[39m test/artifacts.test.ts[2m > [22mfairy artifacts CLI[2m > [22mlists and shows artifact registry entries without embedding blobs[33m 2495[2mms[22m[39m
+ [32m✓[39m test/voice.test.ts[2m > [22mfairy voice CLI[2m > [22mruns loopback through the gateway and prints parseable JSON[33m 1266[2mms[22m[39m
+ [32m✓[39m test/chronicle.test.ts[2m > [22mfairy chronicle CLI[2m > [22mlogs, queries, lists, and shows workspace entries as stable JSON[33m 3213[2mms[22m[39m
+ [32m✓[39m test/research.test.ts[2m > [22mfairy research CLI[2m > [22mlists sources, snapshots, quarantined snapshot bodies, and citations[33m 3202[2mms[22m[39m
+ [32m✓[39m test/voice.test.ts[2m > [22mfairy voice CLI[2m > [22mruns duplex conformance through the gateway and prints parseable JSON[33m 954[2mms[22m[39m
+ [32m✓[39m test/voice.test.ts[2m > [22mfairy voice CLI[2m > [22mruns websocket conformance through the gateway and prints parseable JSON[33m 847[2mms[22m[39m
+ [32m✓[39m test/voice.test.ts[2m > [22mfairy voice CLI[2m > [22mruns the supervised Python worker through the gateway and prints interpreter evidence[33m 1219[2mms[22m[39m
+ [32m✓[39m test/memory.test.ts[2m > [22mfairy memory CLI[2m > [22mlists, searches, shows evidence, deletes, and rebuilds from JSONL[33m 6958[2mms[22m[39m
+
+[2m Test Files [22m [1m[32m9 passed[39m[22m[90m (9)[39m
+[2m      Tests [22m [1m[32m19 passed[39m[22m[90m (19)[39m
+[2m   Start at [22m 16:05:57
+[2m   Duration [22m 7.23s[2m (transform 1.23s, setup 0ms, import 6.48s, tests 22.77s, environment 1ms)[22m
+
