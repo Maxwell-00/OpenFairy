@@ -6,8 +6,9 @@
 
 - Required baseline: `1fc2f98a8440bfdbab27a05076ec3d9fdf35b68e`.
 - Baseline was verified clean before implementation.
-- Final implementation commit: **PENDING OWNER COMMIT**. Repository policy leaves implementation changes uncommitted for owner review and commit.
-- CI run URL: **PENDING OWNER COMMIT/PUSH**. No URL is fabricated in this report.
+- Final implementation commit: `80726ea3f32179491999fbfc5081bce1577fa9a1`.
+- CI run [`29109102313`](https://github.com/Maxwell-00/OpenFairy/actions/runs/29109102313) failed in both Python 3.11 speech-floor matrix jobs because the intended Vitest name filter was not applied; this was a test invocation defect, not a Python 3.11 compatibility failure.
+- Focused-lane repair commit and replacement CI run: **PENDING OWNER COMMIT/PUSH**.
 - Owner-live evidence commit: **PENDING; live check was deliberately not run by Codex**.
 
 ## 2. Changed-file inventory
@@ -364,9 +365,10 @@ Every configured candidate is visited at most once. There is no invisible `cn-pr
 - `FAIRY_TEST_PYTHON` remains read once at construction, only under `NODE_ENV=test`/`CI=true`, and is used as literal `argv[0]` without splitting or shell use.
 - Normal local discovery passed with Python `3.13.9`.
 - Explicit local floor run passed with `D:\miniconda3\envs\fairy-py311\python.exe`, Python `3.11.15`: `voice.tts-provider-v0` 13 passed.
-- `.github/workflows/ci.yml` adds `Python 3.11 speech floor (ubuntu-latest)` and `(windows-latest)` jobs via `actions/setup-python@v6`, with its `python-path` passed as the exact test-only override.
+- `.github/workflows/ci.yml` adds `Python 3.11 speech floor (ubuntu-latest)` and `(windows-latest)` jobs via `actions/setup-python@v6`, with its `python-path` passed as the exact test-only override. Both jobs call the dedicated `test:voice-tts-provider` package script, which executes only `test/voice.tts-provider.test.ts`.
 - The ordinary Ubuntu/Windows `verify` jobs retain normal fixed-candidate discovery independently.
-- GitHub lane result: **PENDING OWNER PUSH/CI**; workflow definition is present but no green run is claimed locally.
+- GitHub Actions run `29109102313`: **FAILED due to invocation**. The former `test -- --reporter=verbose -t 'voice.tts-provider-v0'` command passed the extra `--` through incorrectly, so Vitest ran the complete `@fairy/testing` package under `FAIRY_TEST_PYTHON`. The existing M3-04 production-discovery assertion then correctly observed `source: "test-override"` instead of its normal `source: "discovered"`. No Python incompatibility was observed.
+- Replacement GitHub lane result: **PENDING OWNER COMMIT/PUSH**; no green CI result is claimed locally.
 
 ## 16. JSONL, artifact, replay, and no-residue proof
 
@@ -414,8 +416,8 @@ Local environment: Windows, Node workspace, normal Python 3.13.9 plus explicit P
 | `pnpm -r test` | PASS; all runnable workspace packages green; `@fairy/testing` 96 passed / 1 intentionally skipped; CLI 20 passed; voice 22 passed; protocol 108 passed |
 | `pnpm dep-check` | PASS; 112 modules / 407 dependencies; 0 violations |
 | `pnpm conformance` | PASS; all 18 mock provider cases |
-| `pnpm --filter @fairy/testing test -- --reporter=verbose -t 'voice.tts-provider-v0'` | PASS; 13 passed, 84 skipped by filter (normal discovery run) |
-| same focused suite with Python 3.11.15 literal override | PASS; 13 passed |
+| `pnpm --filter @fairy/testing test:voice-tts-provider` | PASS; exactly 1 test file / 13 M3-05 tests passed |
+| same dedicated script with Python 3.11.15 literal override | PASS; exactly 1 test file / 13 M3-05 tests passed; no `voice.worker-process-v0` tests executed |
 | `pnpm --filter @fairy/testing test -- --reporter=verbose` | PASS; 96 passed, 1 intentionally skipped (`memory.canary`) |
 | `pnpm --filter @fairy/voice test -- --reporter=verbose` | PASS; 22 passed |
 | `pnpm --filter @fairy/cli test -- --reporter=verbose` | PASS; 20 passed, including provider CLI JSON evidence |
@@ -434,8 +436,8 @@ Named residual suites visible and green in the full `@fairy/testing` run include
 - Loopback-only fake MiniMax, ephemeral ports, fake recognizable credential, no public speech network.
 - No real provider key or real MiniMax call was used.
 - All local deterministic commands in the acceptance matrix are green.
-- GitHub Actions adds explicit Python 3.11 Ubuntu and Windows lanes.
-- Actual GitHub run URL/status remains pending owner commit/push.
+- GitHub Actions retains explicit Python 3.11 Ubuntu and Windows lanes and now invokes the dedicated single-file M3-05 script.
+- Run `29109102313` failed because the old focused-filter command executed the full package; replacement CI evidence remains pending owner commit/push.
 
 ### Owner-live evidence
 

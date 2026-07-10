@@ -61,4 +61,4 @@ jobs:
       - name: M3-05 MiniMax TTS provider conformance on Python 3.11
         env:
           FAIRY_TEST_PYTHON: ${{ steps.python.outputs.python-path }}
-        run: pnpm --filter @fairy/testing test -- --reporter=verbose -t 'voice.tts-provider-v0'
+        run: pnpm --filter @fairy/testing test:voice-tts-provider

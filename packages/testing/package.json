@@ -11,7 +11,8 @@
   },
   "scripts": {
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "vitest run --reporter verbose"
+    "test": "vitest run --reporter verbose",
+    "test:voice-tts-provider": "vitest run test/voice.tts-provider.test.ts --reporter verbose"
   },
   "dependencies": {
     "@fairy/artifacts": "workspace:*",
