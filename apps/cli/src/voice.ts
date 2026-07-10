@@ -199,9 +199,18 @@ export const parseVoiceOptions = (args: readonly string[], env: NodeJS.ProcessEn
   if (!scriptPath) {
     throw new Error(`fairy voice ${subcommand} requires --script path`);
   }
-  for (const forbidden of ["--python", "--worker-command", "--worker-path"]) {
+  for (const forbidden of [
+    "--artifact-path",
+    "--endpoint",
+    "--endpoint-url",
+    "--output-dir",
+    "--provider-executable",
+    "--python",
+    "--worker-command",
+    "--worker-path"
+  ]) {
     if (args.includes(forbidden)) {
-      throw new Error(`${forbidden} is not supported; the speech worker executable and script are repository-controlled`);
+      throw new Error(`${forbidden} is not supported; speech worker executables, endpoints, and artifact destinations are repository-controlled`);
     }
   }
   return {

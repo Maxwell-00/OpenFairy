@@ -1,9 +1,11 @@
 import { redactText } from "@fairy/kernel";
 import type { Labels } from "@fairy/protocol";
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
-import { dirname, resolve } from "node:path";
+import { dirname, isAbsolute, resolve } from "node:path";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
+
+import { miniMaxTtsDefaults, type MiniMaxTtsProviderConfig } from "./speech-provider.js";
 
 export const speechWorkerProtocol = "fairy.speech-worker.v0" as const;
 
@@ -16,14 +18,22 @@ export const speechWorkerDeadlines = {
   shutdownMs: 3_000
 } as const;
 
+export const speechProviderWorkerDeadlines = {
+  ...speechWorkerDeadlines,
+  requestMs: 35_000
+} as const;
+
 const maxCapturedStderrBytes = 8_192;
 const maxStdoutLineBytes = 262_144;
 const maxPendingRequests = 16;
 const maxQueuedStdoutMessages = 64;
 const rawAudioPattern = /^[A-Za-z0-9+/]{120,}={0,2}$/;
-const workerPath = resolve(dirname(fileURLToPath(import.meta.url)), "../../../workers/speech/mock_worker.py");
+const mockWorkerPath = resolve(dirname(fileURLToPath(import.meta.url)), "../../../workers/speech/mock_worker.py");
+const miniMaxWorkerPath = resolve(dirname(fileURLToPath(import.meta.url)), "../../../workers/speech/minimax_tts_worker.py");
+const minimumPythonVersion = { major: 3, minor: 11 } as const;
 
 export type SpeechWorkerTestMode = "malformed-startup" | "startup-timeout" | "stderr-secret";
+export type SpeechProviderWorkerTestMode = "crash" | "malformed" | "partial" | "timeout" | "version-mismatch";
 export type SpeechWorkerMockBehavior = "normal" | "wait" | "crash" | "malformed";
 export type SpeechWorkerCancelTarget = "asr" | "tts" | "all";
 
@@ -38,6 +48,13 @@ export interface SpeechWorkerDeadlineOptions {
 
 export interface SpeechWorkerProcessOptions {
   readonly deadlines?: SpeechWorkerDeadlineOptions;
+  /** Narrow repository-owned provider mode. No CLI surface accepts these values. */
+  readonly provider?: {
+    readonly credential: string;
+    readonly outputRoot: string;
+    readonly testLoopbackPort?: number;
+    readonly testMode?: SpeechProviderWorkerTestMode;
+  };
   /** Repository-controlled adversarial modes used only by deterministic tests. */
   readonly testMode?: SpeechWorkerTestMode;
 }
@@ -56,7 +73,33 @@ export type SpeechWorkerWireMessage =
   | { readonly kind: "asr.partial"; readonly request_id: string; readonly text: string; readonly utterance_id: string }
   | { readonly audio_ref: string; readonly kind: "asr.final"; readonly request_id: string; readonly text: string; readonly utterance_id: string }
   | { readonly chunk_chars?: number; readonly kind: "tts.script"; readonly labels?: Labels; readonly request_id: string; readonly text: string; readonly utterance_id: string }
-  | { readonly audio_ref?: string; readonly chunk_id: string; readonly kind: "tts.chunk"; readonly request_id: string; readonly text: string }
+  | {
+      readonly audio_setting: { readonly bitrate: 128000; readonly channel: 1; readonly format: "mp3"; readonly sample_rate: 32000 };
+      readonly deadlines_ms: { readonly connect: number; readonly read: number; readonly total: number };
+      readonly endpoint_profile: "cn-primary" | "cn-backup";
+      readonly kind: "tts.request";
+      readonly labels: Labels;
+      readonly language_boost: "auto" | "Chinese" | "English";
+      readonly limits: { readonly max_audio_bytes: number; readonly max_response_bytes: number; readonly max_text_chars: number };
+      readonly model: "speech-2.8-turbo" | "speech-2.8-hd";
+      readonly provider_transport: "minimax-t2a-v2-http";
+      readonly request_id: string;
+      readonly test_loopback_port?: number;
+      readonly text: string;
+      readonly utterance_id: string;
+      readonly voice_setting: { readonly pitch: number; readonly speed: number; readonly voice_id: string; readonly volume: number };
+    }
+  | {
+      readonly audio_format?: "mp3";
+      readonly audio_ref?: string;
+      readonly chunk_id: string;
+      readonly kind: "tts.chunk";
+      readonly mime?: "audio/mpeg";
+      readonly request_id: string;
+      readonly sha256?: string;
+      readonly size_bytes?: number;
+      readonly text: string;
+    }
   | { readonly chunk_count: number; readonly kind: "tts.done"; readonly request_id: string; readonly utterance_id: string }
   | { readonly kind: "cancel"; readonly reason?: string; readonly request_id: string; readonly target: SpeechWorkerCancelTarget; readonly target_request_id: string }
   | { readonly kind: "cancelled"; readonly request_id: string; readonly target: SpeechWorkerCancelTarget; readonly target_request_id: string }
@@ -100,13 +143,25 @@ export interface SpeechWorkerTtsScript {
 }
 
 export interface SpeechWorkerTtsChunk {
+  readonly audioFormat?: "mp3";
   readonly audioRef?: string;
   readonly chunkId: string;
+  readonly mime?: "audio/mpeg";
+  readonly sha256?: string;
+  readonly sizeBytes?: number;
   readonly text: string;
 }
 
 export interface SpeechWorkerTtsResult {
   readonly chunks: readonly SpeechWorkerTtsChunk[];
+  readonly utteranceId: string;
+}
+
+export interface SpeechWorkerProviderTtsRequest {
+  readonly labels: Labels;
+  readonly provider: MiniMaxTtsProviderConfig;
+  readonly requestId: string;
+  readonly text: string;
   readonly utteranceId: string;
 }
 
@@ -131,8 +186,10 @@ type PendingRequest =
     }
   | {
       readonly chunks: SpeechWorkerTtsChunk[];
+      readonly expectedText: string;
       readonly kind: "tts";
       readonly onChunk?: (chunk: SpeechWorkerTtsChunk) => Promise<void> | void;
+      readonly provider: boolean;
       readonly reject: (error: Error) => void;
       readonly resolve: (result: SpeechWorkerTtsResult) => void;
       readonly utteranceId: string;
@@ -162,13 +219,30 @@ interface ProbeResult {
 
 export class SpeechWorkerProcessError extends Error {
   readonly code: string;
+  readonly retryable: boolean;
 
-  constructor(code: string, message: string) {
+  constructor(code: string, message: string, options: { readonly retryable?: boolean } = {}) {
     super(message);
     this.code = code;
+    this.retryable = options.retryable ?? false;
     this.name = "SpeechWorkerProcessError";
   }
 }
+
+export const assertSupportedSpeechWorkerPythonVersion = (version: string): void => {
+  const match = /^(\d+)\.(\d+)\.(\d+)$/.exec(version);
+  if (!match) {
+    throw new SpeechWorkerProcessError("SPEECH_WORKER_INTERPRETER_INVALID", "Python interpreter returned invalid version evidence");
+  }
+  const major = Number(match[1]);
+  const minor = Number(match[2]);
+  if (major < minimumPythonVersion.major || (major === minimumPythonVersion.major && minor < minimumPythonVersion.minor)) {
+    throw new SpeechWorkerProcessError(
+      "SPEECH_WORKER_PYTHON_UNSUPPORTED",
+      `Python ${version} is unsupported; speech workers require Python >= ${minimumPythonVersion.major}.${minimumPythonVersion.minor}`
+    );
+  }
+};
 
 const deferred = <T>(): Deferred<T> => {
   let rejectPromise: ((error: Error) => void) | undefined;
@@ -212,6 +286,31 @@ const optionalBoolean = (value: Record<string, unknown>, key: string): SpeechWor
 
 const labelsIssues = (value: Record<string, unknown>): SpeechWorkerWireValidationIssue[] =>
   value.labels === undefined || isLabels(value.labels) ? [] : [issue("/labels", "must contain valid sensitivity and residency")];
+
+const exactNestedRecord = (
+  value: Record<string, unknown>,
+  key: string,
+  fields: readonly string[]
+): { readonly issues: SpeechWorkerWireValidationIssue[]; readonly record?: Record<string, unknown> } => {
+  const nested = value[key];
+  if (!isRecord(nested)) {
+    return { issues: [issue(`/${key}`, "must be an object")] };
+  }
+  return {
+    issues: Object.keys(nested).filter((field) => !fields.includes(field)).map((field) => issue(`/${key}/${field}`, "unknown field")),
+    record: nested
+  };
+};
+
+const boundedIntegerIssue = (record: Record<string, unknown>, key: string, path: string, minimum: number, maximum: number): SpeechWorkerWireValidationIssue[] =>
+  typeof record[key] === "number" && Number.isInteger(record[key]) && record[key] >= minimum && record[key] <= maximum
+    ? []
+    : [issue(`${path}/${key}`, `must be an integer from ${minimum} to ${maximum}`)];
+
+const finiteNumberIssue = (record: Record<string, unknown>, key: string, path: string, minimum: number, maximum: number): SpeechWorkerWireValidationIssue[] =>
+  typeof record[key] === "number" && Number.isFinite(record[key]) && record[key] >= minimum && record[key] <= maximum
+    ? []
+    : [issue(`${path}/${key}`, `must be a finite number from ${minimum} to ${maximum}`)];
 
 const containsRawAudio = (value: unknown): boolean => {
   if (typeof value === "string") {
@@ -285,13 +384,58 @@ const messageIssues = (value: Record<string, unknown>): SpeechWorkerWireValidati
           ? []
           : [issue("/chunk_chars", "must be an integer from 1 to 4096 when present")])
       ];
+    case "tts.request": {
+      const voice = exactNestedRecord(value, "voice_setting", ["pitch", "speed", "voice_id", "volume"]);
+      const audio = exactNestedRecord(value, "audio_setting", ["bitrate", "channel", "format", "sample_rate"]);
+      const limits = exactNestedRecord(value, "limits", ["max_audio_bytes", "max_response_bytes", "max_text_chars"]);
+      const deadlines = exactNestedRecord(value, "deadlines_ms", ["connect", "read", "total"]);
+      return [
+        ...allowedFields(value, ["audio_setting", "deadlines_ms", "endpoint_profile", "kind", "labels", "language_boost", "limits", "model", "provider_transport", "request_id", "test_loopback_port", "text", "utterance_id", "voice_setting"]),
+        ...requiredString(value, "request_id"),
+        ...requiredString(value, "utterance_id"),
+        ...requiredString(value, "text"),
+        ...(isLabels(value.labels) ? [] : [issue("/labels", "must contain valid sensitivity and residency")]),
+        ...(value.provider_transport === "minimax-t2a-v2-http" ? [] : [issue("/provider_transport", "must equal minimax-t2a-v2-http")]),
+        ...(value.endpoint_profile === "cn-primary" || value.endpoint_profile === "cn-backup" ? [] : [issue("/endpoint_profile", "must be a closed MiniMax endpoint profile")]),
+        ...(value.model === "speech-2.8-turbo" || value.model === "speech-2.8-hd" ? [] : [issue("/model", "must be a supported MiniMax speech model")]),
+        ...(value.language_boost === "auto" || value.language_boost === "Chinese" || value.language_boost === "English" ? [] : [issue("/language_boost", "must be auto, Chinese, or English")]),
+        ...(value.test_loopback_port === undefined ? [] : boundedIntegerIssue(value, "test_loopback_port", "", 1, 65_535)),
+        ...voice.issues,
+        ...(voice.record ? [
+          ...requiredString(voice.record, "voice_id").map((item) => ({ ...item, path: `/voice_setting${item.path}` })),
+          ...finiteNumberIssue(voice.record, "speed", "/voice_setting", 0.5, 2),
+          ...finiteNumberIssue(voice.record, "volume", "/voice_setting", 0, 10),
+          ...boundedIntegerIssue(voice.record, "pitch", "/voice_setting", -12, 12)
+        ].flat() : []),
+        ...audio.issues,
+        ...(audio.record && audio.record.format === "mp3" && audio.record.sample_rate === 32_000 && audio.record.bitrate === 128_000 && audio.record.channel === 1
+          ? []
+          : audio.record ? [issue("/audio_setting", "must be MP3 / 32000 Hz / 128000 bps / mono")] : []),
+        ...limits.issues,
+        ...(limits.record ? [
+          ...boundedIntegerIssue(limits.record, "max_text_chars", "/limits", 1, 3_000),
+          ...boundedIntegerIssue(limits.record, "max_response_bytes", "/limits", 1, 67_108_864),
+          ...boundedIntegerIssue(limits.record, "max_audio_bytes", "/limits", 1, 33_554_432)
+        ].flat() : []),
+        ...deadlines.issues,
+        ...(deadlines.record ? [
+          ...boundedIntegerIssue(deadlines.record, "connect", "/deadlines_ms", 100, 120_000),
+          ...boundedIntegerIssue(deadlines.record, "read", "/deadlines_ms", 100, 120_000),
+          ...boundedIntegerIssue(deadlines.record, "total", "/deadlines_ms", 100, 120_000)
+        ].flat() : [])
+      ];
+    }
     case "tts.chunk":
       return [
-        ...allowedFields(value, ["audio_ref", "chunk_id", "kind", "request_id", "text"]),
+        ...allowedFields(value, ["audio_format", "audio_ref", "chunk_id", "kind", "mime", "request_id", "sha256", "size_bytes", "text"]),
         ...requiredString(value, "request_id"),
         ...requiredString(value, "chunk_id"),
         ...(typeof value.text === "string" ? [] : [issue("/text", "must be a string")]),
-        ...optionalString(value, "audio_ref")
+        ...optionalString(value, "audio_ref"),
+        ...(value.audio_format === undefined || value.audio_format === "mp3" ? [] : [issue("/audio_format", "must be mp3 when present")]),
+        ...(value.mime === undefined || value.mime === "audio/mpeg" ? [] : [issue("/mime", "must be audio/mpeg when present")]),
+        ...(value.sha256 === undefined || (typeof value.sha256 === "string" && /^sha256:[a-f0-9]{64}$/.test(value.sha256)) ? [] : [issue("/sha256", "must be a SHA-256 digest when present")]),
+        ...(value.size_bytes === undefined || (typeof value.size_bytes === "number" && Number.isInteger(value.size_bytes) && value.size_bytes > 0) ? [] : [issue("/size_bytes", "must be a positive integer when present")])
       ];
     case "tts.done":
       return [
@@ -399,16 +543,31 @@ const boundedAppend = (current: string, chunk: Buffer, maxBytes: number): string
   return Buffer.byteLength(combined) <= maxBytes ? combined : Buffer.from(combined).subarray(0, maxBytes).toString("utf8");
 };
 
-const childEnvironment = (): NodeJS.ProcessEnv => {
+interface SpeechWorkerChildEnvironmentOptions {
+  readonly credential?: string;
+  readonly outputRoot?: string;
+  readonly providerTestMode?: boolean;
+}
+
+const childEnvironment = (options: SpeechWorkerChildEnvironmentOptions = {}): NodeJS.ProcessEnv => {
   const result: NodeJS.ProcessEnv = {
     PYTHONDONTWRITEBYTECODE: "1",
     PYTHONIOENCODING: "utf-8"
   };
-  for (const key of ["HOME", "LANG", "LOCALAPPDATA", "PATH", "Path", "PATHEXT", "SYSTEMROOT", "SystemRoot", "TEMP", "TMP", "USERPROFILE", "WINDIR"]) {
+  for (const key of ["HOME", "LANG", "LOCALAPPDATA", "PATH", "Path", "PATHEXT", "SSL_CERT_DIR", "SSL_CERT_FILE", "SYSTEMROOT", "SystemRoot", "TEMP", "TMP", "USERPROFILE", "WINDIR"]) {
     const value = process.env[key];
     if (value !== undefined) {
       result[key] = value;
     }
+  }
+  if (options.credential !== undefined) {
+    result.FAIRY_MINIMAX_T2A_TOKEN = options.credential;
+  }
+  if (options.outputRoot !== undefined) {
+    result.FAIRY_SPEECH_WORKER_OUTPUT_ROOT = options.outputRoot;
+  }
+  if (options.providerTestMode) {
+    result.FAIRY_PROVIDER_TEST_MODE = "1";
   }
   return result;
 };
@@ -467,6 +626,7 @@ const probeInterpreter = async (candidate: InterpreterCandidate, timeoutMs: numb
   if (!parsed || typeof parsed.python_version !== "string" || !/^\d+\.\d+\.\d+$/.test(parsed.python_version)) {
     throw new SpeechWorkerProcessError("SPEECH_WORKER_INTERPRETER_INVALID", `Python interpreter ${candidate.argv0} returned invalid version evidence`);
   }
+  assertSupportedSpeechWorkerPythonVersion(parsed.python_version);
   return {
     args: candidate.args,
     argv0: candidate.argv0,
@@ -478,6 +638,7 @@ const probeInterpreter = async (candidate: InterpreterCandidate, timeoutMs: numb
 export class SpeechWorkerProcess {
   readonly #deadlines: RequiredDeadlines;
   readonly #pending = new Map<string, PendingRequest>();
+  readonly #provider: SpeechWorkerProcessOptions["provider"];
   readonly #testMode: SpeechWorkerTestMode | undefined;
   readonly #testPythonOverride: string | undefined;
   #bye: Deferred<void> | undefined;
@@ -496,14 +657,29 @@ export class SpeechWorkerProcess {
   #stdoutChain: Promise<void> = Promise.resolve();
 
   constructor(options: SpeechWorkerProcessOptions = {}) {
+    if (options.provider && options.testMode) {
+      throw new SpeechWorkerProcessError("SPEECH_WORKER_MODE_INVALID", "mock and provider worker modes are mutually exclusive");
+    }
+    if (options.provider) {
+      if (!options.provider.credential || !isAbsolute(options.provider.outputRoot)) {
+        throw new SpeechWorkerProcessError("SPEECH_WORKER_PROVIDER_OPTIONS_INVALID", "provider worker requires a credential and absolute gateway-owned output root");
+      }
+      if (options.provider.testLoopbackPort !== undefined) {
+        const testGate = process.env.NODE_ENV === "test" || process.env.CI === "true";
+        if (!testGate || !Number.isInteger(options.provider.testLoopbackPort) || options.provider.testLoopbackPort < 1 || options.provider.testLoopbackPort > 65_535) {
+          throw new SpeechWorkerProcessError("SPEECH_WORKER_TEST_ENDPOINT_FORBIDDEN", "provider loopback seam is available only to code-gated tests");
+        }
+      }
+    }
     this.#deadlines = {
       cancellationMs: options.deadlines?.cancellationMs ?? speechWorkerDeadlines.cancellationMs,
       discoveryMs: options.deadlines?.discoveryMs ?? speechWorkerDeadlines.discoveryMs,
       handshakeMs: options.deadlines?.handshakeMs ?? speechWorkerDeadlines.handshakeMs,
       processStartupMs: options.deadlines?.processStartupMs ?? speechWorkerDeadlines.processStartupMs,
-      requestMs: options.deadlines?.requestMs ?? speechWorkerDeadlines.requestMs,
+      requestMs: options.deadlines?.requestMs ?? (options.provider ? speechProviderWorkerDeadlines.requestMs : speechWorkerDeadlines.requestMs),
       shutdownMs: options.deadlines?.shutdownMs ?? speechWorkerDeadlines.shutdownMs
     };
+    this.#provider = options.provider;
     this.#testMode = options.testMode;
     this.#testPythonOverride = process.env.NODE_ENV === "test" || process.env.CI === "true"
       ? process.env.FAIRY_TEST_PYTHON
@@ -521,12 +697,16 @@ export class SpeechWorkerProcess {
       ...this.#interpreter.args,
       "-u",
       "-B",
-      workerPath,
-      ...(this.#testMode ? ["--test-mode", this.#testMode] : [])
+      this.#provider ? miniMaxWorkerPath : mockWorkerPath,
+      ...(this.#provider?.testMode ? ["--test-mode", this.#provider.testMode] : this.#testMode ? ["--test-mode", this.#testMode] : [])
     ];
     const child = spawn(this.#interpreter.argv0, args, {
       cwd: tmpdir(),
-      env: childEnvironment(),
+      env: childEnvironment(this.#provider ? {
+        credential: this.#provider.credential,
+        outputRoot: this.#provider.outputRoot,
+        providerTestMode: this.#provider.testLoopbackPort !== undefined
+      } : {}),
       shell: false,
       stdio: ["pipe", "pipe", "pipe"],
       windowsHide: true
@@ -571,7 +751,9 @@ export class SpeechWorkerProcess {
   }
 
   stderrDiagnostic(): string {
-    return redactSpeechWorkerDiagnostic(this.#stderrRaw).slice(0, maxCapturedStderrBytes);
+    const redacted = redactSpeechWorkerDiagnostic(this.#stderrRaw);
+    return (this.#provider?.credential ? redacted.split(this.#provider.credential).join("[REDACTED:provider-credential]") : redacted)
+      .slice(0, maxCapturedStderrBytes);
   }
 
   async requestAsr(script: SpeechWorkerAsrScript, onPartial?: (text: string) => Promise<void> | void): Promise<SpeechWorkerAsrResult> {
@@ -613,10 +795,12 @@ export class SpeechWorkerProcess {
     const result = deferred<SpeechWorkerTtsResult>();
     const pending: PendingRequest = {
       chunks: [],
+      expectedText: script.text,
       kind: "tts",
       ...(onChunk ? { onChunk } : {}),
       reject: result.reject,
       resolve: result.resolve,
+      provider: false,
       utteranceId: script.utteranceId
     };
     this.#pending.set(script.requestId, pending);
@@ -637,6 +821,68 @@ export class SpeechWorkerProcess {
       throw this.#publicError(error, "SPEECH_WORKER_TTS_FAILED", "speech worker TTS request failed");
     } finally {
       this.#pending.delete(script.requestId);
+    }
+  }
+
+  async requestProviderTts(request: SpeechWorkerProviderTtsRequest, onChunk?: (chunk: SpeechWorkerTtsChunk) => Promise<void> | void): Promise<SpeechWorkerTtsResult> {
+    if (!this.#provider) {
+      throw new SpeechWorkerProcessError("SPEECH_WORKER_PROVIDER_MODE_REQUIRED", "real TTS requests require the repository-owned provider worker mode");
+    }
+    if (request.text.length < 1 || request.text.length > request.provider.limits.maxTextChars) {
+      throw new SpeechWorkerProcessError("SPEECH_WORKER_TTS_TEXT_INVALID", "TTS text is empty or exceeds the configured adapter limit");
+    }
+    this.#assertRequestCapacity(request.requestId);
+    const result = deferred<SpeechWorkerTtsResult>();
+    const pending: PendingRequest = {
+      chunks: [],
+      expectedText: request.text,
+      kind: "tts",
+      ...(onChunk ? { onChunk } : {}),
+      reject: result.reject,
+      resolve: result.resolve,
+      provider: true,
+      utteranceId: request.utteranceId
+    };
+    this.#pending.set(request.requestId, pending);
+    try {
+      await this.#send({
+        audio_setting: {
+          bitrate: request.provider.audio.bitrate,
+          channel: request.provider.audio.channel,
+          format: request.provider.audio.format,
+          sample_rate: request.provider.audio.sampleRate
+        },
+        deadlines_ms: miniMaxTtsDefaults.deadlinesMs,
+        endpoint_profile: request.provider.endpointProfile,
+        kind: "tts.request",
+        labels: request.labels,
+        language_boost: request.provider.languageBoost,
+        limits: {
+          max_audio_bytes: request.provider.limits.maxAudioBytes,
+          max_response_bytes: request.provider.limits.maxResponseBytes,
+          max_text_chars: request.provider.limits.maxTextChars
+        },
+        model: request.provider.model,
+        provider_transport: request.provider.transport,
+        request_id: request.requestId,
+        ...(this.#provider.testLoopbackPort === undefined ? {} : { test_loopback_port: this.#provider.testLoopbackPort }),
+        text: request.text,
+        utterance_id: request.utteranceId,
+        voice_setting: {
+          pitch: request.provider.voice.pitch,
+          speed: request.provider.voice.speed,
+          voice_id: request.provider.voice.voiceId,
+          volume: request.provider.voice.volume
+        }
+      }, this.#deadlines.requestMs);
+      return await withDeadline("SPEECH_WORKER_REQUEST_TIMEOUT", `speech worker provider TTS request ${request.requestId}`, result.promise, this.#deadlines.requestMs);
+    } catch (error) {
+      if (error instanceof SpeechWorkerProcessError && error.code === "SPEECH_WORKER_REQUEST_TIMEOUT") {
+        await this.#terminate("provider TTS request timeout");
+      }
+      throw this.#publicError(error, "SPEECH_WORKER_TTS_FAILED", "speech worker provider TTS request failed");
+    } finally {
+      this.#pending.delete(request.requestId);
     }
   }
 
@@ -700,13 +946,20 @@ export class SpeechWorkerProcess {
   async #discoverInterpreter(): Promise<PythonInterpreterEvidence> {
     const candidates = interpreterCandidates(this.#testPythonOverride);
     const errors: string[] = [];
+    let unsupported: SpeechWorkerProcessError | undefined;
     const perCandidateMs = Math.max(250, Math.floor(this.#deadlines.discoveryMs / candidates.length));
     for (const candidate of candidates) {
       try {
         return await probeInterpreter(candidate, perCandidateMs);
       } catch (error) {
+        if (error instanceof SpeechWorkerProcessError && error.code === "SPEECH_WORKER_PYTHON_UNSUPPORTED") {
+          unsupported = error;
+        }
         errors.push(`${candidate.argv0}: ${redactSpeechWorkerDiagnostic(error instanceof Error ? error.message : String(error))}`);
       }
+    }
+    if (unsupported) {
+      throw unsupported;
     }
     throw new SpeechWorkerProcessError(
       "SPEECH_WORKER_PYTHON_NOT_FOUND",
@@ -753,6 +1006,7 @@ export class SpeechWorkerProcess {
       if (!this.#interpreter || !this.#child?.pid || this.#readyInfo) {
         throw new SpeechWorkerProcessError("SPEECH_WORKER_UNEXPECTED_READY", "speech worker emitted an unexpected ready message");
       }
+      assertSupportedSpeechWorkerPythonVersion(message.python_version);
       if (message.python_version !== this.#interpreter.version) {
         throw new SpeechWorkerProcessError("SPEECH_WORKER_VERSION_MISMATCH", "speech worker ready version did not match interpreter discovery evidence");
       }
@@ -800,9 +1054,27 @@ export class SpeechWorkerProcess {
       if (!pending || pending.kind !== "tts") {
         throw new SpeechWorkerProcessError("SPEECH_WORKER_UNCORRELATED_OUTPUT", "speech worker emitted an uncorrelated TTS chunk");
       }
+      if (pending.provider && (
+        message.audio_ref !== "tts-output.mp3" ||
+        message.audio_format !== "mp3" ||
+        message.mime !== "audio/mpeg" ||
+        typeof message.sha256 !== "string" ||
+        typeof message.size_bytes !== "number" ||
+        message.text !== pending.expectedText ||
+        pending.chunks.length > 0
+      )) {
+        throw new SpeechWorkerProcessError("SPEECH_WORKER_PROVIDER_RESULT_INVALID", "provider worker emitted invalid artifact metadata");
+      }
+      if (!pending.provider && (message.audio_format !== undefined || message.mime !== undefined || message.sha256 !== undefined || message.size_bytes !== undefined)) {
+        throw new SpeechWorkerProcessError("SPEECH_WORKER_PROVIDER_RESULT_UNEXPECTED", "mock worker emitted provider artifact metadata");
+      }
       const chunk: SpeechWorkerTtsChunk = {
+        ...(message.audio_format ? { audioFormat: message.audio_format } : {}),
         ...(message.audio_ref ? { audioRef: message.audio_ref } : {}),
         chunkId: message.chunk_id,
+        ...(message.mime ? { mime: message.mime } : {}),
+        ...(message.sha256 ? { sha256: message.sha256 } : {}),
+        ...(message.size_bytes ? { sizeBytes: message.size_bytes } : {}),
         text: message.text
       };
       pending.chunks.push(chunk);
@@ -811,7 +1083,7 @@ export class SpeechWorkerProcess {
     }
     if (message.kind === "tts.done") {
       const pending = this.#pending.get(message.request_id);
-      if (!pending || pending.kind !== "tts" || pending.utteranceId !== message.utterance_id || pending.chunks.length !== message.chunk_count) {
+      if (!pending || pending.kind !== "tts" || pending.utteranceId !== message.utterance_id || pending.chunks.length !== message.chunk_count || (pending.provider && message.chunk_count !== 1)) {
         throw new SpeechWorkerProcessError("SPEECH_WORKER_UNCORRELATED_OUTPUT", "speech worker emitted an invalid TTS completion");
       }
       this.#pending.delete(message.request_id);
@@ -839,7 +1111,11 @@ export class SpeechWorkerProcess {
       return;
     }
     if (message.kind === "error") {
-      const error = new SpeechWorkerProcessError(`SPEECH_WORKER_${message.code.toUpperCase().replace(/[^A-Z0-9]+/g, "_")}`, redactSpeechWorkerDiagnostic(message.message));
+      const error = new SpeechWorkerProcessError(
+        `SPEECH_WORKER_${message.code.toUpperCase().replace(/[^A-Z0-9]+/g, "_")}`,
+        redactSpeechWorkerDiagnostic(message.message),
+        { retryable: message.retryable === true }
+      );
       if (message.request_id) {
         const pending = this.#pending.get(message.request_id);
         if (!pending) {
@@ -936,12 +1212,19 @@ export class SpeechWorkerProcess {
   }
 
   #publicError(error: unknown, fallbackCode: string, fallbackMessage: string): SpeechWorkerProcessError {
+    const removeCredential = (value: string): string => this.#provider?.credential
+      ? value.split(this.#provider.credential).join("[REDACTED:provider-credential]")
+      : value;
     if (error instanceof SpeechWorkerProcessError) {
       const diagnostic = this.stderrDiagnostic();
-      return new SpeechWorkerProcessError(error.code, `${redactSpeechWorkerDiagnostic(error.message)}${diagnostic ? `; worker stderr: ${diagnostic}` : ""}`);
+      return new SpeechWorkerProcessError(
+        error.code,
+        removeCredential(`${redactSpeechWorkerDiagnostic(error.message)}${diagnostic ? `; worker stderr: ${diagnostic}` : ""}`),
+        { retryable: error.retryable }
+      );
     }
-    const message = redactSpeechWorkerDiagnostic(error instanceof Error ? error.message : String(error));
+    const message = removeCredential(redactSpeechWorkerDiagnostic(error instanceof Error ? error.message : String(error)));
     const diagnostic = this.stderrDiagnostic();
-    return new SpeechWorkerProcessError(fallbackCode, `${fallbackMessage}: ${message}${diagnostic ? `; worker stderr: ${diagnostic}` : ""}`);
+    return new SpeechWorkerProcessError(fallbackCode, `${fallbackMessage}: ${message}${diagnostic ? `; worker stderr: ${removeCredential(diagnostic)}` : ""}`);
   }
 }

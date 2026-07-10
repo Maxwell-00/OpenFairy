@@ -34,3 +34,31 @@ jobs:
         run: pnpm -r test
       - name: Dependency rules
         run: pnpm dep-check
+
+  python-311-speech:
+    name: Python 3.11 speech floor (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+
+    steps:
+      - uses: actions/checkout@v5
+      - name: Install pnpm (version from root package.json "packageManager")
+        uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: pnpm
+      - id: python
+        name: Provision Python 3.11 floor
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+      - name: Install
+        run: pnpm install --frozen-lockfile
+      - name: M3-05 MiniMax TTS provider conformance on Python 3.11
+        env:
+          FAIRY_TEST_PYTHON: ${{ steps.python.outputs.python-path }}
+        run: pnpm --filter @fairy/testing test -- --reporter=verbose -t 'voice.tts-provider-v0'

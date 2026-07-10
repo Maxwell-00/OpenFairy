@@ -1,0 +1,17 @@
+{
+  "base_resp": {
+    "status_code": 0,
+    "status_msg": "success"
+  },
+  "data": {
+    "audio": "__TEST_INJECTS_BOUNDED_MP3_HEX__",
+    "status": 2
+  },
+  "extra_info": {
+    "audio_channel": 1,
+    "audio_format": "mp3",
+    "audio_sample_rate": 32000,
+    "audio_size": "__TEST_INJECTS_DECODED_SIZE__",
+    "bitrate": 128000
+  }
+}

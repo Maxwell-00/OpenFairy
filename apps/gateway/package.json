@@ -15,6 +15,7 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
+    "@fairy/artifacts": "workspace:*",
     "@fairy/config": "workspace:*",
     "@fairy/kernel": "workspace:*",
     "@fairy/memory": "workspace:*",

@@ -2,6 +2,8 @@ import { defaultDataDir, loadConfig } from "@fairy/config";
 import { loadPersonaRuntime, type ContextConfig, type EgressGuardConfig, type PermissionRule, type PersonaRuntime } from "@fairy/kernel";
 import { join, resolve } from "node:path";
 
+import { parseSpeechProviderConfig, resolveMiniMaxCredential, type MiniMaxTtsProviderConfig, type SpeechProviderRuntimeConfig } from "./speech-provider.js";
+
 export interface GatewayCliOptions {
   readonly configPath?: string;
   readonly port?: number;
@@ -18,8 +20,11 @@ export interface GatewayRuntimeConfig {
   readonly egressGuardConfig: EgressGuardConfig;
   readonly host: "127.0.0.1";
   readonly maxToolIterations: number;
+  readonly ownerLiveSpeechProviderEnabled: boolean;
   readonly permissionRules: readonly PermissionRule[];
   readonly personaRuntime: PersonaRuntime;
+  readonly resolveSpeechProviderCredential: (provider: MiniMaxTtsProviderConfig) => string;
+  readonly speechProviderConfig: SpeechProviderRuntimeConfig;
   readonly systemPrompt: string;
   readonly voiceConfig: VoiceRuntimeConfig;
   readonly port: number;
@@ -209,6 +214,7 @@ export const loadGatewayConfig = (
   const configuredDataDir = typeof gateway.data_dir === "string" ? gateway.data_dir : defaultDataDir(env);
   const configuredToken = readAuthToken(gateway);
   const dataDir = resolve(options.dataDir ?? configuredDataDir);
+  const speechProviderConfig = parseSpeechProviderConfig(loaded.config);
 
   return {
     artifactsDir: join(dataDir, "artifacts"),
@@ -222,8 +228,11 @@ export const loadGatewayConfig = (
     egressGuardConfig: readEgressGuardConfig(loaded.config),
     host: "127.0.0.1",
     maxToolIterations: readMaxToolIterations(loaded.config),
+    ownerLiveSpeechProviderEnabled: env.FAIRY_OWNER_LIVE_TTS === "1",
     permissionRules: readPermissionRules(loaded.config),
     personaRuntime: loadPersonaRuntime(loaded.config, cwd),
+    resolveSpeechProviderCredential: (provider) => resolveMiniMaxCredential(provider, env),
+    speechProviderConfig,
     systemPrompt: readSystemPrompt(loaded.config),
     voiceConfig: readVoiceConfig(loaded.config),
     port: options.port ?? configuredPort,

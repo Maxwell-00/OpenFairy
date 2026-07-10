@@ -1,5 +1,5 @@
 {
-  "name": "@fairy/perception",
+  "name": "@fairy/artifacts",
   "version": "0.0.0",
   "private": true,
   "type": "module",
@@ -12,8 +12,5 @@
   "scripts": {
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run"
-  },
-  "dependencies": {
-    "@fairy/artifacts": "workspace:*"
   }
 }

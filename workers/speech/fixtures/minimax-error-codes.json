@@ -1,0 +1,16 @@
+[
+  { "category": "provider_timeout", "code": 1001, "retryable": true },
+  { "category": "rate_limit", "code": 1002, "retryable": false },
+  { "category": "unauthorized", "code": 1004, "retryable": false },
+  { "category": "insufficient_balance", "code": 1008, "retryable": false },
+  { "category": "provider_internal", "code": 1024, "retryable": true },
+  { "category": "content_safety", "code": 1026, "retryable": false },
+  { "category": "content_safety", "code": 1027, "retryable": false },
+  { "category": "provider_downstream", "code": 1033, "retryable": true },
+  { "category": "invalid_character_ratio", "code": 1042, "retryable": false },
+  { "category": "invalid_parameter", "code": 2013, "retryable": false },
+  { "category": "invalid_voice", "code": 2042, "retryable": false },
+  { "category": "invalid_api_key", "code": 2049, "retryable": false },
+  { "category": "token_plan_resource_limit", "code": 2056, "retryable": false },
+  { "category": "invalid_voice", "code": 20132, "retryable": false }
+]

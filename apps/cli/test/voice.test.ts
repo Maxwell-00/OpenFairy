@@ -1,11 +1,14 @@
 import { spawn, type ChildProcessByStdio } from "node:child_process";
 import { mkdtemp, readFile, writeFile } from "node:fs/promises";
+import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import type { Readable } from "node:stream";
 import { afterEach, describe, expect, it } from "vitest";
 
 import { MockOpenAIChatServer } from "@fairy/testing";
+import { loadGatewayConfig } from "../../gateway/src/config.js";
+import { MinimalGateway } from "../../gateway/src/server.js";
 import { parseVoiceOptions, runVoice } from "../src/index.js";
 
 const repoRoot = resolve(new URL("../../..", import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, "$1"));
@@ -56,6 +59,55 @@ const stopGateway = async (process: GatewayProcess): Promise<void> => {
   await new Promise<void>((resolvePromise) => process.once("exit", () => resolvePromise()));
 };
 
+const startMiniMaxFake = async (credential: string): Promise<{
+  readonly bodies: Record<string, unknown>[];
+  readonly port: number;
+  readonly requests: () => number;
+  readonly stop: () => Promise<void>;
+}> => {
+  const audio = Buffer.from([0x49, 0x44, 0x33, 0x04, 0, 0, 0, 0, 0, 0, 0xff, 0xfb]);
+  let requestCount = 0;
+  const bodies: Record<string, unknown>[] = [];
+  const server = createServer((request, response) => {
+    const chunks: Buffer[] = [];
+    request.on("data", (chunk: Buffer) => chunks.push(chunk));
+    request.on("end", () => {
+      requestCount += 1;
+      const body = JSON.parse(Buffer.concat(chunks).toString("utf8")) as Record<string, unknown>;
+      bodies.push(body);
+      const statusCode = request.headers.authorization === `Bearer ${credential}` ? 0 : 1004;
+      const envelope = statusCode === 0
+        ? {
+            base_resp: { status_code: 0 },
+            data: { audio: audio.toString("hex"), status: 2 },
+            extra_info: { audio_channel: 1, audio_format: "mp3", audio_sample_rate: 32000, audio_size: audio.byteLength, bitrate: 128000 }
+          }
+        : { base_resp: { status_code: statusCode }, data: null };
+      response.writeHead(200, { "content-type": "application/json" });
+      response.end(JSON.stringify(envelope));
+    });
+  });
+  await new Promise<void>((resolvePromise, reject) => {
+    server.once("error", reject);
+    server.listen(0, "127.0.0.1", () => resolvePromise());
+  });
+  const address = server.address();
+  if (!address || typeof address !== "object") {
+    throw new Error("CLI fake MiniMax did not bind");
+  }
+  return {
+    bodies,
+    port: address.port,
+    requests: () => requestCount,
+    stop: async () => {
+      server.closeAllConnections?.();
+      if (server.listening) {
+        await new Promise<void>((resolvePromise) => server.close(() => resolvePromise()));
+      }
+    }
+  };
+};
+
 afterEach(async () => {
   await provider?.stop();
   provider = undefined;
@@ -66,6 +118,10 @@ describe("fairy voice CLI", () => {
     expect(() => parseVoiceOptions(["worker", "--script", "fixture.json", "--worker-path", "evil.py"])).toThrow(/repository-controlled/);
     expect(() => parseVoiceOptions(["worker", "--script", "fixture.json", "--python", "python -c evil"])).toThrow(/repository-controlled/);
     expect(() => parseVoiceOptions(["worker", "--script", "fixture.json", "--worker-command", "python evil.py"])).toThrow(/repository-controlled/);
+    expect(() => parseVoiceOptions(["worker", "--script", "fixture.json", "--endpoint-url", "https://evil.invalid"])).toThrow(/repository-controlled/);
+    expect(() => parseVoiceOptions(["worker", "--script", "fixture.json", "--provider-executable", "evil"])).toThrow(/repository-controlled/);
+    expect(() => parseVoiceOptions(["worker", "--script", "fixture.json", "--output-dir", "evil"])).toThrow(/repository-controlled/);
+    expect(() => parseVoiceOptions(["worker", "--script", "fixture.json", "--artifact-path", "evil.mp3"])).toThrow(/repository-controlled/);
   });
 
   it("runs loopback through the gateway and prints parseable JSON", async () => {
@@ -494,6 +550,153 @@ describe("fairy voice CLI", () => {
       expect(rawLog).not.toMatch(/[A-Za-z0-9+/]{120,}={0,2}/);
     } finally {
       await stopGateway(gateway);
+    }
+  }, CLI_VOICE_E2E_TIMEOUT_MS);
+
+  it("runs configured MiniMax TTS through the supervised provider worker and prints bounded JSON evidence", async () => {
+    provider = await MockOpenAIChatServer.start({
+      reasoning: ["hidden CLI provider reasoning"],
+      text: ["visible CLI provider answer"]
+    });
+    const credential = "M305_CLI_FAKE_CREDENTIAL_DO_NOT_USE";
+    const miniMax = await startMiniMaxFake(credential);
+    const temp = await mkdtemp(join(tmpdir(), "fairy-voice-provider-cli-"));
+    const dataDir = join(temp, "data");
+    const configPath = join(temp, "fairy.yaml");
+    const scriptPath = join(temp, "script.json");
+    const token = "voice-provider-cli-token";
+    await writeFile(configPath, [
+      "models:",
+      "  - id: mock-main",
+      "    transport: openai-chat",
+      `    base_url: ${JSON.stringify(provider.url)}`,
+      "    model: mock-model",
+      "    data_clearance:",
+      "      max_sensitivity: personal",
+      "      residency: [region-restricted]",
+      "      regions: [cn]",
+      "roles:",
+      "  main:",
+      "    model: mock-main",
+      "gateway:",
+      "  port: 0",
+      `  data_dir: ${JSON.stringify(dataDir.replace(/\\/g, "/"))}`,
+      "  auth:",
+      `    token: ${JSON.stringify(token)}`,
+      "governance:",
+      "  profile: balanced",
+      "  home_regions: [cn]",
+      "persona:",
+      "  enabled: false",
+      "affect:",
+      "  enabled: false",
+      "speech:",
+      "  providers:",
+      "    - id: minimax-cli",
+      "      stage: tts",
+      "      transport: minimax-t2a-v2-http",
+      "      endpoint_profile: cn-primary",
+      "      voice:",
+      "        voice_id: male-qn-qingse",
+      "        speed: 1",
+      "        volume: 1",
+      "        pitch: 0",
+      "      api_key_ref: secret://minimax_cli",
+      "      language_boost: auto",
+      "      audio:",
+      "        format: mp3",
+      "        sample_rate: 32000",
+      "        bitrate: 128000",
+      "        channel: 1",
+      "      data_clearance:",
+      "        max_sensitivity: personal",
+      "        residency: [region-restricted, global-ok]",
+      "        regions: [cn]",
+      "  roles:",
+      "    tts:",
+      "      primary: minimax-cli",
+      "      fallback: []"
+    ].join("\n"), "utf8");
+    await writeFile(scriptPath, JSON.stringify({
+      partials: ["voice provider"],
+      text: "voice provider CLI input",
+      utterance_id: "utt_cli_provider"
+    }), "utf8");
+    const config = loadGatewayConfig({ configPath }, repoRoot, { ...process.env, minimax_cli: credential });
+    const gateway = new MinimalGateway(config, { speechProviderLoopbackPorts: { "minimax-cli": miniMax.port } });
+    const address = await gateway.start();
+
+    try {
+      const outputLines: string[] = [];
+      const originalLog = console.log;
+      console.log = (value?: unknown): void => {
+        outputLines.push(String(value ?? ""));
+      };
+      try {
+        await runVoice([
+          "worker",
+          "--gateway",
+          `ws://127.0.0.1:${address.port}`,
+          "--token",
+          token,
+          "--script",
+          scriptPath,
+          "--json"
+        ]);
+      } finally {
+        console.log = originalLog;
+      }
+      const output = outputLines.join("\n").trim();
+      const parsed = JSON.parse(output) as {
+        error_status: string;
+        log_path: string;
+        provider_request_count: number;
+        provider_route: string[];
+        tts_chunk_count: number;
+        tts_provider: {
+          artifact_ref: string;
+          audio_format: string;
+          byte_count: number;
+          endpoint_profile: string;
+          provider_id: string;
+          request_id: string;
+          sha256: string;
+          transport: string;
+          worker: { interpreter: { argv0: string; source: string; version: string }; pythonVersion: string; workerId: string };
+        };
+      };
+      expect(parsed).toMatchObject({
+        error_status: "none",
+        provider_request_count: 1,
+        provider_route: ["minimax-cli:selected"],
+        tts_chunk_count: 1,
+        tts_provider: {
+          artifact_ref: expect.stringMatching(/^art_/),
+          audio_format: "mp3",
+          endpoint_profile: "cn-primary",
+          provider_id: "minimax-cli",
+          request_id: "provider-tts:utt_cli_provider:minimax-cli",
+          sha256: expect.stringMatching(/^sha256:[a-f0-9]{64}$/),
+          transport: "minimax-t2a-v2-http",
+          worker: {
+            interpreter: { argv0: expect.any(String), source: expect.stringMatching(/^(?:discovered|test-override)$/) },
+            pythonVersion: expect.stringMatching(/^\d+\.\d+\.\d+$/),
+            workerId: "speech-minimax-t2a-v2"
+          }
+        }
+      });
+      expect(miniMax.requests()).toBe(1);
+      expect(miniMax.bodies[0]).toMatchObject({ text: "visible CLI provider answer" });
+      expect(output).not.toContain(credential);
+      expect(output).not.toContain("hidden CLI provider reasoning");
+      expect(output).not.toContain("tts-output.mp3");
+      const rawLog = await readFile(parsed.log_path, "utf8");
+      expect(rawLog).not.toContain(credential);
+      expect(rawLog).not.toContain("base_resp");
+      expect(rawLog).not.toContain("tts-output.mp3");
+    } finally {
+      await gateway.stop();
+      await miniMax.stop();
     }
   }, CLI_VOICE_E2E_TIMEOUT_MS);
 });

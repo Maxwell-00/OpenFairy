@@ -1,6 +1,7 @@
 export { parseModelGatewayConfig, resolveSecretRef } from "./config.js";
 export { ConfiguredModelGateway, createModelGateway } from "./gateway.js";
 export {
+  canRouteToClearance,
   canRouteToModel,
   defaultRequestLabels,
   deriveLabels,

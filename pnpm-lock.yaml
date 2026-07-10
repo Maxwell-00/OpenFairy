@@ -72,6 +72,9 @@ importers:
 
   apps/gateway:
     dependencies:
+      '@fairy/artifacts':
+        specifier: workspace:*
+        version: link:../../packages/artifacts
       '@fairy/config':
         specifier: workspace:*
         version: link:../../packages/config
@@ -103,6 +106,8 @@ importers:
       '@types/ws':
         specifier: ^8.18.1
         version: 8.18.1
+
+  packages/artifacts: {}
 
   packages/channels: {}
 
@@ -139,7 +144,11 @@ importers:
 
   packages/orchestrator: {}
 
-  packages/perception: {}
+  packages/perception:
+    dependencies:
+      '@fairy/artifacts':
+        specifier: workspace:*
+        version: link:../artifacts
 
   packages/protocol:
     dependencies:
@@ -154,6 +163,9 @@ importers:
 
   packages/testing:
     dependencies:
+      '@fairy/artifacts':
+        specifier: workspace:*
+        version: link:../artifacts
       '@fairy/config':
         specifier: workspace:*
         version: link:../config

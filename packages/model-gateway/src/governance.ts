@@ -1,4 +1,4 @@
-import type { ChatMessage, GovernanceConfig, ModelConfig, RequestLabels, RoutingHints } from "./types.js";
+import type { ChatMessage, DataClearance, GovernanceConfig, ModelConfig, RequestLabels, RoutingHints } from "./types.js";
 
 export const defaultRequestLabels: RequestLabels = {
   residency: "global-ok",
@@ -63,10 +63,10 @@ const regionSetAllowed = (modelRegions: readonly string[] | undefined, homeRegio
 
 const residencyAllowed = (
   request: RequestLabels["residency"],
-  model: ModelConfig,
+  clearance: DataClearance,
   governance: GovernanceConfig
 ): ClearanceDecision => {
-  const allowed = new Set(model.data_clearance.residency);
+  const allowed = new Set(clearance.residency);
 
   if (request === "local-only") {
     return allowed.has("local-only")
@@ -81,7 +81,7 @@ const residencyAllowed = (
     if (!allowed.has("region-restricted")) {
       return { ok: false, reason: "residency region-restricted requires local-only or region-restricted model clearance" };
     }
-    return regionSetAllowed(model.data_clearance.regions, governance.home_regions)
+    return regionSetAllowed(clearance.regions, governance.home_regions)
       ? { ok: true }
       : { ok: false, reason: "model regions are not within governance.home_regions" };
   }
@@ -96,15 +96,22 @@ export const canRouteToModel = (
   model: ModelConfig,
   governance: GovernanceConfig,
   hints: RoutingHints = {}
+): ClearanceDecision => canRouteToClearance(labels, model.data_clearance, governance, hints);
+
+export const canRouteToClearance = (
+  labels: RequestLabels,
+  clearance: DataClearance,
+  governance: GovernanceConfig,
+  hints: RoutingHints = {}
 ): ClearanceDecision => {
-  if (sensitivityRank[labels.sensitivity] > sensitivityRank[model.data_clearance.max_sensitivity]) {
+  if (sensitivityRank[labels.sensitivity] > sensitivityRank[clearance.max_sensitivity]) {
     return {
       ok: false,
-      reason: `request sensitivity ${labels.sensitivity} exceeds model max ${model.data_clearance.max_sensitivity}`
+      reason: `request sensitivity ${labels.sensitivity} exceeds model max ${clearance.max_sensitivity}`
     };
   }
 
-  const decision = residencyAllowed(labels.residency, model, governance);
+  const decision = residencyAllowed(labels.residency, clearance, governance);
   if (hints.prefer_local === true) {
     return decision;
   }

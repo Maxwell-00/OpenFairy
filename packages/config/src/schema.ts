@@ -203,6 +203,114 @@ export const configSchema = {
       },
       required: ["enabled", "transport", "loopback"]
     },
+    speech: {
+      type: "object",
+      additionalProperties: false,
+      properties: {
+        providers: {
+          type: "array",
+          maxItems: 16,
+          items: {
+            type: "object",
+            additionalProperties: false,
+            properties: {
+              id: { type: "string", pattern: "^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$" },
+              stage: { const: "tts" },
+              transport: { const: "minimax-t2a-v2-http" },
+              endpoint_profile: { type: "string", enum: ["cn-primary", "cn-backup"] },
+              model: { type: "string", enum: ["speech-2.8-turbo", "speech-2.8-hd"] },
+              voice: {
+                type: "object",
+                additionalProperties: false,
+                properties: {
+                  voice_id: { type: "string", pattern: "^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$" },
+                  speed: { type: "number", minimum: 0.5, maximum: 2 },
+                  volume: { type: "number", minimum: 0, maximum: 10 },
+                  pitch: { type: "integer", minimum: -12, maximum: 12 }
+                },
+                required: ["voice_id", "speed", "volume", "pitch"]
+              },
+              api_key_ref: { type: "string", pattern: "^secret://[A-Za-z0-9_.-]+$" },
+              language_boost: { type: "string", enum: ["auto", "Chinese", "English"] },
+              audio: {
+                type: "object",
+                additionalProperties: false,
+                properties: {
+                  format: { const: "mp3" },
+                  sample_rate: { const: 32000 },
+                  bitrate: { const: 128000 },
+                  channel: { const: 1 }
+                },
+                required: ["format", "sample_rate", "bitrate", "channel"]
+              },
+              limits: {
+                type: "object",
+                additionalProperties: false,
+                properties: {
+                  max_text_chars: { type: "integer", minimum: 1, maximum: 3000 },
+                  max_response_bytes: { type: "integer", minimum: 1, maximum: 67108864 },
+                  max_audio_bytes: { type: "integer", minimum: 1, maximum: 33554432 }
+                }
+              },
+              data_clearance: {
+                type: "object",
+                additionalProperties: false,
+                properties: {
+                  max_sensitivity: { type: "string", enum: ["public", "internal", "personal", "secret"] },
+                  residency: {
+                    type: "array",
+                    minItems: 1,
+                    uniqueItems: true,
+                    items: { type: "string", enum: ["local-only", "region-restricted", "global-ok"] }
+                  },
+                  regions: {
+                    type: "array",
+                    minItems: 1,
+                    uniqueItems: true,
+                    items: { type: "string", minLength: 1 }
+                  }
+                },
+                required: ["max_sensitivity", "residency"],
+                allOf: [
+                  {
+                    if: {
+                      properties: {
+                        residency: { contains: { const: "region-restricted" } }
+                      },
+                      required: ["residency"]
+                    },
+                    then: { required: ["regions"] }
+                  }
+                ]
+              }
+            },
+            required: ["id", "stage", "transport", "endpoint_profile", "voice", "api_key_ref", "language_boost", "audio", "data_clearance"]
+          }
+        },
+        roles: {
+          type: "object",
+          additionalProperties: false,
+          properties: {
+            tts: {
+              type: "object",
+              additionalProperties: false,
+              properties: {
+                primary: { type: "string", minLength: 1 },
+                fallback: {
+                  type: "array",
+                  maxItems: 15,
+                  uniqueItems: true,
+                  items: { type: "string", minLength: 1 }
+                }
+              },
+              required: ["primary", "fallback"]
+            }
+          },
+          required: ["tts"]
+        }
+      },
+      required: ["providers", "roles"]
+    },
     workspace: {
       type: "object",
       additionalProperties: true,
