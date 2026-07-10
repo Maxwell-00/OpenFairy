@@ -1,6 +1,6 @@
 # M3-05 — MiniMax T2A v2 non-streaming TTS worker + governed audio artifacts
 
-**Status:** DRAFT FOR FABLE/OPUS BRIEF GATE  
+**Status:** GATED — edits RE-1..RE-4 applied in place 2026-07-10 by the reviewer (Claude Fable 5); gate record + answers to §16 in `tasks/M3-05-brief-review.md`  
 **Baseline:** committed GitHub state `bce1d65`  
 **Milestone:** M3 — Voice I/O  
 **Primary suite:** `voice.tts-provider-v0`  
@@ -57,16 +57,15 @@ VAD, real ASR, streaming framing, Lane A/B, acknowledgement generation, sentence
 
 Codex must read the committed versions of:
 
-- `ROADMAP.md`
-- `PRD.md`
-- `ARCHITECTURE.md`
+- `docs/ROADMAP.md`
+- `docs/PRD.md`
+- `docs/ARCHITECTURE.md`
 - `REVIEWER-HANDBOOK.md`
 - `docs/specs/voice-pipeline.md`
 - `docs/specs/protocol.md`
 - `docs/specs/data-governance.md`
 - `docs/specs/model-gateway.md`
 - `docs/specs/evals.md`
-- `docs/specs/config.md`
 - `tasks/M3-04-speech-worker-process.md`
 - `tasks/M3-04-review.md`
 - `tasks/M3-04-work.md`
@@ -329,6 +328,8 @@ Requirements:
 - content is decoded only after a structurally valid provider envelope;
 - provider error payloads are untrusted diagnostics;
 - provider trace IDs may be retained only as bounded/redacted support diagnostics, never as authorization or canonical truth.
+- **(gate RE-3)** Proxies are NOT approved for this slice: proxy-related environment variables (`HTTP_PROXY`/`HTTPS_PROXY`/`ALL_PROXY`/`NO_PROXY` and case variants) are excluded from the deliberately-constructed child environment, AND the worker constructs its HTTP opener with proxies explicitly disabled in code (Python `urllib` honors proxy env by default — do not rely on a clean environment alone). Direct connection only; a proxy-aware path is a future explicit decision.
+- **(gate RE-4)** Static import scans are per-worker scoped: the M3-04 scan on `workers/speech/mock_worker.py` (forbidding socket/network/subprocess/audio modules) stays **byte-identical**; `minimax_tts_worker.py` gets its own scan that allows the stdlib HTTPS client modules it needs (`urllib`/`http`/`ssl`) but still forbids `socket` (direct), `subprocess`, audio/device modules, vendor SDK names, and non-stdlib imports. Do not weaken the mock worker's scan to accommodate the provider worker.
 
 Production endpoint rules:
 
@@ -1198,8 +1199,7 @@ Codex may propose changes for:
   - speech-provider registry/role separation from model providers;
 - `docs/specs/evals.md`
   - `voice.tts-provider-v0`;
-- `docs/specs/config.md`
-  - speech provider and role config;
+- **(gate RE-2)** speech provider/role config-key registration goes into `docs/specs/voice-pipeline.md` (there is **no** `docs/specs/config.md` — the project has no dedicated config spec; keys register in their owning feature spec, per standing convention);
 - `workers/speech/README.md`
   - Python `>=3.11`, real worker boundary, supported transport;
 - `REVIEWER-HANDBOOK.md`
