@@ -4,7 +4,7 @@ import { readFile } from "node:fs/promises";
 import WebSocket from "ws";
 
 interface VoiceOptions {
-  readonly command: "duplex" | "loopback" | "ws";
+  readonly command: "duplex" | "loopback" | "worker" | "ws";
   readonly gateway: string;
   readonly json: boolean;
   readonly scriptPath: string;
@@ -191,13 +191,18 @@ const summaryFromEvents = (sid: string, op: string, events: readonly EventEnvelo
 
 export const parseVoiceOptions = (args: readonly string[], env: NodeJS.ProcessEnv = process.env): VoiceOptions => {
   const [subcommand] = args;
-  if (subcommand !== "loopback" && subcommand !== "duplex" && subcommand !== "ws") {
-    throw new Error("Usage: fairy voice <loopback|duplex|ws> --script path [--session sid] [--gateway url] [--token token] [--json]");
+  if (subcommand !== "loopback" && subcommand !== "duplex" && subcommand !== "worker" && subcommand !== "ws") {
+    throw new Error("Usage: fairy voice <loopback|duplex|worker|ws> --script path [--session sid] [--gateway url] [--token token] [--json]");
   }
   const session = readOption(args, "--session");
   const scriptPath = readOption(args, "--script");
   if (!scriptPath) {
     throw new Error(`fairy voice ${subcommand} requires --script path`);
+  }
+  for (const forbidden of ["--python", "--worker-command", "--worker-path"]) {
+    if (args.includes(forbidden)) {
+      throw new Error(`${forbidden} is not supported; the speech worker executable and script are repository-controlled`);
+    }
   }
   return {
     command: subcommand,
@@ -219,7 +224,7 @@ export const runVoice = async (args: readonly string[]): Promise<void> => {
     client.send({ op: "session.attach", sid });
     await client.waitForEvent((event) => event.sid === sid && event.type === "session.resumed");
   } else {
-    client.send({ op: "session.create", title: "Voice loopback" });
+    client.send({ op: "session.create", title: `Voice ${options.command}` });
     const created = await client.waitForEvent((event) => event.type === "session.created");
     sid = created.sid;
   }
@@ -246,5 +251,9 @@ export const runVoice = async (args: readonly string[]): Promise<void> => {
   console.log(`transcript: ${String(summary.transcript_text ?? "")}`);
   console.log(`assistant: ${String(summary.assistant_final_text ?? "")}`);
   console.log(`tts chunks: ${String(summary.tts_chunk_count ?? 0)}`);
+  if (summary.worker_id) {
+    console.log(`worker: ${String(summary.worker_id)} (pid ${String(summary.worker_process_id ?? "?")})`);
+    console.log(`python: ${String(summary.python_version ?? "unknown")} via ${String(isRecord(summary.interpreter) ? summary.interpreter.argv0 ?? "unknown" : "unknown")}`);
+  }
   console.log(`replay: ${String(summary.replay_command ?? "")}`);
 };

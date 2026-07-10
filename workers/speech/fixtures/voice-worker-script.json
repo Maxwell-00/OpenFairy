@@ -1,0 +1,12 @@
+{
+  "frame_labels": {
+    "residency": "global-ok",
+    "sensitivity": "public"
+  },
+  "partials": [
+    "owner",
+    "owner worker smoke"
+  ],
+  "text": "owner worker smoke",
+  "utterance_id": "utt_owner_worker_smoke"
+}

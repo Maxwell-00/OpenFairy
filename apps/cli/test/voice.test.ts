@@ -6,7 +6,7 @@ import type { Readable } from "node:stream";
 import { afterEach, describe, expect, it } from "vitest";
 
 import { MockOpenAIChatServer } from "@fairy/testing";
-import { runVoice } from "../src/index.js";
+import { parseVoiceOptions, runVoice } from "../src/index.js";
 
 const repoRoot = resolve(new URL("../../..", import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, "$1"));
 const CLI_VOICE_E2E_TIMEOUT_MS = 60_000;
@@ -62,6 +62,12 @@ afterEach(async () => {
 });
 
 describe("fairy voice CLI", () => {
+  it("does not accept a user-controlled worker executable or script path", () => {
+    expect(() => parseVoiceOptions(["worker", "--script", "fixture.json", "--worker-path", "evil.py"])).toThrow(/repository-controlled/);
+    expect(() => parseVoiceOptions(["worker", "--script", "fixture.json", "--python", "python -c evil"])).toThrow(/repository-controlled/);
+    expect(() => parseVoiceOptions(["worker", "--script", "fixture.json", "--worker-command", "python evil.py"])).toThrow(/repository-controlled/);
+  });
+
   it("runs loopback through the gateway and prints parseable JSON", async () => {
     provider = await MockOpenAIChatServer.start({
       text: ["voice cli answer"],
@@ -361,6 +367,128 @@ describe("fairy voice CLI", () => {
       expect(rawLog).toContain("\"channel\":\"voice\"");
       expect(rawLog).not.toContain("voice.ws.");
       expect(rawLog).not.toContain("voice.frame.");
+      expect(rawLog).not.toContain("speech.worker.");
+      expect(rawLog).not.toContain("data:audio/");
+      expect(rawLog).not.toMatch(/[A-Za-z0-9+/]{120,}={0,2}/);
+    } finally {
+      await stopGateway(gateway);
+    }
+  }, CLI_VOICE_E2E_TIMEOUT_MS);
+
+  it("runs the supervised Python worker through the gateway and prints interpreter evidence", async () => {
+    provider = await MockOpenAIChatServer.start({
+      reasoning: ["hidden worker CLI plan"],
+      text: ["voice worker CLI answer"],
+      usage: { completion_tokens: 4, prompt_tokens: 5, total_tokens: 9 }
+    });
+    const temp = await mkdtemp(join(tmpdir(), "fairy-voice-worker-cli-"));
+    const dataDir = join(temp, "data");
+    const configPath = join(temp, "fairy.yaml");
+    const scriptPath = join(temp, "script.json");
+    const token = "voice-worker-cli-token";
+    await writeFile(configPath, [
+      "models:",
+      "  - id: mock-main",
+      "    transport: openai-chat",
+      `    base_url: ${JSON.stringify(provider.url)}`,
+      "    model: mock-model",
+      "    data_clearance:",
+      "      max_sensitivity: personal",
+      "      residency: [region-restricted]",
+      "      regions: [cn]",
+      "roles:",
+      "  main:",
+      "    model: mock-main",
+      "gateway:",
+      "  port: 0",
+      `  data_dir: ${JSON.stringify(dataDir.replace(/\\/g, "/"))}`,
+      "  auth:",
+      `    token: ${JSON.stringify(token)}`,
+      "governance:",
+      "  profile: balanced",
+      "  home_regions: [cn]",
+      "affect:",
+      "  enabled: false",
+      "persona:",
+      "  enabled: false"
+    ].join("\n"), "utf8");
+    await writeFile(scriptPath, JSON.stringify({
+      frame_labels: { residency: "global-ok", sensitivity: "public" },
+      partials: ["voice", "voice worker CLI"],
+      text: "voice worker CLI request",
+      utterance_id: "utt_cli_worker"
+    }), "utf8");
+    const gateway = startGateway(configPath);
+
+    try {
+      const port = await waitForGateway(gateway);
+      const outputLines: string[] = [];
+      const originalLog = console.log;
+      console.log = (value?: unknown): void => {
+        outputLines.push(String(value ?? ""));
+      };
+      try {
+        await runVoice([
+          "worker",
+          "--gateway",
+          `ws://127.0.0.1:${port}`,
+          "--token",
+          token,
+          "--script",
+          scriptPath,
+          "--json"
+        ]);
+      } finally {
+        console.log = originalLog;
+      }
+      const output = outputLines.join("\n").trim();
+      const parsed = JSON.parse(output) as {
+        assistant_final_text: string;
+        error_status: string;
+        event_counts: Record<string, number>;
+        interpreter: { argv0: string; source: string; version: string };
+        log_path: string;
+        model_request_count: number;
+        python_version: string;
+        request_ids: { asr: string; cancel: null; tts: string };
+        sid: string;
+        transcript_text: string;
+        tts_chunk_count: number;
+        worker_id: string;
+        worker_process_id: number;
+      };
+
+      expect(parsed).toMatchObject({
+        assistant_final_text: "voice worker CLI answer",
+        error_status: "none",
+        interpreter: {
+          argv0: expect.any(String),
+          source: expect.stringMatching(/^(?:discovered|test-override)$/),
+          version: expect.stringMatching(/^\d+\.\d+\.\d+$/)
+        },
+        model_request_count: 1,
+        python_version: expect.stringMatching(/^\d+\.\d+\.\d+$/),
+        request_ids: {
+          asr: "worker-asr:utt_cli_worker",
+          cancel: null,
+          tts: "worker-tts:utt_cli_worker"
+        },
+        transcript_text: "voice worker CLI request",
+        tts_chunk_count: 1,
+        worker_id: "speech-mock-v0",
+        worker_process_id: expect.any(Number)
+      });
+      expect(parsed.event_counts).toMatchObject({
+        "speech.asr.final": 1,
+        "speech.asr.partial": 2,
+        "speech.tts.chunk": 1,
+        "turn.final": 1,
+        "turn.input": 1
+      });
+      expect(output).not.toContain("hidden worker CLI plan");
+      const rawLog = await readFile(parsed.log_path, "utf8");
+      expect(rawLog).not.toContain("asr.script");
+      expect(rawLog).not.toContain("tts.script");
       expect(rawLog).not.toContain("speech.worker.");
       expect(rawLog).not.toContain("data:audio/");
       expect(rawLog).not.toMatch(/[A-Za-z0-9+/]{120,}={0,2}/);

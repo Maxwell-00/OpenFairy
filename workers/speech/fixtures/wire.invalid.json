@@ -1,0 +1,10 @@
+[
+  null,
+  {},
+  {"kind":"hello","protocol":"wrong"},
+  {"kind":"asr.script","request_id":"req-asr-1","utterance_id":"utt-1","audio_ref":"data:audio/wav;base64,AAAA","partials":[],"final":"hello"},
+  {"kind":"asr.partial","request_id":"req-asr-1","utterance_id":"utt-1","text":42},
+  {"kind":"tts.script","request_id":"req-tts-1","utterance_id":"utt-1","text":"answer","chunk_chars":0},
+  {"kind":"cancel","request_id":"req-cancel-1","target_request_id":"req-asr-1","target":"turn"},
+  {"kind":"speech.worker.started"}
+]

@@ -1,0 +1,14 @@
+[
+  {"kind":"hello","protocol":"fairy.speech-worker.v0"},
+  {"kind":"ready","protocol":"fairy.speech-worker.v0","worker_id":"speech-mock-v0","python_version":"3.12.0","capabilities":["asr.script","tts.script","cancel","shutdown"]},
+  {"kind":"asr.script","request_id":"req-asr-1","utterance_id":"utt-1","audio_ref":"fixture://audio/utt-1","partials":["hello"],"final":"hello fairy"},
+  {"kind":"asr.partial","request_id":"req-asr-1","utterance_id":"utt-1","text":"hello"},
+  {"kind":"asr.final","request_id":"req-asr-1","utterance_id":"utt-1","text":"hello fairy","audio_ref":"fixture://audio/utt-1"},
+  {"kind":"tts.script","request_id":"req-tts-1","utterance_id":"utt-1","text":"visible answer","chunk_chars":7},
+  {"kind":"tts.chunk","request_id":"req-tts-1","chunk_id":"utt-1:tts:001","text":"visible","audio_ref":"worker://tts/utt-1:tts:001"},
+  {"kind":"tts.done","request_id":"req-tts-1","utterance_id":"utt-1","chunk_count":1},
+  {"kind":"cancel","request_id":"req-cancel-1","target_request_id":"req-asr-1","target":"asr"},
+  {"kind":"cancelled","request_id":"req-cancel-1","target_request_id":"req-asr-1","target":"asr"},
+  {"kind":"shutdown","reason":"done"},
+  {"kind":"bye","reason":"shutdown"}
+]

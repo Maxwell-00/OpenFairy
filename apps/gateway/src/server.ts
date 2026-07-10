@@ -1,4 +1,4 @@
-import { AuditLog, escalateLabelsForContent, PermissionEngine, profileDefaults, TurnRunner, type KernelEventType, type TurnRunnerHistory } from "@fairy/kernel";
+import { AuditLog, escalateLabelsForContent, PermissionEngine, profileDefaults, redactText, TurnRunner, type KernelEventType, type TurnRunnerHistory } from "@fairy/kernel";
 import { ChronicleStore, MemoryStore } from "@fairy/memory";
 import { createModelGateway, deriveLabels, type ChatMessage, type RoutingHints } from "@fairy/model-gateway";
 import { ArtifactRegistry, type ArtifactRecord } from "@fairy/perception";
@@ -15,13 +15,14 @@ import {
   type Provenance
 } from "@fairy/protocol";
 import { createStandardToolRegistry } from "@fairy/tools-std";
-import { DuplexVoiceTransport, LoopbackVoiceTransport, normalizeDuplexScript, normalizeLoopbackScript, WebSocketVoiceTransport, type SubmitFinalTranscriptInput } from "@fairy/voice";
+import { assertNoRawAudioPayloads, clampVoiceFrameLabels, DuplexVoiceTransport, LoopbackVoiceTransport, normalizeDuplexScript, normalizeLoopbackScript, voiceInputPolicyForProfile, WebSocketVoiceTransport, type DuplexScript, type SpeechEventInput, type SubmitFinalTranscriptInput } from "@fairy/voice";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import { join } from "node:path";
 import { WebSocket, WebSocketServer } from "ws";
 
 import { EventLog } from "./event-log.js";
 import type { GatewayRuntimeConfig } from "./config.js";
+import { SpeechWorkerProcess, SpeechWorkerProcessError, speechWorkerDeadlines, type SpeechWorkerMockBehavior, type SpeechWorkerReadyInfo } from "./speech-worker-process.js";
 
 export const gatewayVersion = "0.1.0-m1";
 
@@ -49,6 +50,10 @@ interface ClientMessage {
   readonly request_id?: unknown;
   readonly routing_hints?: unknown;
   readonly script?: unknown;
+}
+
+interface WorkerVoiceScript extends DuplexScript {
+  readonly workerBehavior: SpeechWorkerMockBehavior;
 }
 
 const json = (response: ServerResponse, status: number, body: unknown): void => {
@@ -81,6 +86,16 @@ const isSessionId = (value: unknown): value is `ses_${string}` =>
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   Boolean(value && typeof value === "object" && !Array.isArray(value));
+
+const normalizeWorkerVoiceScript = (value: unknown): WorkerVoiceScript => {
+  const script = normalizeDuplexScript(value);
+  const record = isRecord(value) ? value : {};
+  const workerBehavior = record.worker_behavior ?? record.workerBehavior ?? "normal";
+  if (workerBehavior !== "normal" && workerBehavior !== "wait" && workerBehavior !== "crash" && workerBehavior !== "malformed") {
+    throw new Error("voice worker script worker_behavior must be normal, wait, crash, or malformed");
+  }
+  return { ...script, workerBehavior };
+};
 
 const isLabels = (value: unknown): value is Labels =>
   isRecord(value) &&
@@ -301,6 +316,8 @@ export class MinimalGateway {
   readonly #connections = new Set<WebSocket>();
   readonly #subscriptions = new Map<string, Set<WebSocket>>();
   readonly #turns = new Set<Promise<unknown>>();
+  readonly #workerOperations = new Set<Promise<void>>();
+  readonly #workers = new Set<SpeechWorkerProcess>();
   readonly #runner: TurnRunner;
 
   constructor(config: GatewayRuntimeConfig) {
@@ -370,6 +387,8 @@ export class MinimalGateway {
   }
 
   async stop(): Promise<void> {
+    await Promise.allSettled([...this.#workers].map((worker) => worker.terminateForTest("gateway shutdown")));
+    await Promise.allSettled([...this.#workerOperations]);
     await Promise.allSettled([...this.#turns]);
 
     for (const socket of this.#connections) {
@@ -664,6 +683,21 @@ export class MinimalGateway {
         return;
       }
       await this.#runVoiceWebSocket(socket, message.sid, message.script, op);
+      return;
+    }
+
+    if (message.op === "voice.worker") {
+      if (!isSessionId(message.sid)) {
+        this.#sendOpError(socket, op, "voice.worker requires sid");
+        return;
+      }
+      if (!this.#sessions.has(message.sid)) {
+        this.#sendOpError(socket, op, `unknown session ${message.sid}`, { sid: message.sid });
+        return;
+      }
+      const operation = this.#runVoiceWorker(socket, message.sid, message.script, op);
+      this.#workerOperations.add(operation);
+      await operation.finally(() => this.#workerOperations.delete(operation));
       return;
     }
 
@@ -1090,6 +1124,210 @@ export class MinimalGateway {
       tts_chunk_count: result.ttsChunkCount,
       turn,
       websocket_frame_counts: result.websocketFrameCounts
+    });
+  }
+
+  async #runVoiceWorker(socket: WebSocket, sid: `ses_${string}`, scriptValue: unknown, op: string): Promise<void> {
+    if (!this.#config.voiceConfig.enabled) {
+      this.#sendOpError(socket, op, "voice worker is disabled", { sid });
+      return;
+    }
+    let script: WorkerVoiceScript;
+    try {
+      script = normalizeWorkerVoiceScript(scriptValue);
+    } catch (error) {
+      this.#sendOpError(socket, op, error instanceof Error ? error.message : String(error), { sid });
+      return;
+    }
+    const state = this.#sessions.get(sid);
+    if (!state) {
+      throw new Error(`unknown session ${sid}`);
+    }
+
+    const profile = governanceProfile(this.#config.config);
+    const policy = voiceInputPolicyForProfile(profile);
+    const effectiveFloor = clampVoiceFrameLabels(policy.labels, script.frameLabels);
+    const turn = state.turn + 1;
+    const asrRequestId = `worker-asr:${script.utteranceId}`;
+    const cancelRequestId = `worker-cancel:${script.utteranceId}`;
+    const ttsRequestId = `worker-tts:${script.utteranceId}`;
+    const speechEvents: EventEnvelope[] = [];
+    let turnEvents: readonly EventEnvelope[] = [];
+    let assistantFinalText = "";
+    let cancelled = false;
+    let errorStatus = "none";
+    let ready: SpeechWorkerReadyInfo | undefined;
+    let transcriptText = "";
+    let ttsChunkCount = 0;
+    const worker = new SpeechWorkerProcess();
+    this.#workers.add(worker);
+
+    const emitSpeech = async (event: SpeechEventInput): Promise<void> => {
+      const envelope = await this.#emit({
+        actor: event.actor,
+        labels: event.labels,
+        payload: event.payload,
+        provenance: event.provenance,
+        sid,
+        turn: event.turn,
+        type: event.type
+      });
+      speechEvents.push(envelope);
+    };
+    const emitMark = (markId: string, labels: Labels): Promise<void> => emitSpeech({
+      actor: "system",
+      labels,
+      payload: { mark_id: markId, position_ms: 0 },
+      provenance: "agent",
+      turn,
+      type: "speech.mark"
+    });
+
+    try {
+      ready = await worker.start();
+      await emitMark("asr-start", effectiveFloor);
+      const asrPromise = worker.requestAsr({
+        audioRef: script.audioRef,
+        final: script.text,
+        labels: script.frameLabels ?? policy.labels,
+        mockBehavior: script.cancelAsrBeforeFinal ? "wait" : script.workerBehavior,
+        partials: script.partials,
+        requestId: asrRequestId,
+        utteranceId: script.utteranceId
+      }, async (text) => emitSpeech({
+        actor: "user",
+        labels: effectiveFloor,
+        payload: { text, utterance_id: script.utteranceId },
+        provenance: "user",
+        turn,
+        type: "speech.asr.partial"
+      }));
+
+      if (script.cancelAsrBeforeFinal) {
+        await worker.cancel(cancelRequestId, asrRequestId, "asr", "scripted ASR cancellation");
+      }
+      const asr = await asrPromise;
+      if (asr.cancelled) {
+        cancelled = true;
+        await emitMark("asr-cancelled", effectiveFloor);
+      } else {
+        if (!asr.text || !asr.audioRef) {
+          throw new SpeechWorkerProcessError("SPEECH_WORKER_ASR_INCOMPLETE", "speech worker ASR completed without a final transcript");
+        }
+        transcriptText = asr.text;
+        const finalLabels = escalateLabelsForContent(asr.text, effectiveFloor).labels;
+        await emitSpeech({
+          actor: "user",
+          labels: finalLabels,
+          payload: {
+            audio_ref: asr.audioRef,
+            text: asr.text,
+            utterance_id: asr.utteranceId
+          },
+          provenance: "user",
+          turn,
+          type: "speech.asr.final"
+        });
+        await emitMark("asr-end", finalLabels);
+
+        const submitted = await this.#submitVoiceFinalTranscript(socket, sid, {
+          audioRef: asr.audioRef,
+          labels: effectiveFloor,
+          ...(policy.routingHints ? { routingHints: policy.routingHints } : {}),
+          text: asr.text,
+          utteranceId: asr.utteranceId
+        }, turn);
+        turnEvents = submitted.turnEvents;
+        assistantFinalText = submitted.assistantFinalText;
+        const ttsLabels = submitted.labels;
+        if (assistantFinalText.length > 0) {
+          await emitMark("tts-start", ttsLabels);
+          const tts = await worker.requestTts({
+            chunkChars: this.#config.voiceConfig.loopback.ttsChunkChars,
+            labels: ttsLabels,
+            requestId: ttsRequestId,
+            text: assistantFinalText,
+            utteranceId: asr.utteranceId
+          }, async (chunk) => emitSpeech({
+            actor: "agent",
+            labels: ttsLabels,
+            payload: {
+              ...(chunk.audioRef ? { audio_ref: chunk.audioRef } : {}),
+              chunk_id: chunk.chunkId,
+              text: chunk.text
+            },
+            provenance: "agent",
+            turn,
+            type: "speech.tts.chunk"
+          }));
+          ttsChunkCount = tts.chunks.length;
+          await emitMark("tts-end", ttsLabels);
+        }
+        await emitMark("turn-boundary", ttsLabels);
+      }
+      assertNoRawAudioPayloads(speechEvents);
+    } catch (error) {
+      errorStatus = error instanceof SpeechWorkerProcessError ? error.code : "SPEECH_WORKER_FAILED";
+      await this.#emit({
+        actor: "system",
+        labels: effectiveFloor,
+        payload: {
+          detail: `Speech worker request failed (${redactText(errorStatus)}).`,
+          error_code: redactText(errorStatus),
+          stage: "voice.worker.failed"
+        },
+        provenance: "agent",
+        sid,
+        turn,
+        type: "progress.update"
+      });
+    } finally {
+      try {
+        await worker.shutdown();
+      } catch (error) {
+        if (errorStatus === "none") {
+          errorStatus = error instanceof SpeechWorkerProcessError ? error.code : "SPEECH_WORKER_SHUTDOWN_FAILED";
+          await this.#emit({
+            actor: "system",
+            labels: effectiveFloor,
+            payload: {
+              detail: `Speech worker cleanup failed (${redactText(errorStatus)}).`,
+              error_code: redactText(errorStatus),
+              stage: "voice.worker.failed"
+            },
+            provenance: "agent",
+            sid,
+            turn,
+            type: "progress.update"
+          });
+        }
+      }
+      this.#workers.delete(worker);
+    }
+
+    const allEvents = [...speechEvents, ...turnEvents];
+    this.#sendAck(socket, op, {
+      assistant_final_text: assistantFinalText,
+      cancelled,
+      deadlines_ms: speechWorkerDeadlines,
+      error_status: errorStatus,
+      event_counts: eventCounts(allEvents),
+      interpreter: ready?.interpreter,
+      log_path: join(this.#config.dataDir, "sessions", sid, "log.jsonl"),
+      model_request_count: turnEvents.filter((event) => event.type === "turn.final").length,
+      python_version: ready?.pythonVersion,
+      replay_command: `fairy replay ${sid} --data-dir ${this.#config.dataDir}`,
+      request_ids: {
+        asr: asrRequestId,
+        cancel: script.cancelAsrBeforeFinal ? cancelRequestId : null,
+        tts: assistantFinalText.length > 0 ? ttsRequestId : null
+      },
+      sid,
+      transcript_text: transcriptText,
+      tts_chunk_count: ttsChunkCount,
+      turn,
+      worker_id: ready?.workerId,
+      worker_process_id: ready?.processId ?? worker.processId()
     });
   }
 
