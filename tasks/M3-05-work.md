@@ -7,8 +7,9 @@
 - Required baseline: `1fc2f98a8440bfdbab27a05076ec3d9fdf35b68e`.
 - Baseline was verified clean before implementation.
 - Final implementation commit: `80726ea3f32179491999fbfc5081bce1577fa9a1`.
+- CI repair commit: `0512c530da7d6350edabd81f4f8f287a9ccea6d4`.
 - CI run [`29109102313`](https://github.com/Maxwell-00/OpenFairy/actions/runs/29109102313) failed in both Python 3.11 speech-floor matrix jobs because the intended Vitest name filter was not applied; this was a test invocation defect, not a Python 3.11 compatibility failure.
-- Focused-lane repair commit and replacement CI run: **PENDING OWNER COMMIT/PUSH**.
+- Replacement CI run [`29110468595`](https://github.com/Maxwell-00/OpenFairy/actions/runs/29110468595): **PASS**. Normal Ubuntu/Windows verification jobs and Python 3.11 Ubuntu/Windows speech-floor jobs all passed.
 - Owner-live evidence commit: **PENDING; live check was deliberately not run by Codex**.
 
 ## 2. Changed-file inventory
@@ -368,7 +369,7 @@ Every configured candidate is visited at most once. There is no invisible `cn-pr
 - `.github/workflows/ci.yml` adds `Python 3.11 speech floor (ubuntu-latest)` and `(windows-latest)` jobs via `actions/setup-python@v6`, with its `python-path` passed as the exact test-only override. Both jobs call the dedicated `test:voice-tts-provider` package script, which executes only `test/voice.tts-provider.test.ts`.
 - The ordinary Ubuntu/Windows `verify` jobs retain normal fixed-candidate discovery independently.
 - GitHub Actions run `29109102313`: **FAILED due to invocation**. The former `test -- --reporter=verbose -t 'voice.tts-provider-v0'` command passed the extra `--` through incorrectly, so Vitest ran the complete `@fairy/testing` package under `FAIRY_TEST_PYTHON`. The existing M3-04 production-discovery assertion then correctly observed `source: "test-override"` instead of its normal `source: "discovered"`. No Python incompatibility was observed.
-- Replacement GitHub lane result: **PENDING OWNER COMMIT/PUSH**; no green CI result is claimed locally.
+- Replacement GitHub Actions run `29110468595`: **PASS**. Both normal Ubuntu/Windows jobs and both Python 3.11 speech-floor jobs passed.
 
 ## 16. JSONL, artifact, replay, and no-residue proof
 
@@ -437,7 +438,7 @@ Named residual suites visible and green in the full `@fairy/testing` run include
 - No real provider key or real MiniMax call was used.
 - All local deterministic commands in the acceptance matrix are green.
 - GitHub Actions retains explicit Python 3.11 Ubuntu and Windows lanes and now invokes the dedicated single-file M3-05 script.
-- Run `29109102313` failed because the old focused-filter command executed the full package; replacement CI evidence remains pending owner commit/push.
+- Run `29109102313` failed because the old focused-filter command executed the full package; replacement run `29110468595` passed both normal Ubuntu/Windows jobs and both Python 3.11 speech-floor jobs.
 
 ### Owner-live evidence
 

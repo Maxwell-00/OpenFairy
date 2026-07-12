@@ -76,6 +76,10 @@ interface ProviderTtsEvidence {
   readonly selectedProviderId?: string;
   readonly sha256?: string;
   readonly status: string;
+  readonly successChecks?: {
+    readonly base_resp_status_zero: true;
+    readonly data_status_complete: true;
+  };
   readonly worker?: SpeechWorkerReadyInfo;
 }
 
@@ -1345,6 +1349,10 @@ export class MinimalGateway {
           selectedProviderId: provider.id,
           sha256: registered.record.hash,
           status: "none",
+          successChecks: {
+            base_resp_status_zero: true,
+            data_status_complete: true
+          },
           ...(ready ? { worker: ready } : {})
         };
       } catch (error) {
@@ -1613,7 +1621,7 @@ export class MinimalGateway {
       },
       provider_request_count: providerTts?.providerRequestCount ?? 0,
       provider_route: providerTts?.route ?? [],
-      ...(selectedProvider ? {
+      ...(selectedProvider && providerTts?.successChecks ? {
         tts_provider: {
           artifact_id: providerTts?.artifactId,
           artifact_ref: providerTts?.artifactRef,
@@ -1625,7 +1633,7 @@ export class MinimalGateway {
           provider_id: selectedProvider.id,
           request_id: `provider-tts:${script.utteranceId}:${selectedProvider.id}`,
           sha256: providerTts?.sha256,
-          success_checks: { base_resp_status_zero: true, data_status_complete: true },
+          success_checks: providerTts.successChecks,
           transport: selectedProvider.transport,
           voice_id: selectedProvider.voice.voiceId,
           worker: providerTts?.worker

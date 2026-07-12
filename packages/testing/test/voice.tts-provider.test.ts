@@ -590,6 +590,10 @@ describe.sequential("voice.tts-provider-v0", () => {
         model: "speech-2.8-turbo",
         provider_id: "minimax-cn-tts",
         sha256: `sha256:${createHash("sha256").update(mp3Fixture).digest("hex")}`,
+        success_checks: {
+          base_resp_status_zero: true,
+          data_status_complete: true
+        },
         transport: "minimax-t2a-v2-http",
         voice_id: "male-qn-qingse",
         worker: {
@@ -710,6 +714,7 @@ describe.sequential("voice.tts-provider-v0", () => {
     expect(first.connections + second.connections).toBe(0);
     expect(first.requestBytes + second.requestBytes).toBe(0);
     expect(result.ack).toMatchObject({ provider_request_count: 0, tts_chunk_count: 0 });
+    expect(result.ack).not.toHaveProperty("tts_provider.success_checks");
     expect(result.events.filter((event) => event.type === "speech.tts.chunk")).toHaveLength(0);
     expect(payloadText(result.events.find((event) => event.type === "turn.final"))).toBe("Text turn survives TTS denial.");
     expect(await new ArtifactRegistry(join(dataDir, "artifacts")).list()).toHaveLength(0);
@@ -742,6 +747,7 @@ describe.sequential("voice.tts-provider-v0", () => {
     expect(miniMax.connections).toBe(0);
     expect(miniMax.requestBytes).toBe(0);
     expect(result.ack).toMatchObject({ error_status: "tts_egress_denied", provider_request_count: 0, tts_chunk_count: 0 });
+    expect(result.ack).not.toHaveProperty("tts_provider.success_checks");
     expect(result.events.find((event) => event.type === "progress.update" && payloadRecord(event).stage === "voice.tts.egress-denied")).toMatchObject({
       payload: { error_code: "tts_egress_denied" }
     });
@@ -862,6 +868,7 @@ describe.sequential("voice.tts-provider-v0", () => {
       expect(result.events.filter((event) => event.type === "speech.tts.chunk")).toHaveLength(0);
       expect(result.ack.provider_request_count).toBe(1);
       expect(result.ack.provider_route).toEqual([expect.stringMatching(/^error-primary:failed:/)]);
+      expect(result.ack).not.toHaveProperty("tts_provider.success_checks");
     }
     client.close();
     expect(primary.requests).toHaveLength(3);

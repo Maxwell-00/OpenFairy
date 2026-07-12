@@ -661,6 +661,7 @@ describe("fairy voice CLI", () => {
           provider_id: string;
           request_id: string;
           sha256: string;
+          success_checks: { base_resp_status_zero: boolean; data_status_complete: boolean };
           transport: string;
           worker: { interpreter: { argv0: string; source: string; version: string }; pythonVersion: string; workerId: string };
         };
@@ -677,6 +678,10 @@ describe("fairy voice CLI", () => {
           provider_id: "minimax-cli",
           request_id: "provider-tts:utt_cli_provider:minimax-cli",
           sha256: expect.stringMatching(/^sha256:[a-f0-9]{64}$/),
+          success_checks: {
+            base_resp_status_zero: true,
+            data_status_complete: true
+          },
           transport: "minimax-t2a-v2-http",
           worker: {
             interpreter: { argv0: expect.any(String), source: expect.stringMatching(/^(?:discovered|test-override)$/) },
