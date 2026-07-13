@@ -1,0 +1,5 @@
+checked_at=2026-07-13T15:51:16.8306808+08:00
+result=PASS
+checked_process_ids=28584,36732
+new_temp_roots=0
+speech_worker_processes_alive=0

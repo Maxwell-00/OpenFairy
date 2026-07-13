@@ -1,0 +1,31 @@
+{
+  "transport": "minimax-t2a-v2-http",
+  "data_status_complete": true,
+  "endpoint_profile": "cn-primary",
+  "byte_count": 76020,
+  "voice_id": "male-qn-qingse",
+  "python": {
+    "args": [],
+    "argv0": "python",
+    "source": "discovered",
+    "version": "3.13.9"
+  },
+  "temp_residue": 0,
+  "playable_mp3_confirmed": true,
+  "python_version": "3.13.9",
+  "tts_chunk_count": 1,
+  "sha256": "sha256:dab01c1e7ff96621969c06ed38778632ac348e203ecbf242468516a24f1f0fa2",
+  "credential_class": "token-plan",
+  "base_resp_status_zero": true,
+  "provider_id": "minimax-owner-live",
+  "audio_format": "mp3",
+  "provider_route": [
+    "minimax-owner-live:selected"
+  ],
+  "speech_worker_processes_alive": 0,
+  "provider_request_count": 1,
+  "status": "pass",
+  "model": "speech-2.8-turbo",
+  "artifact_ref": "art_dab01c1e7ff96621969c",
+  "checked_at_utc": "2026-07-13T07:52:11.1561738Z"
+}

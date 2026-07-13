@@ -1,0 +1,25 @@
+$ vitest run test/voice.tts-provider.test.ts --reporter verbose
+
+[1m[30m[46m RUN [49m[39m[22m [36mv4.1.9 [39m[90mE:/Claude_Projects/Projects/Fairy/OpenFairy/packages/testing[39m
+
+(node:36876) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+ [32m✓[39m test/voice.tts-provider.test.ts[2m > [22mvoice.tts-provider-v0[2m > [22mCase A validates the closed config, endpoint profiles, provider wire, and Python >= 3.11 floor[33m 983[2mms[22m[39m
+ [32m✓[39m test/voice.tts-provider.test.ts[2m > [22mvoice.tts-provider-v0[2m > [22mCases B, D, and G send visible final text only and register one governed MP3 artifact[33m 6612[2mms[22m[39m
+ [32m✓[39m test/voice.tts-provider.test.ts[2m > [22mvoice.tts-provider-v0[2m > [22mCase C gives an under-cleared primary zero connections and selects one cleared fallback[33m 1281[2mms[22m[39m
+ [32m✓[39m test/voice.tts-provider.test.ts[2m > [22mvoice.tts-provider-v0[2m > [22mCase C makes zero provider requests and no artifact when every candidate is under-cleared[33m 1150[2mms[22m[39m
+ [32m✓[39m test/voice.tts-provider.test.ts[2m > [22mvoice.tts-provider-v0[2m > [22mCases C and G apply speech egress before a provider that otherwise has secret clearance[33m 578[2mms[22m[39m
+ [32m✓[39m test/voice.tts-provider.test.ts[2m > [22mvoice.tts-provider-v0[2m > [22mCase E classifies every required MiniMax error and rejects malformed success envelopes[33m 7900[2mms[22m[39m
+ [32m✓[39m test/voice.tts-provider.test.ts[2m > [22mvoice.tts-provider-v0[2m > [22mCase E never retries auth, quota, or safety failures and attempts a transient fallback once[33m 5167[2mms[22m[39m
+ [32m✓[39m test/voice.tts-provider.test.ts[2m > [22mvoice.tts-provider-v0[2m > [22mCase E rejects unsupported adapter input before provider I/O[33m 423[2mms[22m[39m
+ [32m✓[39m test/voice.tts-provider.test.ts[2m > [22mvoice.tts-provider-v0[2m > [22mCases D and F reject unsafe, partial, mismatched, and non-regular worker outputs[32m 50[2mms[22m[39m
+ [32m✓[39m test/voice.tts-provider.test.ts[2m > [22mvoice.tts-provider-v0[2m > [22mCase F preserves and replays the text turn with zero artifacts after crash, malformed output, timeout, and partial output[33m 6483[2mms[22m[39m
+ [32m✓[39m test/voice.tts-provider.test.ts[2m > [22mvoice.tts-provider-v0[2m > [22mCase F leaves no artifact after an invalid provider response[33m 1697[2mms[22m[39m
+ [32m✓[39m test/voice.tts-provider.test.ts[2m > [22mvoice.tts-provider-v0[2m > [22mCase F cleans cancellation and forced gateway shutdown without temporary residue[33m 2705[2mms[22m[39m
+ [32m✓[39m test/voice.tts-provider.test.ts[2m > [22mvoice.tts-provider-v0[2m > [22mCases B and H disable inherited proxies twice and keep worker sources and architecture guards closed[33m 760[2mms[22m[39m
+
+[2m Test Files [22m [1m[32m1 passed[39m[22m[90m (1)[39m
+[2m      Tests [22m [1m[32m13 passed[39m[22m[90m (13)[39m
+[2m   Start at [22m 15:14:05
+[2m   Duration [22m 49.96s[2m (transform 1.61s, setup 0ms, import 12.83s, tests 35.79s, environment 0ms)[22m
+

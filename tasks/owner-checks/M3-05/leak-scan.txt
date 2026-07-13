@@ -1,0 +1,8 @@
+checked_at=2026-07-13T15:48:59.7552927+08:00
+result=PASS
+credential_in_public_surfaces=0
+authorization_header_in_public_surfaces=0
+provider_envelope_in_jsonl=0
+audio_hex_in_jsonl=0
+audio_base64_in_jsonl=0
+temporary_worker_token_in_jsonl=0

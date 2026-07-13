@@ -1,0 +1,19 @@
+{
+  "ci_status": "pass",
+  "pnpm": "11.7.0",
+  "ci_jobs": {
+    "ubuntu_normal_discovery": "pass",
+    "windows_normal_discovery": "pass",
+    "ubuntu_python_311_speech_floor": "pass",
+    "windows_python_311_speech_floor": "pass"
+  },
+  "os": "Microsoft Windows NT 10.0.26200.0",
+  "speech_resource_available_before_call": true,
+  "credential_class": "token-plan",
+  "powershell": "7.6.3",
+  "node": "v24.14.1",
+  "implementation_commit": "a2d7f6e380918a16db0c3b2a480675e3a036ba6e",
+  "checked_at_utc": "2026-07-13T07:13:24.8351792Z",
+  "ci_run_url": "https://github.com/Maxwell-00/OpenFairy/actions/runs/29198783063",
+  "gateway_port": 56234
+}

@@ -1,0 +1,9 @@
+{
+  "mime": "audio/mpeg",
+  "audio_format": "mp3",
+  "sha256": "sha256:dab01c1e7ff96621969c06ed38778632ac348e203ecbf242468516a24f1f0fa2",
+  "artifact_ref": "art_dab01c1e7ff96621969c",
+  "mp3_header_valid": true,
+  "byte_count": 76020,
+  "kind": "speech"
+}
