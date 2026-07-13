@@ -190,3 +190,42 @@ Remaining workflow:
 2. Reviewer applies the approved English docs pass.
 3. The countersign/docs-pass commit becomes the authoritative M3-05 close commit.
 4. Proceed to the gated M3-06 task.
+
+---
+
+## Countersignature — Claude (Fable 5), 2026-07-10
+
+Code-level cross-check delegated to an opus subagent (13-item checklist over the cumulative diff `1fc2f98..a2d7f6e`, file:line evidence, reads via `git show` only); the two highest-stakes surfaces (the `governance.ts` refactor and the worker's proxy/TLS code) additionally spot-checked directly by this reviewer. **13/13 PASS, zero FAILED/PARTIAL/vacuous items material; all 10 reviewer-gate clauses from the brief gate confirmed in code.**
+
+### The two hot spots
+
+- **`packages/model-gateway/src/governance.ts` (±21, M2-frozen territory): PASS — pure parameterization.** `canRouteToModel` now delegates to a new exported `canRouteToClearance(labels, clearance, governance, hints)`; the sensitivity-rank, residency-set, region-set, and `prefer_local` logic are byte-for-byte the same expressions with only the accessor path changed (`model.data_clearance.X` → `clearance.X`); reason strings unchanged; pre-existing model-gateway/governance/label suites untouched; the registry is SHA-256-pinned byte-identical in the test. This is exactly how "speech providers share one clearance law" should have been built — no fork, no copy.
+- **Perception extraction: PASS — verbatim move.** Registry logic moved unmodified to `packages/artifacts` (hash, `art_` ids, path guard, register/list/get); additive deltas only (`speech` kind, `audio/mpeg`/`.mp3`, `speech/` directory); `packages/perception/test/**` **byte-identical** (empty diff, additionally SHA-256-pinned by the new suite); perception's public API preserved via extension/re-export; consumers (cli, tools-std) unchanged; `packages/protocol` does not import `@fairy/artifacts` (grep + guard test).
+
+### Gate clauses (all confirmed; highlights)
+
+- **Credential hygiene:** `secret://` resolved gateway-side; single narrow `FAIRY_MINIMAX_T2A_TOKEN`; allowlist child env (proxy vars excluded); redaction proven **non-vacuously** — the fake error envelope embeds the credential in `status_msg` and it is asserted absent from every surface (rawLog/artifact registry/CLI/public errors).
+- **Proxy/network:** `ProxyHandler({})` + `NoRedirectHandler` + `ssl.create_default_context()` in worker code (spot-checked); the proxy test pollutes all 8 proxy env vars and still gets exactly one direct request; endpoint profiles closed with the loopback seam double-gated (worker `FAIRY_PROVIDER_TEST_MODE` + supervisor test/CI check); config rejects raw URLs.
+- **Per-worker scans:** `mock_worker.py` byte-identical (SHA-pinned); the provider worker's own scan allows `urllib/http/ssl` and forbids `socket`/`subprocess`/audio/vendor; imports are exactly `{hashlib, json, os, re, ssl, sys, time, urllib.error, urllib.request}`; ASCII-only.
+- **Python floor (M3-04 carry-in DISCHARGED):** `SPEECH_WORKER_PYTHON_UNSUPPORTED` on `<3.11` at probe AND handshake; `python-311-speech` CI lanes on both OSes scoped to the focused suite; no patch pin.
+- **Zero-byte denial:** transport-level — `primary.connections === 0` counted at the fake server's `connection` event, not merely zero requests; fallback exactly once; the retryability taxonomy classifies auth/quota/balance/safety/parameter/voice/rate-limit as non-retryable with per-class fixtures (2056 → `token_plan_resource_limit`, one request, no retry).
+- **Success contract:** field-by-field including MP3 magic-byte check; SHA-256 verified twice (worker report + gateway re-hash); HTTP 200 alone is never success.
+- **Artifact lifecycle:** traversal/symlink/non-regular/realpath-escape/TOCTOU (re-stat size+mtime+ino)/hash/size/format all rejected with distinct codes and individually exercised; labels inherited from the visible text and asserted on the registered record; zero residue across all seven failure classes; `audio_ref` resolves in replay. The "exactly one chunk" invariant is triple-layered (worker, supervisor, gateway).
+- **TTS visibility (Case G):** poison fixtures (`HIDDEN_REASONING_M305`/tool trace/audit/denied secret/`sk_test_…`) actually seeded, request body asserted equal to the exact supported subset, raw body asserted free of every marker.
+- **Invariants:** one production TurnRunner (test-asserted `=== 1`); single voice→turn path with TTS keyed off `submitted.assistantFinalText` after it; no new canonical event types; only pre-existing test file touched is `apps/cli/test/voice.test.ts` (additions-only); no docs changes; suite name `voice.tts-provider-v0` only.
+
+### Notes for the record
+
+1. **`a2d7f6e` micro-fix:** binds the ack's `success_checks` to the actual success-path evidence object instead of a hardcoded literal — a hardening (prevents false-success emission) with matching negative assertions added. Its work-report note covers the CI repair but not this micro-change; immaterial, noted for completeness.
+2. **Worker connect/read deadlines are coalesced** (urllib's single socket timeout = min(connect, read), total enforced by a monotonic loop) — both configured bounds respected; acceptable under stdlib-only; recorded so the future streaming slice doesn't inherit the assumption unexamined.
+3. **Owner-live evidence verified in content** (not just summarized): one request, `cn-primary`, turbo, `status_code 0` + `data.status 2`, one `speech.tts.chunk`, `art_dab01c1e…` (`speech`/`audio/mpeg`/76020 B, hash match, MP3 header valid, owner-confirmed playable), leak scans all zero, 2 PIDs gone, 0 temp roots, replay preserves `audio_ref` with labels `personal / region-restricted`. Two distinct CI runs (implementation `29198783063`, evidence `29233777667`), both 4 jobs green incl. the floor lanes. The primary review's NITs (SQLite stderr prefix in replay.json; workstation paths in cli.json) confirmed harmless.
+4. **Primary review CARRY-IN endorsed and sharpened:** `server.ts` has absorbed +365 lines this slice on top of M3-04's +242; the next real speech slice's **brief gate should require a `speech coordinator` extraction decision** (own module or justified stay) before more provider logic lands in `server.ts`. Threaded to the M3-06 gate.
+5. Docs proposals for `docs/ROADMAP.md`/`PRD.md`/`ARCHITECTURE.md` are **deferred to M3 exit consolidation** (milestone-level docs move at milestone gates, per M2 practice) — not lost, recorded here.
+
+### Docs pass — applied with this countersignature
+
+`voice-pipeline.md` (M3-05 status note: first real provider; **`speech.providers`/`speech.roles` config registration — this spec is the owning feature spec**; shared clearance law; floor settled; artifact pipeline; §2 framing still deferred), `protocol.md` (provider stdio non-canonical; `audio_ref` → local `art_*` artifact), `data-governance.md` (speech-provider egress as an enforcement point; zero-connection denial; label inheritance — synthesis never declassifies; credential/proxy rules), `model-gateway.md` (separate speech registry sharing `canRouteToClearance`; zero semantic change to model routing; floor settled), `evals.md` (`voice.tts-provider-v0` registry row + M3-05 registration status), `workers/speech/README.md` (rewritten: floor, both workers, provider hard rules, scan split).
+
+### Verdict: M3-05 ACCEPTED WITH NOTES / CLOSED
+
+Fairy spoke for the first time through a real provider — with the same discipline the text spine has carried since M2: the credential can't leak (poison-tested), the endpoint can't wander (closed profiles, proxies dead in code), an under-cleared provider never sees a byte (counted at the socket), the audio can't cross a boundary it shouldn't (artifact-backed, label-inheriting, replay-resolvable), and every failure class dies clean. Five slices, five countersigns, zero FAILs. **Next: gate the M3-06 brief** (local ASR worker per the agreed plan — faster-whisper/FunASR/SenseVoice pick one; it must carry: pip/uv dependency management decision for `workers/speech`, model download/caching strategy with CI staying mock, `speech.asr` role + clearance, ASR-side audio artifact input path, and the speech-coordinator extraction decision from note 4. The per-gate M3 trust property stands; M2 deferral landing gates remain in force).
