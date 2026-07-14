@@ -289,6 +289,29 @@ const waitUntil = async (condition: () => boolean, timeoutMs = 10_000): Promise<
   }
 };
 
+const createAsrBarrier = (): {
+  readonly pause: () => Promise<void>;
+  readonly reached: Promise<void>;
+  readonly release: () => void;
+} => {
+  let markReached: () => void = () => undefined;
+  let release: () => void = () => undefined;
+  const reached = new Promise<void>((resolvePromise) => {
+    markReached = resolvePromise;
+  });
+  const released = new Promise<void>((resolvePromise) => {
+    release = resolvePromise;
+  });
+  return {
+    pause: async () => {
+      markReached();
+      await released;
+    },
+    reached,
+    release
+  };
+};
+
 const mimoServers: FakeMimoServer[] = [];
 const modelServers: MockOpenAIChatServer[] = [];
 const gateways: MinimalGateway[] = [];
@@ -312,6 +335,7 @@ describe.sequential("voice.mimo-asr-provider-v0", () => {
     expect(server).not.toContain("mimo-v2.5-asr-chat-http");
     expect(server).toContain("const runnerCancelled = this.#runner.cancel(message.sid)");
     expect(server).toContain("const asrCancelled = await this.#speechProviders.cancelAsr(message.sid)");
+    expect(server).toContain("gateway ASR barriers are available only to code-gated tests");
     expect(server).not.toMatch(/#runner\.cancel\([^)]*\)\s*\|\|/);
     expect(coordinator).toContain("runTts");
     expect(coordinator).toContain("runAsr");
@@ -543,6 +567,75 @@ describe.sequential("voice.mimo-asr-provider-v0", () => {
     await expect(requestDirect(mimo, { mode: "crash" })).rejects.toMatchObject({ code: "SPEECH_WORKER_EXITED" });
     await expect(requestDirect(mimo, { mode: "malformed" })).rejects.toMatchObject({ code: expect.stringMatching(/SPEECH_WORKER_(MALFORMED_OUTPUT|PROTOCOL_FAILED)/) });
     await expect(requestDirect(mimo, { deadlineMs: 250, mode: "timeout" })).rejects.toMatchObject({ code: "SPEECH_WORKER_REQUEST_TIMEOUT" });
+
+    const preWorkerBarrier = createAsrBarrier();
+    const immediateMimo = await FakeMimoServer.start();
+    mimoServers.push(immediateMimo);
+    const immediateModel = await MockOpenAIChatServer.start({ text: ["must not run"] });
+    modelServers.push(immediateModel);
+    const immediateRoot = await mkdtemp(join(tmpdir(), "fairy-mimo-immediate-cancel-"));
+    tempRoots.push(immediateRoot);
+    const immediateDataDir = join(immediateRoot, "data");
+    const immediateConfigPath = join(immediateRoot, "fairy.yaml");
+    await writeGatewayConfig(immediateConfigPath, immediateDataDir, immediateModel.url, "immediate-cancel-token");
+    const immediateArtifact = await new ArtifactRegistry(join(immediateDataDir, "artifacts")).register({ content: wavFixture, kind: "input", labels: { residency: "region-restricted", sensitivity: "personal" }, mime: "audio/wav", origin: "test", sourceFilename: "immediate.wav" });
+    const immediateGateway = new MinimalGateway(loadGatewayConfig({ configPath: immediateConfigPath }, repoRoot, { ...process.env, mimo_paygo: fakeCredential }), {
+      beforeAsrCoordinator: preWorkerBarrier.pause,
+      speechProviderLoopbackPorts: { "mimo-asr": immediateMimo.port }
+    });
+    gateways.push(immediateGateway);
+    const immediateAddress = await immediateGateway.start();
+    const immediateClient = await MockFairyClient.connect({ token: "immediate-cancel-token", url: `ws://127.0.0.1:${immediateAddress.port}` });
+    const immediateSession = await immediateClient.createSession("MiMo immediate cancel");
+    immediateClient.sendRaw({ audio_ref: immediateArtifact.record.artifact_id, op: "voice.asr", sid: immediateSession.sid });
+    await preWorkerBarrier.reached;
+    immediateClient.sendRaw({ op: "turn.cancel", sid: immediateSession.sid });
+    const immediateCancelAck = await immediateClient.waitForFrame((frame) => frame.kind === "ack" && frame.op === "turn.cancel", 10_000);
+    preWorkerBarrier.release();
+    const immediateAsrAck = await immediateClient.waitForFrame((frame) => frame.kind === "ack" && frame.op === "voice.asr", 10_000);
+    expect(immediateCancelAck).toMatchObject({ cancelled: true });
+    expect(immediateAsrAck).toMatchObject({ asr_final_count: 0, cancelled: true, error_category: "cancelled", model_request_count: 0, provider_connection_count: 0, provider_request_count: 0, staged_input_bytes: 0, transcript_text: "", turn_input_count: 0, worker_spawn_count: 0 });
+    expect(immediateClient.events().some((event) => event.type === "speech.asr.final" || event.type === "turn.input")).toBe(false);
+    expect(immediateMimo.connections).toBe(0);
+    expect(immediateMimo.requestBytes).toBe(0);
+    expect(immediateMimo.requests).toHaveLength(0);
+    expect(immediateModel.requests).toBe(0);
+    immediateClient.close();
+    expect(await tempAsrRoots()).toEqual(beforeRoots);
+
+    const preCanonicalBarrier = createAsrBarrier();
+    const completedMimo = await FakeMimoServer.start([{ body: successResponse("discarded transcript") }]);
+    mimoServers.push(completedMimo);
+    const completedModel = await MockOpenAIChatServer.start({ text: ["must not run"] });
+    modelServers.push(completedModel);
+    const completedRoot = await mkdtemp(join(tmpdir(), "fairy-mimo-pre-canonical-cancel-"));
+    tempRoots.push(completedRoot);
+    const completedDataDir = join(completedRoot, "data");
+    const completedConfigPath = join(completedRoot, "fairy.yaml");
+    await writeGatewayConfig(completedConfigPath, completedDataDir, completedModel.url, "pre-canonical-cancel-token");
+    const completedArtifact = await new ArtifactRegistry(join(completedDataDir, "artifacts")).register({ content: wavFixture, kind: "input", labels: { residency: "region-restricted", sensitivity: "personal" }, mime: "audio/wav", origin: "test", sourceFilename: "completed.wav" });
+    const completedGateway = new MinimalGateway(loadGatewayConfig({ configPath: completedConfigPath }, repoRoot, { ...process.env, mimo_paygo: fakeCredential }), {
+      beforeAsrCanonicalFinal: preCanonicalBarrier.pause,
+      speechProviderLoopbackPorts: { "mimo-asr": completedMimo.port }
+    });
+    gateways.push(completedGateway);
+    const completedAddress = await completedGateway.start();
+    const completedClient = await MockFairyClient.connect({ token: "pre-canonical-cancel-token", url: `ws://127.0.0.1:${completedAddress.port}` });
+    const completedSession = await completedClient.createSession("MiMo pre-canonical cancel");
+    completedClient.sendRaw({ audio_ref: completedArtifact.record.artifact_id, op: "voice.asr", sid: completedSession.sid });
+    await preCanonicalBarrier.reached;
+    expect(completedMimo.requests).toHaveLength(1);
+    completedClient.sendRaw({ op: "turn.cancel", sid: completedSession.sid });
+    const completedCancelAck = await completedClient.waitForFrame((frame) => frame.kind === "ack" && frame.op === "turn.cancel", 10_000);
+    preCanonicalBarrier.release();
+    const completedAsrAck = await completedClient.waitForFrame((frame) => frame.kind === "ack" && frame.op === "voice.asr", 10_000);
+    expect(completedCancelAck).toMatchObject({ cancelled: true });
+    expect(completedAsrAck).toMatchObject({ asr_final_count: 0, cancelled: true, error_category: "cancelled", error_status: "asr_cancelled", model_request_count: 0, provider_connection_count: 1, provider_request_count: 1, staged_input_bytes: wavFixture.length, transcript_text: "", turn_input_count: 0, worker_spawn_count: 1 });
+    expect(completedClient.events().some((event) => event.type === "speech.asr.final" || event.type === "turn.input")).toBe(false);
+    expect(completedModel.requests).toBe(0);
+    completedClient.close();
+    expect(await tempAsrRoots()).toEqual(beforeRoots);
+
     const cancelMimo = await FakeMimoServer.start([{ hang: true }]);
     mimoServers.push(cancelMimo);
     const model = await MockOpenAIChatServer.start({ text: ["must not run"] });

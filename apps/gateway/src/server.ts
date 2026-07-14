@@ -58,7 +58,10 @@ interface WorkerVoiceScript extends DuplexScript {
   readonly workerBehavior: SpeechWorkerMockBehavior;
 }
 
-export type MinimalGatewayTestOptions = SpeechProviderCoordinatorTestOptions;
+export interface MinimalGatewayTestOptions extends SpeechProviderCoordinatorTestOptions {
+  readonly beforeAsrCanonicalFinal?: () => Promise<void>;
+  readonly beforeAsrCoordinator?: () => Promise<void>;
+}
 
 const json = (response: ServerResponse, status: number, body: unknown): void => {
   const encoded = JSON.stringify(body);
@@ -317,17 +320,22 @@ export class MinimalGateway {
   readonly #chronicleStore: ChronicleStore;
   readonly #memoryStore: MemoryStore;
   readonly #sessions = new Map<string, SessionState>();
-  readonly #sessionExecutions = new Map<string, { readonly kind: "asr" | "turn"; readonly token: symbol }>();
+  readonly #sessionExecutions = new Map<string, { cancelled: boolean; readonly kind: "asr" | "turn"; readonly token: symbol }>();
   readonly #connections = new Set<WebSocket>();
   readonly #subscriptions = new Map<string, Set<WebSocket>>();
   readonly #turns = new Set<Promise<unknown>>();
   readonly #workerOperations = new Set<Promise<void>>();
   readonly #workers = new Set<SpeechWorkerProcess>();
   readonly #speechProviders: SpeechProviderCoordinator;
+  readonly #testOptions: MinimalGatewayTestOptions;
   readonly #runner: TurnRunner;
 
   constructor(config: GatewayRuntimeConfig, testOptions: MinimalGatewayTestOptions = {}) {
+    if ((testOptions.beforeAsrCanonicalFinal || testOptions.beforeAsrCoordinator) && process.env.NODE_ENV !== "test" && process.env.CI !== "true") {
+      throw new Error("gateway ASR barriers are available only to code-gated tests");
+    }
     this.#config = config;
+    this.#testOptions = testOptions;
     this.#log = new EventLog(config.dataDir);
     this.#auditLog = new AuditLog(config.dataDir);
     this.#chronicleStore = new ChronicleStore(config.dataDir, {
@@ -737,7 +745,7 @@ export class MinimalGateway {
         return;
       }
       const reservationToken = Symbol("voice.asr");
-      this.#sessionExecutions.set(sid, { kind: "asr", token: reservationToken });
+      this.#sessionExecutions.set(sid, { cancelled: false, kind: "asr", token: reservationToken });
       const operation = this.#runVoiceAsr(socket, sid, message.audio_ref, message.labels, op, reservationToken);
       this.#workerOperations.add(operation);
       await operation.finally(() => {
@@ -781,9 +789,14 @@ export class MinimalGateway {
         this.#sendOpError(socket, op, `unknown session ${message.sid}`, { sid: message.sid });
         return;
       }
+      const reservation = this.#sessionExecutions.get(message.sid);
+      const reservationCancelled = reservation?.kind === "asr" && !reservation.cancelled;
+      if (reservationCancelled) {
+        reservation.cancelled = true;
+      }
       const runnerCancelled = this.#runner.cancel(message.sid);
       const asrCancelled = await this.#speechProviders.cancelAsr(message.sid);
-      const cancelled = runnerCancelled || asrCancelled;
+      const cancelled = reservationCancelled || runnerCancelled || asrCancelled;
       this.#sendAck(socket, op, { cancelled, sid: message.sid });
       return;
     }
@@ -886,7 +899,7 @@ export class MinimalGateway {
       throw new Error(`unknown session ${sid}`);
     }
     const reservation = this.#sessionExecutions.get(sid);
-    const ownsAsrReservation = reservationToken !== undefined && reservation?.kind === "asr" && reservation.token === reservationToken;
+    const ownsAsrReservation = reservationToken !== undefined && reservation?.kind === "asr" && reservation.token === reservationToken && !reservation.cancelled;
     let turnReservationToken: symbol | undefined;
     if (!ownsAsrReservation) {
       if (reservationToken !== undefined || reservation) {
@@ -894,7 +907,7 @@ export class MinimalGateway {
         return emitted;
       }
       turnReservationToken = Symbol("turn");
-      this.#sessionExecutions.set(sid, { kind: "turn", token: turnReservationToken });
+      this.#sessionExecutions.set(sid, { cancelled: false, kind: "turn", token: turnReservationToken });
     }
 
     try {
@@ -1008,6 +1021,11 @@ export class MinimalGateway {
     const policy = voiceInputPolicyForProfile(governanceProfile(this.#config.config));
     const turn = state.turn + 1;
     const utteranceId = `utt_asr_${audioRef.slice(4, 16)}_${turn}`;
+    const ownsUncancelledReservation = (): boolean => {
+      const reservation = this.#sessionExecutions.get(sid);
+      return reservation?.kind === "asr" && reservation.token === reservationToken && !reservation.cancelled;
+    };
+    await this.#testOptions.beforeAsrCoordinator?.();
     const result = await this.#speechProviders.runAsr({
       audioRef,
       emitProgress: ({ detail, extra, labels, stage }) => this.#emit({
@@ -1020,6 +1038,7 @@ export class MinimalGateway {
         type: "progress.update"
       }),
       floorLabels: policy.labels,
+      isCancelled: () => !ownsUncancelledReservation(),
       operationId: sid,
       ...(requestLabels ? { requestLabels } : {}),
       routingHints: policy.routingHints ?? {},
@@ -1030,38 +1049,44 @@ export class MinimalGateway {
     let assistantFinalText = "";
     let transcriptText = "";
     if (result.status === "none" && result.transcriptText) {
-      transcriptText = result.transcriptText;
-      const finalLabels = escalateLabelsForContent(transcriptText, result.effectiveLabels).labels;
-      speechEvents.push(await this.#emit({
-        actor: "user",
-        labels: finalLabels,
-        payload: { audio_ref: audioRef, text: transcriptText, utterance_id: utteranceId },
-        provenance: "user",
-        sid,
-        turn,
-        type: "speech.asr.final"
-      }));
-      const submitted = await this.#submitVoiceFinalTranscript(socket, sid, {
-        audioRef,
-        labels: finalLabels,
-        ...(policy.routingHints ? { routingHints: policy.routingHints } : {}),
-        text: transcriptText,
-        utteranceId
-      }, turn, reservationToken);
-      turnEvents = submitted.turnEvents;
-      assistantFinalText = submitted.assistantFinalText;
+      await this.#testOptions.beforeAsrCanonicalFinal?.();
+      if (ownsUncancelledReservation()) {
+        transcriptText = result.transcriptText;
+        const finalLabels = escalateLabelsForContent(transcriptText, result.effectiveLabels).labels;
+        speechEvents.push(await this.#emit({
+          actor: "user",
+          labels: finalLabels,
+          payload: { audio_ref: audioRef, text: transcriptText, utterance_id: utteranceId },
+          provenance: "user",
+          sid,
+          turn,
+          type: "speech.asr.final"
+        }));
+        if (ownsUncancelledReservation()) {
+          const submitted = await this.#submitVoiceFinalTranscript(socket, sid, {
+            audioRef,
+            labels: finalLabels,
+            ...(policy.routingHints ? { routingHints: policy.routingHints } : {}),
+            text: transcriptText,
+            utteranceId
+          }, turn, reservationToken);
+          turnEvents = submitted.turnEvents;
+          assistantFinalText = submitted.assistantFinalText;
+        }
+      }
     }
     const allEvents = [...result.events, ...speechEvents, ...turnEvents];
     assertNoRawAudioPayloads(allEvents);
     const provider = result.selectedProvider;
+    const cancelled = result.cancelled || !ownsUncancelledReservation();
     this.#sendAck(socket, op, {
       asr_final_count: speechEvents.length,
       assistant_final_text: assistantFinalText,
       audio_ref: audioRef,
-      cancelled: result.cancelled,
+      cancelled,
       effective_labels: result.effectiveLabels,
-      error_category: result.errorCategory,
-      error_status: result.status,
+      error_category: cancelled && result.errorCategory === "none" ? "cancelled" : result.errorCategory,
+      error_status: cancelled && result.status === "none" ? "asr_cancelled" : result.status,
       event_counts: eventCounts(allEvents),
       model_request_count: turnEvents.filter((event) => event.type === "turn.final").length,
       provider_connection_count: result.providerConnectionCount,

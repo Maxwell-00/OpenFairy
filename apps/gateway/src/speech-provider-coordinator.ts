@@ -355,6 +355,7 @@ export class SpeechProviderCoordinator {
     readonly audioRef: string;
     readonly emitProgress: SpeechProviderProgressEmitter;
     readonly floorLabels: Labels;
+    readonly isCancelled: () => boolean;
     readonly operationId: string;
     readonly requestLabels?: Labels;
     readonly routingHints?: RoutingHints;
@@ -394,6 +395,20 @@ export class SpeechProviderCoordinator {
     if (!provider) {
       return fail("not_configured", "invalid_request");
     }
+    const cancelled = async (ready?: SpeechWorkerReadyInfo): Promise<ProviderAsrEvidence> => {
+      route.push(`${provider.id}:cancelled`);
+      await emitProgress("voice.asr.cancelled", "ASR provider request was cancelled before a final transcript.", {
+        candidate_id: provider.id,
+        error_code: "cancelled",
+        retryable: false
+      });
+      return {
+        ...fail("asr_cancelled", "cancelled"),
+        cancelled: true,
+        selectedProvider: provider,
+        ...(ready ? { worker: ready } : {})
+      };
+    };
 
     let artifact: Awaited<ReturnType<typeof validateSpeechInputArtifact>>;
     try {
@@ -407,6 +422,9 @@ export class SpeechProviderCoordinator {
       const failure = asrCategory(error);
       await emitProgress("voice.asr.rejected", "ASR input artifact failed bounded validation.", { error_code: failure.category });
       return fail("asr_input_invalid", failure.category, failure.retryable);
+    }
+    if (input.isCancelled()) {
+      return cancelled();
     }
 
     const clearance = speechProviderClearance(effectiveLabels, provider, governanceForSpeech(this.#options.config), input.routingHints ?? {});
@@ -451,6 +469,9 @@ export class SpeechProviderCoordinator {
       });
       return fail("asr_owner_live_required", "invalid_request");
     }
+    if (input.isCancelled()) {
+      return cancelled();
+    }
 
     let credential: string;
     try {
@@ -479,10 +500,17 @@ export class SpeechProviderCoordinator {
     let ready: SpeechWorkerReadyInfo | undefined;
     let cleanShutdown = false;
     let ownsActive = false;
+    let active: { cancelled: boolean; worker: SpeechWorkerProcess } | undefined;
     try {
       inputRoot = await mkdtemp(join(tmpdir(), "fairy-mimo-asr-"));
+      if (input.isCancelled()) {
+        return await cancelled();
+      }
       const staged = await stageSpeechInputArtifact(inputRoot, artifact);
       stagedBytes = staged.stagedBytes;
+      if (input.isCancelled()) {
+        return await cancelled();
+      }
       const testRequestDeadline = this.#options.testOptions?.speechProviderRequestDeadlineMs?.[provider.id];
       worker = new SpeechWorkerProcess({
         ...(testRequestDeadline === undefined ? {} : { deadlines: { requestMs: testRequestDeadline } }),
@@ -497,7 +525,7 @@ export class SpeechProviderCoordinator {
         }
       });
       this.#workers.add(worker);
-      const active = { cancelled: false, worker };
+      active = { cancelled: false, worker };
       if (this.#activeAsr.has(input.operationId)) {
         throw new SpeechWorkerProcessError("SPEECH_WORKER_QUEUE_FULL", "one ASR provider operation is already active for this session");
       }
@@ -505,6 +533,9 @@ export class SpeechProviderCoordinator {
       ownsActive = true;
       workerSpawnCount = 1;
       ready = await worker.start();
+      if (input.isCancelled() || active.cancelled) {
+        return await cancelled(ready);
+      }
       providerConnectionCount = 1;
       providerRequestCount = 1;
       const result = await worker.requestProviderAsr({
@@ -519,6 +550,9 @@ export class SpeechProviderCoordinator {
         requestId: `provider-asr:${input.utteranceId}:${provider.id}`,
         utteranceId: input.utteranceId
       });
+      if (input.isCancelled() || active.cancelled) {
+        return await cancelled(ready);
+      }
       if (result.cancelled || !result.text || result.audioRef !== input.audioRef || result.utteranceId !== input.utteranceId) {
         throw new SpeechWorkerProcessError("SPEECH_WORKER_PROVIDER_RESULT_INVALID", "provider worker returned an incomplete or uncorrelated ASR final");
       }
@@ -527,6 +561,9 @@ export class SpeechProviderCoordinator {
       this.#workers.delete(worker);
       await rm(inputRoot, { force: true, recursive: true });
       inputRoot = undefined;
+      if (input.isCancelled() || active.cancelled) {
+        return await cancelled(ready);
+      }
       route.push(`${provider.id}:selected`);
       return {
         ...base(),
@@ -545,25 +582,25 @@ export class SpeechProviderCoordinator {
         ...(ready ? { worker: ready } : {})
       };
     } catch (error) {
-      const cancelled = ownsActive && this.#activeAsr.get(input.operationId)?.cancelled === true;
+      const wasCancelled = input.isCancelled() || (ownsActive && active?.cancelled === true);
       const failure = asrCategory(error);
-      const category = cancelled ? "cancelled" : failure.category;
+      const category = wasCancelled ? "cancelled" : failure.category;
       route.push(`${provider.id}:failed:${category}`);
-      await emitProgress(cancelled ? "voice.asr.cancelled" : "voice.asr.failed", cancelled
+      await emitProgress(wasCancelled ? "voice.asr.cancelled" : "voice.asr.failed", wasCancelled
         ? "ASR provider request was cancelled before a final transcript."
         : "ASR provider request failed without producing a final transcript.", {
         candidate_id: provider.id,
         error_code: category,
-        retryable: cancelled ? false : failure.retryable
+        retryable: wasCancelled ? false : failure.retryable
       });
       return {
-        ...fail(cancelled ? "asr_cancelled" : "asr_failed", category, cancelled ? false : failure.retryable),
-        cancelled,
+        ...fail(wasCancelled ? "asr_cancelled" : "asr_failed", category, wasCancelled ? false : failure.retryable),
+        cancelled: wasCancelled,
         selectedProvider: provider,
         ...(ready ? { worker: ready } : {})
       };
     } finally {
-      if (ownsActive) {
+      if (ownsActive && this.#activeAsr.get(input.operationId) === active) {
         this.#activeAsr.delete(input.operationId);
       }
       if (worker && !cleanShutdown) {
