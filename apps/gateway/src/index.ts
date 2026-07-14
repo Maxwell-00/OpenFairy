@@ -11,14 +11,22 @@ export {
 } from "./speech-artifact.js";
 export {
   governanceForSpeech,
+  mimoAsrDefaults,
+  mimoAsrEndpointProfiles,
   miniMaxEndpointProfiles,
   miniMaxTtsDefaults,
   parseSpeechProviderConfig,
+  predictedMimoAsrRequestBytes,
+  resolveMimoCredential,
   resolveMiniMaxCredential,
+  speechAsrProviderEgress,
   speechProviderClearance,
   speechProviderEgress
 } from "./speech-provider.js";
 export type {
+  MimoAsrEndpointProfile,
+  MimoAsrLanguage,
+  MimoAsrProviderConfig,
   MiniMaxEndpointProfile,
   MiniMaxLanguageBoost,
   MiniMaxModel,
@@ -26,11 +34,28 @@ export type {
   SpeechProviderRuntimeConfig
 } from "./speech-provider.js";
 export {
+  SpeechInputArtifactValidationError,
+  resolveSpeechWorkerInput,
+  speechWorkerInputName,
+  stageSpeechInputArtifact,
+  validateSpeechInputArtifact
+} from "./speech-input-artifact.js";
+export {
+  SpeechProviderCoordinator
+} from "./speech-provider-coordinator.js";
+export type {
+  ProviderAsrEvidence,
+  ProviderTtsEvidence,
+  SpeechProviderCoordinatorOptions,
+  SpeechProviderCoordinatorTestOptions
+} from "./speech-provider-coordinator.js";
+export {
   assertSupportedSpeechWorkerPythonVersion,
   decodeSpeechWorkerWireMessage,
   encodeSpeechWorkerWireMessage,
   SpeechWorkerProcess,
   SpeechWorkerProcessError,
+  mimoAsrWorkerDeadlines,
   speechProviderWorkerDeadlines,
   speechWorkerDeadlines,
   speechWorkerProtocol,
@@ -44,6 +69,7 @@ export type {
   SpeechProviderWorkerTestMode,
   SpeechWorkerProcessOptions,
   SpeechWorkerProviderTtsRequest,
+  SpeechWorkerProviderAsrRequest,
   SpeechWorkerReadyInfo,
   SpeechWorkerTtsChunk,
   SpeechWorkerTtsResult,

@@ -13,6 +13,7 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@fairy/artifacts": "workspace:*",
     "@fairy/config": "workspace:*",
     "@fairy/kernel": "workspace:*",
     "@fairy/memory": "workspace:*",

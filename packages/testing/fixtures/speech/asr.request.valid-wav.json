@@ -1,0 +1,25 @@
+{
+  "kind": "asr.request",
+  "request_id": "req_fixture_wav",
+  "utterance_id": "utt_fixture_wav",
+  "audio_ref": "art_aaaaaaaaaaaaaaaaaaaa",
+  "input_token": "asr-input.bin",
+  "provider_transport": "mimo-v2.5-asr-chat-http",
+  "endpoint_profile": "mimo-paygo-cn",
+  "model": "mimo-v2.5-asr",
+  "language": "auto",
+  "mime": "audio/wav",
+  "size_bytes": 12,
+  "sha256": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "limits": {
+    "max_input_bytes": 7000000,
+    "max_encoded_request_bytes": 10000000,
+    "max_response_bytes": 1048576,
+    "max_transcript_chars": 20000
+  },
+  "deadlines_ms": {
+    "connect": 10000,
+    "read": 60000,
+    "total": 75000
+  }
+}

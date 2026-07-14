@@ -2,7 +2,14 @@ import { defaultDataDir, loadConfig } from "@fairy/config";
 import { loadPersonaRuntime, type ContextConfig, type EgressGuardConfig, type PermissionRule, type PersonaRuntime } from "@fairy/kernel";
 import { join, resolve } from "node:path";
 
-import { parseSpeechProviderConfig, resolveMiniMaxCredential, type MiniMaxTtsProviderConfig, type SpeechProviderRuntimeConfig } from "./speech-provider.js";
+import {
+  parseSpeechProviderConfig,
+  resolveMimoCredential,
+  resolveMiniMaxCredential,
+  type MimoAsrProviderConfig,
+  type MiniMaxTtsProviderConfig,
+  type SpeechProviderRuntimeConfig
+} from "./speech-provider.js";
 
 export interface GatewayCliOptions {
   readonly configPath?: string;
@@ -20,9 +27,11 @@ export interface GatewayRuntimeConfig {
   readonly egressGuardConfig: EgressGuardConfig;
   readonly host: "127.0.0.1";
   readonly maxToolIterations: number;
+  readonly ownerLiveAsrProviderEnabled: boolean;
   readonly ownerLiveSpeechProviderEnabled: boolean;
   readonly permissionRules: readonly PermissionRule[];
   readonly personaRuntime: PersonaRuntime;
+  readonly resolveMimoAsrCredential: (provider: MimoAsrProviderConfig) => string;
   readonly resolveSpeechProviderCredential: (provider: MiniMaxTtsProviderConfig) => string;
   readonly speechProviderConfig: SpeechProviderRuntimeConfig;
   readonly systemPrompt: string;
@@ -228,9 +237,11 @@ export const loadGatewayConfig = (
     egressGuardConfig: readEgressGuardConfig(loaded.config),
     host: "127.0.0.1",
     maxToolIterations: readMaxToolIterations(loaded.config),
+    ownerLiveAsrProviderEnabled: env.FAIRY_OWNER_LIVE_ASR === "1",
     ownerLiveSpeechProviderEnabled: env.FAIRY_OWNER_LIVE_TTS === "1",
     permissionRules: readPermissionRules(loaded.config),
     personaRuntime: loadPersonaRuntime(loaded.config, cwd),
+    resolveMimoAsrCredential: (provider) => resolveMimoCredential(provider, env),
     resolveSpeechProviderCredential: (provider) => resolveMiniMaxCredential(provider, env),
     speechProviderConfig,
     systemPrompt: readSystemPrompt(loaded.config),

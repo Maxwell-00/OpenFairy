@@ -17,16 +17,13 @@ import {
 import { createStandardToolRegistry } from "@fairy/tools-std";
 import { assertNoRawAudioPayloads, clampVoiceFrameLabels, DuplexVoiceTransport, LoopbackVoiceTransport, normalizeDuplexScript, normalizeLoopbackScript, voiceInputPolicyForProfile, WebSocketVoiceTransport, type DuplexScript, type SpeechEventInput, type SubmitFinalTranscriptInput } from "@fairy/voice";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
-import { mkdtemp, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { WebSocket, WebSocketServer } from "ws";
 
 import { EventLog } from "./event-log.js";
 import type { GatewayRuntimeConfig } from "./config.js";
-import { SpeechArtifactValidationError, validateSpeechWorkerArtifact } from "./speech-artifact.js";
-import { governanceForSpeech, speechProviderClearance, speechProviderEgress } from "./speech-provider.js";
-import { SpeechWorkerProcess, SpeechWorkerProcessError, speechProviderWorkerDeadlines, speechWorkerDeadlines, type SpeechProviderWorkerTestMode, type SpeechWorkerMockBehavior, type SpeechWorkerReadyInfo } from "./speech-worker-process.js";
+import { SpeechProviderCoordinator, type ProviderTtsEvidence, type SpeechProviderCoordinatorTestOptions } from "./speech-provider-coordinator.js";
+import { SpeechWorkerProcess, SpeechWorkerProcessError, speechProviderWorkerDeadlines, speechWorkerDeadlines, type SpeechWorkerMockBehavior, type SpeechWorkerReadyInfo } from "./speech-worker-process.js";
 
 export const gatewayVersion = "0.1.0-m1";
 
@@ -41,6 +38,7 @@ interface SessionState {
 }
 
 interface ClientMessage {
+  readonly audio_ref?: unknown;
   readonly op?: unknown;
   readonly sid?: unknown;
   readonly title?: unknown;
@@ -60,28 +58,7 @@ interface WorkerVoiceScript extends DuplexScript {
   readonly workerBehavior: SpeechWorkerMockBehavior;
 }
 
-export interface MinimalGatewayTestOptions {
-  readonly speechProviderLoopbackPorts?: Readonly<Record<string, number>>;
-  readonly speechProviderRequestDeadlineMs?: Readonly<Record<string, number>>;
-  readonly speechProviderWorkerModes?: Readonly<Record<string, SpeechProviderWorkerTestMode>>;
-}
-
-interface ProviderTtsEvidence {
-  readonly artifactId?: string;
-  readonly artifactRef?: string;
-  readonly byteCount?: number;
-  readonly events: readonly EventEnvelope[];
-  readonly providerRequestCount: number;
-  readonly route: readonly string[];
-  readonly selectedProviderId?: string;
-  readonly sha256?: string;
-  readonly status: string;
-  readonly successChecks?: {
-    readonly base_resp_status_zero: true;
-    readonly data_status_complete: true;
-  };
-  readonly worker?: SpeechWorkerReadyInfo;
-}
+export type MinimalGatewayTestOptions = SpeechProviderCoordinatorTestOptions;
 
 const json = (response: ServerResponse, status: number, body: unknown): void => {
   const encoded = JSON.stringify(body);
@@ -261,18 +238,6 @@ const defaultLabelsForProfile = (profile: "balanced" | "sovereign" | "cloud-frie
   return profileDefaults(profile).userInputTrusted.labels;
 };
 
-const labelsCover = (stored: Labels, required: Labels): boolean => {
-  const joined = deriveLabels([{ labels: stored }, { labels: required }], stored);
-  return joined.sensitivity === stored.sensitivity && joined.residency === stored.residency;
-};
-
-const providerStatus = (error: unknown): string => {
-  if (error instanceof SpeechWorkerProcessError || error instanceof SpeechArtifactValidationError) {
-    return error.code;
-  }
-  return "SPEECH_TTS_FAILED";
-};
-
 const channelTrustFromPayload = (payload: Record<string, unknown>): "trusted" | "untrusted" =>
   payload.channel === "untrusted" || payload.channel === "external" ? "untrusted" : "trusted";
 
@@ -344,7 +309,6 @@ const actorForKernelEvent = (type: KernelEventType): Actor => {
 
 export class MinimalGateway {
   readonly #config: GatewayRuntimeConfig;
-  readonly #testOptions: MinimalGatewayTestOptions;
   readonly #log: EventLog;
   readonly #server: Server;
   readonly #wss: WebSocketServer;
@@ -358,25 +322,11 @@ export class MinimalGateway {
   readonly #turns = new Set<Promise<unknown>>();
   readonly #workerOperations = new Set<Promise<void>>();
   readonly #workers = new Set<SpeechWorkerProcess>();
+  readonly #speechProviders: SpeechProviderCoordinator;
   readonly #runner: TurnRunner;
 
   constructor(config: GatewayRuntimeConfig, testOptions: MinimalGatewayTestOptions = {}) {
-    const hasProviderTestSeam = Boolean(testOptions.speechProviderLoopbackPorts || testOptions.speechProviderRequestDeadlineMs || testOptions.speechProviderWorkerModes);
-    if (hasProviderTestSeam && process.env.NODE_ENV !== "test" && process.env.CI !== "true") {
-      throw new Error("speech provider test seams are available only to code-gated tests");
-    }
-    for (const [providerId, port] of Object.entries(testOptions.speechProviderLoopbackPorts ?? {})) {
-      if (!providerId || !Number.isInteger(port) || port < 1 || port > 65_535) {
-        throw new Error("speech provider test loopback ports must be keyed by provider id and use valid ports");
-      }
-    }
-    for (const [providerId, deadline] of Object.entries(testOptions.speechProviderRequestDeadlineMs ?? {})) {
-      if (!providerId || !Number.isInteger(deadline) || deadline < 100 || deadline > speechProviderWorkerDeadlines.requestMs) {
-        throw new Error("speech provider test request deadlines must be bounded positive integers");
-      }
-    }
     this.#config = config;
-    this.#testOptions = testOptions;
     this.#log = new EventLog(config.dataDir);
     this.#auditLog = new AuditLog(config.dataDir);
     this.#chronicleStore = new ChronicleStore(config.dataDir, {
@@ -384,6 +334,16 @@ export class MinimalGateway {
       workspaceRoot: config.workspaceRoot
     });
     this.#memoryStore = new MemoryStore(config.dataDir);
+    this.#speechProviders = new SpeechProviderCoordinator({
+      artifactsDir: config.artifactsDir,
+      config: config.config,
+      ownerLiveAsrProviderEnabled: config.ownerLiveAsrProviderEnabled,
+      ownerLiveSpeechProviderEnabled: config.ownerLiveSpeechProviderEnabled,
+      providers: config.speechProviderConfig,
+      resolveMimoAsrCredential: config.resolveMimoAsrCredential,
+      resolveSpeechProviderCredential: config.resolveSpeechProviderCredential,
+      testOptions
+    });
     const tools = createStandardToolRegistry({
       artifactsDir: config.artifactsDir,
       config: config.config,
@@ -442,6 +402,7 @@ export class MinimalGateway {
   }
 
   async stop(): Promise<void> {
+    await this.#speechProviders.shutdown();
     await Promise.allSettled([...this.#workers].map((worker) => worker.terminateForTest("gateway shutdown")));
     await Promise.allSettled([...this.#workerOperations]);
     await Promise.allSettled([...this.#turns]);
@@ -756,6 +717,25 @@ export class MinimalGateway {
       return;
     }
 
+    if (message.op === "voice.asr") {
+      if (!isSessionId(message.sid) || typeof message.audio_ref !== "string") {
+        this.#sendOpError(socket, op, "voice.asr requires sid and audio_ref");
+        return;
+      }
+      if (!this.#sessions.has(message.sid)) {
+        this.#sendOpError(socket, op, `unknown session ${message.sid}`, { sid: message.sid });
+        return;
+      }
+      if (message.labels !== undefined && !isLabels(message.labels)) {
+        this.#sendOpError(socket, op, "voice.asr labels must include valid sensitivity and residency.", { sid: message.sid });
+        return;
+      }
+      const operation = this.#runVoiceAsr(socket, message.sid, message.audio_ref, message.labels, op);
+      this.#workerOperations.add(operation);
+      await operation.finally(() => this.#workerOperations.delete(operation));
+      return;
+    }
+
     if (message.op === "event") {
       const result = validateEvent(message.event);
       if (!result.ok || result.event.type !== "turn.input") {
@@ -788,7 +768,7 @@ export class MinimalGateway {
         this.#sendOpError(socket, op, `unknown session ${message.sid}`, { sid: message.sid });
         return;
       }
-      const cancelled = this.#runner.cancel(message.sid);
+      const cancelled = this.#runner.cancel(message.sid) || await this.#speechProviders.cancelAsr(message.sid);
       this.#sendAck(socket, op, { cancelled, sid: message.sid });
       return;
     }
@@ -973,6 +953,109 @@ export class MinimalGateway {
       labels: final ? escalateLabelsForContent(assistantFinalText, final.labels).labels : input.labels,
       turnEvents
     };
+  }
+
+  async #runVoiceAsr(
+    socket: WebSocket,
+    sid: `ses_${string}`,
+    audioRef: string,
+    requestLabels: Labels | undefined,
+    op: string
+  ): Promise<void> {
+    if (!this.#config.voiceConfig.enabled) {
+      this.#sendOpError(socket, op, "voice ASR is disabled", { sid });
+      return;
+    }
+    const state = this.#sessions.get(sid);
+    if (!state) {
+      throw new Error(`unknown session ${sid}`);
+    }
+    const policy = voiceInputPolicyForProfile(governanceProfile(this.#config.config));
+    const turn = state.turn + 1;
+    const utteranceId = `utt_asr_${audioRef.slice(4, 16)}_${turn}`;
+    const result = await this.#speechProviders.runAsr({
+      audioRef,
+      emitProgress: ({ detail, extra, labels, stage }) => this.#emit({
+        actor: "system",
+        labels,
+        payload: { detail, stage, ...extra },
+        provenance: "agent",
+        sid,
+        turn,
+        type: "progress.update"
+      }),
+      floorLabels: policy.labels,
+      operationId: sid,
+      ...(requestLabels ? { requestLabels } : {}),
+      routingHints: policy.routingHints ?? {},
+      utteranceId
+    });
+    const speechEvents: EventEnvelope[] = [];
+    let turnEvents: readonly EventEnvelope[] = [];
+    let assistantFinalText = "";
+    let transcriptText = "";
+    if (result.status === "none" && result.transcriptText) {
+      transcriptText = result.transcriptText;
+      const finalLabels = escalateLabelsForContent(transcriptText, result.effectiveLabels).labels;
+      speechEvents.push(await this.#emit({
+        actor: "user",
+        labels: finalLabels,
+        payload: { audio_ref: audioRef, text: transcriptText, utterance_id: utteranceId },
+        provenance: "user",
+        sid,
+        turn,
+        type: "speech.asr.final"
+      }));
+      const submitted = await this.#submitVoiceFinalTranscript(socket, sid, {
+        audioRef,
+        labels: finalLabels,
+        ...(policy.routingHints ? { routingHints: policy.routingHints } : {}),
+        text: transcriptText,
+        utteranceId
+      }, turn);
+      turnEvents = submitted.turnEvents;
+      assistantFinalText = submitted.assistantFinalText;
+    }
+    const allEvents = [...result.events, ...speechEvents, ...turnEvents];
+    assertNoRawAudioPayloads(allEvents);
+    const provider = result.selectedProvider;
+    this.#sendAck(socket, op, {
+      asr_final_count: speechEvents.length,
+      assistant_final_text: assistantFinalText,
+      audio_ref: audioRef,
+      cancelled: result.cancelled,
+      effective_labels: result.effectiveLabels,
+      error_category: result.errorCategory,
+      error_status: result.status,
+      event_counts: eventCounts(allEvents),
+      model_request_count: turnEvents.filter((event) => event.type === "turn.final").length,
+      provider_connection_count: result.providerConnectionCount,
+      provider_request_count: result.providerRequestCount,
+      provider_retryable: result.retryable,
+      provider_route: result.route,
+      replay_command: `fairy replay ${sid}`,
+      request_id: provider ? `provider-asr:${utteranceId}:${provider.id}` : null,
+      sid,
+      staged_input_bytes: result.stagedBytes,
+      transcript_text: transcriptText,
+      turn,
+      turn_input_count: turnEvents.filter((event) => event.type === "turn.input").length,
+      worker_process_id: result.worker?.processId ?? null,
+      worker_spawn_count: result.workerSpawnCount,
+      ...(provider ? {
+        asr_provider: {
+          auth: "api-key",
+          endpoint_profile: provider.endpointProfile,
+          finish_reason: result.providerEvidence?.finishReason,
+          model: provider.model,
+          provider_id: provider.id,
+          provider_request_id: result.providerEvidence?.requestId,
+          transport: provider.transport,
+          usage_seconds: result.usageSeconds,
+          worker: result.worker
+        }
+      } : {})
+    });
   }
 
   async #runVoiceLoopback(socket: WebSocket, sid: `ses_${string}`, scriptValue: unknown, op: string): Promise<void> {
@@ -1183,208 +1266,6 @@ export class MinimalGateway {
     });
   }
 
-  async #runProviderTts(
-    sid: `ses_${string}`,
-    turn: number,
-    utteranceId: string,
-    text: string,
-    labels: Labels,
-    routingHints: RoutingHints = {}
-  ): Promise<ProviderTtsEvidence> {
-    const events: EventEnvelope[] = [];
-    const route: string[] = [];
-    let providerRequestCount = 0;
-    let lastStatus = "no_eligible_provider";
-    const candidates = this.#config.speechProviderConfig.ttsCandidates;
-    const emitProgress = async (stage: string, detail: string, extra: Record<string, unknown> = {}): Promise<void> => {
-      const event = await this.#emit({
-        actor: "system",
-        labels,
-        payload: { detail, stage, ...extra },
-        provenance: "agent",
-        sid,
-        turn,
-        type: "progress.update"
-      });
-      events.push(event);
-    };
-
-    if (candidates.length === 0) {
-      return { events, providerRequestCount, route, status: "not_configured" };
-    }
-    const configuredTextLimit = candidates[0]?.limits.maxTextChars ?? 3_000;
-    if (text.length < 1 || text.length > configuredTextLimit) {
-      await emitProgress("voice.tts.rejected", "TTS text was empty or exceeded the configured non-streaming limit.", {
-        error_code: "tts_text_invalid"
-      });
-      return { events, providerRequestCount, route, status: "tts_text_invalid" };
-    }
-    const egress = speechProviderEgress(text, labels);
-    if (!egress.ok) {
-      await emitProgress("voice.tts.egress-denied", "TTS egress was denied before provider I/O.", {
-        error_code: "tts_egress_denied",
-        reason_code: egress.reasonCode
-      });
-      return { events, providerRequestCount, route, status: "tts_egress_denied" };
-    }
-
-    const governance = governanceForSpeech(this.#config.config);
-    for (const provider of candidates) {
-      const clearance = speechProviderClearance(labels, provider, governance, routingHints);
-      if (!clearance.ok) {
-        route.push(`${provider.id}:denied`);
-        await emitProgress("voice.tts.route-denied", "TTS candidate was denied by data clearance before worker/provider I/O.", {
-          candidate_id: provider.id,
-          reason: clearance.reason ?? "provider clearance did not satisfy visible-text labels"
-        });
-        continue;
-      }
-      if (text.length > provider.limits.maxTextChars) {
-        route.push(`${provider.id}:adapter-rejected`);
-        await emitProgress("voice.tts.rejected", "TTS text exceeded the selected candidate's non-streaming limit.", {
-          candidate_id: provider.id,
-          error_code: "tts_text_invalid"
-        });
-        return { events, providerRequestCount, route, status: "tts_text_invalid" };
-      }
-
-      const testLoopbackPort = this.#testOptions.speechProviderLoopbackPorts?.[provider.id];
-      if ((process.env.NODE_ENV === "test" || process.env.CI === "true") && testLoopbackPort === undefined) {
-        route.push(`${provider.id}:test-network-denied`);
-        await emitProgress("voice.tts.failed", "Public speech-provider network is forbidden in tests and CI.", {
-          candidate_id: provider.id,
-          error_code: "tts_public_network_forbidden"
-        });
-        return { events, providerRequestCount, route, status: "tts_public_network_forbidden" };
-      }
-      if (testLoopbackPort === undefined && !this.#config.ownerLiveSpeechProviderEnabled) {
-        route.push(`${provider.id}:owner-live-required`);
-        await emitProgress("voice.tts.failed", "Real speech-provider execution requires explicit owner-live mode.", {
-          candidate_id: provider.id,
-          error_code: "tts_owner_live_required"
-        });
-        return { events, providerRequestCount, route, status: "tts_owner_live_required" };
-      }
-
-      let credential: string;
-      try {
-        credential = this.#config.resolveSpeechProviderCredential(provider);
-      } catch {
-        route.push(`${provider.id}:credential-unavailable`);
-        await emitProgress("voice.tts.failed", "The selected TTS credential was unavailable.", {
-          candidate_id: provider.id,
-          error_code: "tts_credential_unavailable"
-        });
-        return { events, providerRequestCount, route, status: "tts_credential_unavailable" };
-      }
-
-      let outputRoot: string | undefined;
-      let worker: SpeechWorkerProcess | undefined;
-      let ready: SpeechWorkerReadyInfo | undefined;
-      let validated: Awaited<ReturnType<typeof validateSpeechWorkerArtifact>> | undefined;
-      let cleanShutdown = false;
-      try {
-        outputRoot = await mkdtemp(join(tmpdir(), "fairy-minimax-tts-"));
-        const testRequestDeadline = this.#testOptions.speechProviderRequestDeadlineMs?.[provider.id];
-        worker = new SpeechWorkerProcess({
-          ...(testRequestDeadline !== undefined
-            ? { deadlines: { requestMs: testRequestDeadline } }
-            : {}),
-          provider: {
-            credential,
-            outputRoot,
-            ...(testLoopbackPort === undefined ? {} : { testLoopbackPort }),
-            ...(this.#testOptions.speechProviderWorkerModes?.[provider.id]
-              ? { testMode: this.#testOptions.speechProviderWorkerModes[provider.id] }
-              : {})
-          }
-        });
-        this.#workers.add(worker);
-        ready = await worker.start();
-        providerRequestCount += 1;
-        const result = await worker.requestProviderTts({
-          labels,
-          provider,
-          requestId: `provider-tts:${utteranceId}:${provider.id}`,
-          text,
-          utteranceId
-        });
-        const chunk = result.chunks[0];
-        if (!chunk || result.chunks.length !== 1) {
-          throw new SpeechArtifactValidationError("SPEECH_ARTIFACT_RESULT_INVALID", "provider worker did not return exactly one artifact-backed TTS chunk");
-        }
-        validated = await validateSpeechWorkerArtifact(outputRoot, chunk, provider.limits.maxAudioBytes);
-        await worker.shutdown();
-        cleanShutdown = true;
-        this.#workers.delete(worker);
-        await rm(outputRoot, { force: true, recursive: true });
-        outputRoot = undefined;
-
-        const registered = await new ArtifactRegistry(this.#config.artifactsDir).register({
-          content: validated.bytes,
-          kind: "speech",
-          labels,
-          metadata: { audio_format: "mp3" },
-          mime: "audio/mpeg",
-          origin: "speech:tts",
-          sourceFilename: "speech.mp3"
-        });
-        if (
-          registered.record.kind !== "speech" ||
-          registered.record.mime !== "audio/mpeg" ||
-          registered.record.hash !== validated.sha256 ||
-          registered.record.size_bytes !== validated.sizeBytes ||
-          !labelsCover(registered.record.labels, labels)
-        ) {
-          throw new SpeechArtifactValidationError("SPEECH_ARTIFACT_REGISTRY_MISMATCH", "persistent speech artifact did not preserve validated metadata and labels");
-        }
-        route.push(`${provider.id}:selected`);
-        return {
-          artifactId: registered.record.artifact_id,
-          artifactRef: registered.record.artifact_id,
-          byteCount: registered.record.size_bytes,
-          events,
-          providerRequestCount,
-          route,
-          selectedProviderId: provider.id,
-          sha256: registered.record.hash,
-          status: "none",
-          successChecks: {
-            base_resp_status_zero: true,
-            data_status_complete: true
-          },
-          ...(ready ? { worker: ready } : {})
-        };
-      } catch (error) {
-        lastStatus = providerStatus(error);
-        route.push(`${provider.id}:failed:${lastStatus}`);
-        await emitProgress("voice.tts.failed", "TTS synthesis failed; the completed text turn remains available.", {
-          candidate_id: provider.id,
-          error_code: lastStatus
-        });
-        const mayFallback = error instanceof SpeechWorkerProcessError && error.retryable;
-        if (!mayFallback) {
-          return {
-            events,
-            providerRequestCount,
-            route,
-            status: lastStatus,
-            ...(ready ? { worker: ready } : {})
-          };
-        }
-      } finally {
-        if (worker && !cleanShutdown) {
-          await worker.shutdown("provider TTS cleanup").catch(() => worker?.terminateForTest("provider TTS forced cleanup"));
-          this.#workers.delete(worker);
-        }
-        if (outputRoot) {
-          await rm(outputRoot, { force: true, recursive: true }).catch(() => undefined);
-        }
-      }
-    }
-    return { events, providerRequestCount, route, status: lastStatus };
-  }
-
   async #runVoiceWorker(socket: WebSocket, sid: `ses_${string}`, scriptValue: unknown, op: string): Promise<void> {
     if (!this.#config.voiceConfig.enabled) {
       this.#sendOpError(socket, op, "voice worker is disabled", { sid });
@@ -1501,14 +1382,21 @@ export class MinimalGateway {
         const ttsLabels = submitted.labels;
         if (assistantFinalText.length > 0) {
           if (this.#config.speechProviderConfig.ttsCandidates.length > 0) {
-            providerTts = await this.#runProviderTts(
-              sid,
-              turn,
-              asr.utteranceId,
-              assistantFinalText,
-              ttsLabels,
-              policy.routingHints ?? {}
-            );
+            providerTts = await this.#speechProviders.runTts({
+              emitProgress: ({ detail, extra, labels, stage }) => this.#emit({
+                actor: "system",
+                labels,
+                payload: { detail, stage, ...extra },
+                provenance: "agent",
+                sid,
+                turn,
+                type: "progress.update"
+              }),
+              labels: ttsLabels,
+              routingHints: policy.routingHints ?? {},
+              text: assistantFinalText,
+              utteranceId: asr.utteranceId
+            });
             if (providerTts.status !== "none") {
               errorStatus = providerTts.status;
             }
@@ -1596,9 +1484,7 @@ export class MinimalGateway {
     }
 
     const allEvents = [...speechEvents, ...turnEvents, ...(providerTts?.events ?? [])];
-    const selectedProvider = providerTts?.selectedProviderId
-      ? this.#config.speechProviderConfig.providers.find((provider) => provider.id === providerTts?.selectedProviderId)
-      : undefined;
+    const selectedProvider = providerTts?.selectedProvider;
     this.#sendAck(socket, op, {
       assistant_final_text: assistantFinalText,
       cancelled,
@@ -1613,9 +1499,9 @@ export class MinimalGateway {
       request_ids: {
         asr: asrRequestId,
         cancel: script.cancelAsrBeforeFinal ? cancelRequestId : null,
-        tts: assistantFinalText.length > 0
-          ? providerTts?.selectedProviderId
-            ? `provider-tts:${script.utteranceId}:${providerTts.selectedProviderId}`
+          tts: assistantFinalText.length > 0
+          ? providerTts?.selectedProvider
+            ? `provider-tts:${script.utteranceId}:${providerTts.selectedProvider.id}`
             : this.#config.speechProviderConfig.ttsCandidates.length > 0 ? null : ttsRequestId
           : null
       },

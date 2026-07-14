@@ -1,0 +1,15 @@
+[
+  { "name": "wrong transport", "patch": { "provider_transport": "openai-chat" } },
+  { "name": "wrong profile", "patch": { "endpoint_profile": "mimo-token-plan-cn" } },
+  { "name": "wrong model", "patch": { "model": "mimo-asr-other" } },
+  { "name": "wrong token", "patch": { "input_token": "../audio.wav" } },
+  { "name": "unsupported MIME", "patch": { "mime": "audio/webm" } },
+  { "name": "invalid size", "patch": { "size_bytes": 0 } },
+  { "name": "invalid hash", "patch": { "sha256": "sha256:bad" } },
+  { "name": "unknown field", "patch": { "endpoint_url": "https://evil.invalid" } },
+  { "name": "raw audio", "patch": { "audio": "RIFF" } },
+  { "name": "base64 audio", "patch": { "base64": "QUFBQQ==" } },
+  { "name": "credential header", "patch": { "api_key": "sk-fixture", "header": "api-key" } },
+  { "name": "stream flag", "patch": { "stream": false } },
+  { "name": "Token Plan", "patch": { "token_plan": true } }
+]

@@ -38,6 +38,9 @@ importers:
 
   apps/cli:
     dependencies:
+      '@fairy/artifacts':
+        specifier: workspace:*
+        version: link:../../packages/artifacts
       '@fairy/config':
         specifier: workspace:*
         version: link:../../packages/config

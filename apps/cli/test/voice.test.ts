@@ -108,6 +108,51 @@ const startMiniMaxFake = async (credential: string): Promise<{
   };
 };
 
+const startMimoFake = async (credential: string): Promise<{
+  readonly port: number;
+  readonly requests: () => number;
+  readonly stop: () => Promise<void>;
+}> => {
+  let requestCount = 0;
+  const server = createServer((request, response) => {
+    const chunks: Buffer[] = [];
+    request.on("data", (chunk: Buffer) => chunks.push(chunk));
+    request.on("end", () => {
+      requestCount += 1;
+      const body = JSON.parse(Buffer.concat(chunks).toString("utf8")) as Record<string, unknown>;
+      const valid = request.headers["api-key"] === credential &&
+        request.headers.authorization === undefined &&
+        body.model === "mimo-v2.5-asr";
+      response.writeHead(valid ? 200 : 401, { "content-type": "application/json" });
+      response.end(JSON.stringify(valid ? {
+        choices: [{ finish_reason: "stop", index: 0, message: { audio: null, content: "CLI MiMo transcript", role: "assistant", tool_calls: null } }],
+        id: "mimo_cli_request",
+        model: "mimo-v2.5-asr",
+        object: "chat.completion",
+        usage: { audio_seconds: 0.5 }
+      } : { error: "unauthorized" }));
+    });
+  });
+  await new Promise<void>((resolvePromise, reject) => {
+    server.once("error", reject);
+    server.listen(0, "127.0.0.1", () => resolvePromise());
+  });
+  const address = server.address();
+  if (!address || typeof address !== "object") {
+    throw new Error("CLI fake MiMo did not bind");
+  }
+  return {
+    port: address.port,
+    requests: () => requestCount,
+    stop: async () => {
+      server.closeAllConnections?.();
+      if (server.listening) {
+        await new Promise<void>((resolvePromise) => server.close(() => resolvePromise()));
+      }
+    }
+  };
+};
+
 afterEach(async () => {
   await provider?.stop();
   provider = undefined;
@@ -702,6 +747,128 @@ describe("fairy voice CLI", () => {
     } finally {
       await gateway.stop();
       await miniMax.stop();
+    }
+  }, CLI_VOICE_E2E_TIMEOUT_MS);
+
+  it("imports WAV input and preserves bounded MiMo ASR evidence in CLI JSON", async () => {
+    provider = await MockOpenAIChatServer.start({ text: ["visible ASR model answer"] });
+    const credential = "sk-R09_CLI_FAKE_PAYGO_DO_NOT_USE";
+    const mimo = await startMimoFake(credential);
+    const temp = await mkdtemp(join(tmpdir(), "fairy-voice-mimo-cli-"));
+    const dataDir = join(temp, "data");
+    const configPath = join(temp, "fairy.yaml");
+    const inputPath = join(temp, "input.wav");
+    const token = "voice-mimo-cli-token";
+    await writeFile(inputPath, Buffer.from([0x52, 0x49, 0x46, 0x46, 0x04, 0, 0, 0, 0x57, 0x41, 0x56, 0x45, 1, 2, 3, 4]));
+    await writeFile(configPath, [
+      "models:",
+      "  - id: mock-main",
+      "    transport: openai-chat",
+      `    base_url: ${JSON.stringify(provider.url)}`,
+      "    model: mock-model",
+      "    data_clearance:",
+      "      max_sensitivity: personal",
+      "      residency: [region-restricted]",
+      "      regions: [cn]",
+      "roles:",
+      "  main:",
+      "    model: mock-main",
+      "gateway:",
+      "  port: 0",
+      `  data_dir: ${JSON.stringify(dataDir.replace(/\\/g, "/"))}`,
+      "  auth:",
+      `    token: ${JSON.stringify(token)}`,
+      "governance:",
+      "  profile: balanced",
+      "  home_regions: [cn]",
+      "persona:",
+      "  enabled: false",
+      "affect:",
+      "  enabled: false",
+      "speech:",
+      "  providers:",
+      "    - id: mimo-cli",
+      "      stage: asr",
+      "      transport: mimo-v2.5-asr-chat-http",
+      "      endpoint_profile: mimo-paygo-cn",
+      "      model: mimo-v2.5-asr",
+      "      api_key_ref: secret://mimo_cli",
+      "      language: auto",
+      "      limits:",
+      "        max_input_bytes: 7000000",
+      "        max_response_bytes: 1048576",
+      "        max_transcript_chars: 20000",
+      "      data_clearance:",
+      "        max_sensitivity: personal",
+      "        residency: [region-restricted, global-ok]",
+      "        regions: [cn]",
+      "  roles:",
+      "    asr:",
+      "      primary: mimo-cli",
+      "      fallback: []"
+    ].join("\n"), "utf8");
+    const config = loadGatewayConfig({ configPath }, repoRoot, { ...process.env, mimo_cli: credential });
+    const gateway = new MinimalGateway(config, { speechProviderLoopbackPorts: { "mimo-cli": mimo.port } });
+    const address = await gateway.start();
+    const invoke = async (args: string[]): Promise<string> => {
+      const output: string[] = [];
+      const originalLog = console.log;
+      console.log = (value?: unknown): void => { output.push(String(value ?? "")); };
+      try {
+        await runVoice(args);
+      } finally {
+        console.log = originalLog;
+      }
+      return output.join("\n").trim();
+    };
+
+    try {
+      const importedOutput = await invoke([
+        "import-audio", "--file", inputPath, "--sensitivity", "personal",
+        "--residency", "region-restricted", "--region", "cn", "--config", configPath, "--json"
+      ]);
+      const imported = JSON.parse(importedOutput) as { artifact_id: string; hash: string; kind: string; labels: Record<string, string>; mime: string; size_bytes: number };
+      expect(imported).toMatchObject({ kind: "input", labels: { residency: "region-restricted", sensitivity: "personal" }, mime: "audio/wav", size_bytes: 16 });
+      expect(imported.artifact_id).toMatch(/^art_[a-f0-9]{20}$/);
+      expect(imported.hash).toMatch(/^sha256:[a-f0-9]{64}$/);
+      expect(importedOutput).not.toContain(inputPath);
+
+      const asrOutput = await invoke([
+        "asr", "--audio-ref", imported.artifact_id, "--gateway", `ws://127.0.0.1:${address.port}`,
+        "--token", token, "--json"
+      ]);
+      const asr = JSON.parse(asrOutput) as Record<string, unknown>;
+      expect(asr).toMatchObject({
+        asr_final_count: 1,
+        asr_provider: {
+          auth: "api-key",
+          endpoint_profile: "mimo-paygo-cn",
+          finish_reason: "stop",
+          model: "mimo-v2.5-asr",
+          provider_id: "mimo-cli",
+          provider_request_id: "mimo_cli_request",
+          transport: "mimo-v2.5-asr-chat-http",
+          usage_seconds: 0.5
+        },
+        audio_ref: imported.artifact_id,
+        error_category: "none",
+        model_request_count: 1,
+        provider_request_count: 1,
+        transcript_text: "CLI MiMo transcript",
+        turn_input_count: 1,
+        worker_spawn_count: 1
+      });
+      expect(mimo.requests()).toBe(1);
+      expect(asrOutput).not.toContain(credential);
+      expect(asrOutput).not.toContain("data:audio/");
+      expect(asrOutput).not.toContain("asr-input.bin");
+      const rawLog = await readFile(join(dataDir, "sessions", String(asr.sid), "log.jsonl"), "utf8");
+      expect(rawLog).not.toContain(credential);
+      expect(rawLog).not.toContain("data:audio/");
+      expect(rawLog).not.toContain("asr.request");
+    } finally {
+      await gateway.stop();
+      await mimo.stop();
     }
   }, CLI_VOICE_E2E_TIMEOUT_MS);
 });

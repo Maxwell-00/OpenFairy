@@ -7,4 +7,5 @@ export { parseAffectOptions, parsePersonaOptions, runAffect, runPersona } from "
 export { parseResearchOptions, runResearch } from "./research.js";
 export { parseReplayOptions, readReplayLog, renderReplay, runReplay } from "./replay.js";
 export { parseVoiceOptions, runVoice } from "./voice.js";
+export type { VoiceOptions } from "./voice.js";
 export type { DoctorReport } from "./doctor.js";

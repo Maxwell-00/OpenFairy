@@ -5,7 +5,7 @@ import { dirname, isAbsolute, resolve } from "node:path";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 
-import { miniMaxTtsDefaults, type MiniMaxTtsProviderConfig } from "./speech-provider.js";
+import { mimoAsrDefaults, miniMaxTtsDefaults, type MimoAsrProviderConfig, type MiniMaxTtsProviderConfig } from "./speech-provider.js";
 
 export const speechWorkerProtocol = "fairy.speech-worker.v0" as const;
 
@@ -23,6 +23,11 @@ export const speechProviderWorkerDeadlines = {
   requestMs: 35_000
 } as const;
 
+export const mimoAsrWorkerDeadlines = {
+  ...speechWorkerDeadlines,
+  requestMs: 80_000
+} as const;
+
 const maxCapturedStderrBytes = 8_192;
 const maxStdoutLineBytes = 262_144;
 const maxPendingRequests = 16;
@@ -30,6 +35,7 @@ const maxQueuedStdoutMessages = 64;
 const rawAudioPattern = /^[A-Za-z0-9+/]{120,}={0,2}$/;
 const mockWorkerPath = resolve(dirname(fileURLToPath(import.meta.url)), "../../../workers/speech/mock_worker.py");
 const miniMaxWorkerPath = resolve(dirname(fileURLToPath(import.meta.url)), "../../../workers/speech/minimax_tts_worker.py");
+const mimoAsrWorkerPath = resolve(dirname(fileURLToPath(import.meta.url)), "../../../workers/speech/mimo_asr_worker.py");
 const minimumPythonVersion = { major: 3, minor: 11 } as const;
 
 export type SpeechWorkerTestMode = "malformed-startup" | "startup-timeout" | "stderr-secret";
@@ -49,12 +55,21 @@ export interface SpeechWorkerDeadlineOptions {
 export interface SpeechWorkerProcessOptions {
   readonly deadlines?: SpeechWorkerDeadlineOptions;
   /** Narrow repository-owned provider mode. No CLI surface accepts these values. */
-  readonly provider?: {
-    readonly credential: string;
-    readonly outputRoot: string;
-    readonly testLoopbackPort?: number;
-    readonly testMode?: SpeechProviderWorkerTestMode;
-  };
+  readonly provider?:
+    | {
+        readonly credential: string;
+        readonly kind?: "minimax-tts";
+        readonly outputRoot: string;
+        readonly testLoopbackPort?: number;
+        readonly testMode?: SpeechProviderWorkerTestMode;
+      }
+    | {
+        readonly credential: string;
+        readonly inputRoot: string;
+        readonly kind: "mimo-asr";
+        readonly testLoopbackPort?: number;
+        readonly testMode?: SpeechProviderWorkerTestMode;
+      };
   /** Repository-controlled adversarial modes used only by deterministic tests. */
   readonly testMode?: SpeechWorkerTestMode;
 }
@@ -70,8 +85,40 @@ export type SpeechWorkerWireMessage =
   | { readonly kind: "hello"; readonly protocol: typeof speechWorkerProtocol }
   | { readonly capabilities: readonly string[]; readonly kind: "ready"; readonly protocol: typeof speechWorkerProtocol; readonly python_version: string; readonly worker_id: string }
   | { readonly audio_ref: string; readonly final: string; readonly kind: "asr.script"; readonly labels?: Labels; readonly mock_behavior?: SpeechWorkerMockBehavior; readonly partials: readonly string[]; readonly request_id: string; readonly utterance_id: string }
+  | {
+      readonly audio_ref: string;
+      readonly deadlines_ms: { readonly connect: number; readonly read: number; readonly total: number };
+      readonly endpoint_profile: "mimo-paygo-cn";
+      readonly input_token: "asr-input.bin";
+      readonly kind: "asr.request";
+      readonly language: "auto" | "zh" | "en";
+      readonly limits: {
+        readonly max_encoded_request_bytes: 10000000;
+        readonly max_input_bytes: number;
+        readonly max_response_bytes: number;
+        readonly max_transcript_chars: number;
+      };
+      readonly mime: "audio/mpeg" | "audio/wav";
+      readonly model: "mimo-v2.5-asr";
+      readonly provider_transport: "mimo-v2.5-asr-chat-http";
+      readonly request_id: string;
+      readonly sha256: string;
+      readonly size_bytes: number;
+      readonly test_loopback_port?: number;
+      readonly utterance_id: string;
+    }
   | { readonly kind: "asr.partial"; readonly request_id: string; readonly text: string; readonly utterance_id: string }
-  | { readonly audio_ref: string; readonly kind: "asr.final"; readonly request_id: string; readonly text: string; readonly utterance_id: string }
+  | {
+      readonly audio_ref: string;
+      readonly finish_reason?: "stop";
+      readonly kind: "asr.final";
+      readonly provider_model?: "mimo-v2.5-asr";
+      readonly provider_request_id?: string;
+      readonly request_id: string;
+      readonly text: string;
+      readonly usage_seconds?: number;
+      readonly utterance_id: string;
+    }
   | { readonly chunk_chars?: number; readonly kind: "tts.script"; readonly labels?: Labels; readonly request_id: string; readonly text: string; readonly utterance_id: string }
   | {
       readonly audio_setting: { readonly bitrate: 128000; readonly channel: 1; readonly format: "mp3"; readonly sample_rate: 32000 };
@@ -132,6 +179,12 @@ export interface SpeechWorkerAsrResult {
   readonly partials: readonly string[];
   readonly text?: string;
   readonly utteranceId: string;
+  readonly providerEvidence?: {
+    readonly finishReason?: "stop";
+    readonly model?: "mimo-v2.5-asr";
+    readonly requestId?: string;
+    readonly usageSeconds?: number;
+  };
 }
 
 export interface SpeechWorkerTtsScript {
@@ -165,6 +218,19 @@ export interface SpeechWorkerProviderTtsRequest {
   readonly utteranceId: string;
 }
 
+export interface SpeechWorkerProviderAsrRequest {
+  readonly artifact: {
+    readonly audioRef: string;
+    readonly inputToken: "asr-input.bin";
+    readonly mime: "audio/mpeg" | "audio/wav";
+    readonly sha256: string;
+    readonly sizeBytes: number;
+  };
+  readonly provider: MimoAsrProviderConfig;
+  readonly requestId: string;
+  readonly utteranceId: string;
+}
+
 export interface SpeechWorkerReadyInfo {
   readonly capabilities: readonly string[];
   readonly interpreter: PythonInterpreterEvidence;
@@ -180,8 +246,11 @@ type PendingRequest =
       readonly kind: "asr";
       readonly onPartial?: (text: string) => Promise<void> | void;
       readonly partials: string[];
+      readonly provider: boolean;
       readonly reject: (error: Error) => void;
       readonly resolve: (result: SpeechWorkerAsrResult) => void;
+      readonly expectedAudioRef?: string;
+      readonly maxTranscriptChars?: number;
       readonly utteranceId: string;
     }
   | {
@@ -358,6 +427,38 @@ const messageIssues = (value: Record<string, unknown>): SpeechWorkerWireValidati
           ? []
           : [issue("/mock_behavior", "must be a supported mock behavior")])
       ];
+    case "asr.request": {
+      const limits = exactNestedRecord(value, "limits", ["max_encoded_request_bytes", "max_input_bytes", "max_response_bytes", "max_transcript_chars"]);
+      const deadlines = exactNestedRecord(value, "deadlines_ms", ["connect", "read", "total"]);
+      return [
+        ...allowedFields(value, ["audio_ref", "deadlines_ms", "endpoint_profile", "input_token", "kind", "language", "limits", "mime", "model", "provider_transport", "request_id", "sha256", "size_bytes", "test_loopback_port", "utterance_id"]),
+        ...requiredString(value, "request_id"),
+        ...requiredString(value, "utterance_id"),
+        ...requiredString(value, "audio_ref"),
+        ...(value.input_token === "asr-input.bin" ? [] : [issue("/input_token", "must equal asr-input.bin")]),
+        ...(value.provider_transport === "mimo-v2.5-asr-chat-http" ? [] : [issue("/provider_transport", "must equal mimo-v2.5-asr-chat-http")]),
+        ...(value.endpoint_profile === "mimo-paygo-cn" ? [] : [issue("/endpoint_profile", "must equal mimo-paygo-cn")]),
+        ...(value.model === "mimo-v2.5-asr" ? [] : [issue("/model", "must equal mimo-v2.5-asr")]),
+        ...(value.language === "auto" || value.language === "zh" || value.language === "en" ? [] : [issue("/language", "must be auto, zh, or en")]),
+        ...(value.mime === "audio/wav" || value.mime === "audio/mpeg" ? [] : [issue("/mime", "must be audio/wav or audio/mpeg")]),
+        ...(typeof value.sha256 === "string" && /^sha256:[a-f0-9]{64}$/.test(value.sha256) ? [] : [issue("/sha256", "must be a SHA-256 digest")]),
+        ...boundedIntegerIssue(value, "size_bytes", "", 1, mimoAsrDefaults.limits.maxInputBytes),
+        ...(value.test_loopback_port === undefined ? [] : boundedIntegerIssue(value, "test_loopback_port", "", 1, 65_535)),
+        ...limits.issues,
+        ...(limits.record ? [
+          ...boundedIntegerIssue(limits.record, "max_input_bytes", "/limits", 1, mimoAsrDefaults.limits.maxInputBytes),
+          ...(limits.record.max_encoded_request_bytes === mimoAsrDefaults.limits.maxEncodedRequestBytes ? [] : [issue("/limits/max_encoded_request_bytes", "must equal 10000000")]),
+          ...boundedIntegerIssue(limits.record, "max_response_bytes", "/limits", 1, mimoAsrDefaults.limits.maxResponseBytes),
+          ...boundedIntegerIssue(limits.record, "max_transcript_chars", "/limits", 1, mimoAsrDefaults.limits.maxTranscriptChars)
+        ].flat() : []),
+        ...deadlines.issues,
+        ...(deadlines.record ? [
+          ...boundedIntegerIssue(deadlines.record, "connect", "/deadlines_ms", 100, 120_000),
+          ...boundedIntegerIssue(deadlines.record, "read", "/deadlines_ms", 100, 120_000),
+          ...boundedIntegerIssue(deadlines.record, "total", "/deadlines_ms", 100, 120_000)
+        ].flat() : [])
+      ];
+    }
     case "asr.partial":
       return [
         ...allowedFields(value, ["kind", "request_id", "text", "utterance_id"]),
@@ -367,11 +468,17 @@ const messageIssues = (value: Record<string, unknown>): SpeechWorkerWireValidati
       ];
     case "asr.final":
       return [
-        ...allowedFields(value, ["audio_ref", "kind", "request_id", "text", "utterance_id"]),
+        ...allowedFields(value, ["audio_ref", "finish_reason", "kind", "provider_model", "provider_request_id", "request_id", "text", "usage_seconds", "utterance_id"]),
         ...requiredString(value, "request_id"),
         ...requiredString(value, "utterance_id"),
         ...requiredString(value, "audio_ref"),
-        ...requiredString(value, "text")
+        ...requiredString(value, "text"),
+        ...(value.provider_request_id === undefined ? [] : requiredString(value, "provider_request_id")),
+        ...(value.provider_model === undefined || value.provider_model === "mimo-v2.5-asr" ? [] : [issue("/provider_model", "must equal mimo-v2.5-asr when present")]),
+        ...(value.finish_reason === undefined || value.finish_reason === "stop" ? [] : [issue("/finish_reason", "must equal stop when present")]),
+        ...(value.usage_seconds === undefined || (typeof value.usage_seconds === "number" && Number.isFinite(value.usage_seconds) && value.usage_seconds >= 0)
+          ? []
+          : [issue("/usage_seconds", "must be a non-negative finite number when present")])
       ];
     case "tts.script":
       return [
@@ -545,6 +652,8 @@ const boundedAppend = (current: string, chunk: Buffer, maxBytes: number): string
 
 interface SpeechWorkerChildEnvironmentOptions {
   readonly credential?: string;
+  readonly credentialKind?: "mimo-asr" | "minimax-tts";
+  readonly inputRoot?: string;
   readonly outputRoot?: string;
   readonly providerTestMode?: boolean;
 }
@@ -561,7 +670,14 @@ const childEnvironment = (options: SpeechWorkerChildEnvironmentOptions = {}): No
     }
   }
   if (options.credential !== undefined) {
-    result.FAIRY_MINIMAX_T2A_TOKEN = options.credential;
+    if (options.credentialKind === "mimo-asr") {
+      result.FAIRY_MIMO_ASR_API_KEY = options.credential;
+    } else {
+      result.FAIRY_MINIMAX_T2A_TOKEN = options.credential;
+    }
+  }
+  if (options.inputRoot !== undefined) {
+    result.FAIRY_SPEECH_WORKER_INPUT_ROOT = options.inputRoot;
   }
   if (options.outputRoot !== undefined) {
     result.FAIRY_SPEECH_WORKER_OUTPUT_ROOT = options.outputRoot;
@@ -661,8 +777,9 @@ export class SpeechWorkerProcess {
       throw new SpeechWorkerProcessError("SPEECH_WORKER_MODE_INVALID", "mock and provider worker modes are mutually exclusive");
     }
     if (options.provider) {
-      if (!options.provider.credential || !isAbsolute(options.provider.outputRoot)) {
-        throw new SpeechWorkerProcessError("SPEECH_WORKER_PROVIDER_OPTIONS_INVALID", "provider worker requires a credential and absolute gateway-owned output root");
+      const root = options.provider.kind === "mimo-asr" ? options.provider.inputRoot : options.provider.outputRoot;
+      if (!options.provider.credential || !isAbsolute(root)) {
+        throw new SpeechWorkerProcessError("SPEECH_WORKER_PROVIDER_OPTIONS_INVALID", "provider worker requires a credential and an absolute gateway-owned root");
       }
       if (options.provider.testLoopbackPort !== undefined) {
         const testGate = process.env.NODE_ENV === "test" || process.env.CI === "true";
@@ -676,7 +793,9 @@ export class SpeechWorkerProcess {
       discoveryMs: options.deadlines?.discoveryMs ?? speechWorkerDeadlines.discoveryMs,
       handshakeMs: options.deadlines?.handshakeMs ?? speechWorkerDeadlines.handshakeMs,
       processStartupMs: options.deadlines?.processStartupMs ?? speechWorkerDeadlines.processStartupMs,
-      requestMs: options.deadlines?.requestMs ?? (options.provider ? speechProviderWorkerDeadlines.requestMs : speechWorkerDeadlines.requestMs),
+      requestMs: options.deadlines?.requestMs ?? (options.provider?.kind === "mimo-asr"
+        ? mimoAsrWorkerDeadlines.requestMs
+        : options.provider ? speechProviderWorkerDeadlines.requestMs : speechWorkerDeadlines.requestMs),
       shutdownMs: options.deadlines?.shutdownMs ?? speechWorkerDeadlines.shutdownMs
     };
     this.#provider = options.provider;
@@ -697,14 +816,15 @@ export class SpeechWorkerProcess {
       ...this.#interpreter.args,
       "-u",
       "-B",
-      this.#provider ? miniMaxWorkerPath : mockWorkerPath,
+      this.#provider?.kind === "mimo-asr" ? mimoAsrWorkerPath : this.#provider ? miniMaxWorkerPath : mockWorkerPath,
       ...(this.#provider?.testMode ? ["--test-mode", this.#provider.testMode] : this.#testMode ? ["--test-mode", this.#testMode] : [])
     ];
     const child = spawn(this.#interpreter.argv0, args, {
       cwd: tmpdir(),
       env: childEnvironment(this.#provider ? {
         credential: this.#provider.credential,
-        outputRoot: this.#provider.outputRoot,
+        credentialKind: this.#provider.kind === "mimo-asr" ? "mimo-asr" : "minimax-tts",
+        ...(this.#provider.kind === "mimo-asr" ? { inputRoot: this.#provider.inputRoot } : { outputRoot: this.#provider.outputRoot }),
         providerTestMode: this.#provider.testLoopbackPort !== undefined
       } : {}),
       shell: false,
@@ -763,6 +883,7 @@ export class SpeechWorkerProcess {
       kind: "asr",
       ...(onPartial ? { onPartial } : {}),
       partials: [],
+      provider: false,
       reject: result.reject,
       resolve: result.resolve,
       utteranceId: script.utteranceId
@@ -825,7 +946,7 @@ export class SpeechWorkerProcess {
   }
 
   async requestProviderTts(request: SpeechWorkerProviderTtsRequest, onChunk?: (chunk: SpeechWorkerTtsChunk) => Promise<void> | void): Promise<SpeechWorkerTtsResult> {
-    if (!this.#provider) {
+    if (!this.#provider || this.#provider.kind === "mimo-asr") {
       throw new SpeechWorkerProcessError("SPEECH_WORKER_PROVIDER_MODE_REQUIRED", "real TTS requests require the repository-owned provider worker mode");
     }
     if (request.text.length < 1 || request.text.length > request.provider.limits.maxTextChars) {
@@ -881,6 +1002,64 @@ export class SpeechWorkerProcess {
         await this.#terminate("provider TTS request timeout");
       }
       throw this.#publicError(error, "SPEECH_WORKER_TTS_FAILED", "speech worker provider TTS request failed");
+    } finally {
+      this.#pending.delete(request.requestId);
+    }
+  }
+
+  async requestProviderAsr(request: SpeechWorkerProviderAsrRequest): Promise<SpeechWorkerAsrResult> {
+    if (this.#provider?.kind !== "mimo-asr") {
+      throw new SpeechWorkerProcessError("SPEECH_WORKER_PROVIDER_MODE_REQUIRED", "real ASR requests require the repository-owned MiMo worker mode");
+    }
+    if (
+      request.artifact.sizeBytes < 1 ||
+      request.artifact.sizeBytes > request.provider.limits.maxInputBytes ||
+      !/^sha256:[a-f0-9]{64}$/.test(request.artifact.sha256)
+    ) {
+      throw new SpeechWorkerProcessError("SPEECH_WORKER_ASR_INPUT_INVALID", "ASR artifact metadata is outside the supported bounds");
+    }
+    this.#assertRequestCapacity(request.requestId);
+    const result = deferred<SpeechWorkerAsrResult>();
+    const pending: PendingRequest = {
+      expectedAudioRef: request.artifact.audioRef,
+      kind: "asr",
+      maxTranscriptChars: request.provider.limits.maxTranscriptChars,
+      partials: [],
+      provider: true,
+      reject: result.reject,
+      resolve: result.resolve,
+      utteranceId: request.utteranceId
+    };
+    this.#pending.set(request.requestId, pending);
+    try {
+      await this.#send({
+        audio_ref: request.artifact.audioRef,
+        deadlines_ms: mimoAsrDefaults.deadlinesMs,
+        endpoint_profile: request.provider.endpointProfile,
+        input_token: request.artifact.inputToken,
+        kind: "asr.request",
+        language: request.provider.language,
+        limits: {
+          max_encoded_request_bytes: request.provider.limits.maxEncodedRequestBytes,
+          max_input_bytes: request.provider.limits.maxInputBytes,
+          max_response_bytes: request.provider.limits.maxResponseBytes,
+          max_transcript_chars: request.provider.limits.maxTranscriptChars
+        },
+        mime: request.artifact.mime,
+        model: request.provider.model,
+        provider_transport: request.provider.transport,
+        request_id: request.requestId,
+        sha256: request.artifact.sha256,
+        size_bytes: request.artifact.sizeBytes,
+        ...(this.#provider.testLoopbackPort === undefined ? {} : { test_loopback_port: this.#provider.testLoopbackPort }),
+        utterance_id: request.utteranceId
+      }, this.#deadlines.requestMs);
+      return await withDeadline("SPEECH_WORKER_REQUEST_TIMEOUT", `speech worker provider ASR request ${request.requestId}`, result.promise, this.#deadlines.requestMs);
+    } catch (error) {
+      if (error instanceof SpeechWorkerProcessError && error.code === "SPEECH_WORKER_REQUEST_TIMEOUT") {
+        await this.#terminate("provider ASR request timeout");
+      }
+      throw this.#publicError(error, "SPEECH_WORKER_ASR_FAILED", "speech worker provider ASR request failed");
     } finally {
       this.#pending.delete(request.requestId);
     }
@@ -1030,6 +1209,9 @@ export class SpeechWorkerProcess {
       if (!pending || pending.kind !== "asr" || pending.utteranceId !== message.utterance_id) {
         throw new SpeechWorkerProcessError("SPEECH_WORKER_UNCORRELATED_OUTPUT", "speech worker emitted an uncorrelated ASR partial");
       }
+      if (pending.provider) {
+        throw new SpeechWorkerProcessError("SPEECH_WORKER_PROVIDER_RESULT_INVALID", "non-streaming provider worker emitted an ASR partial");
+      }
       pending.partials.push(message.text);
       await pending.onPartial?.(message.text);
       return;
@@ -1039,13 +1221,38 @@ export class SpeechWorkerProcess {
       if (!pending || pending.kind !== "asr" || pending.utteranceId !== message.utterance_id) {
         throw new SpeechWorkerProcessError("SPEECH_WORKER_UNCORRELATED_OUTPUT", "speech worker emitted an uncorrelated ASR final");
       }
+      if (pending.provider && (
+        message.audio_ref !== pending.expectedAudioRef ||
+        message.text.length < 1 ||
+        message.text.length > (pending.maxTranscriptChars ?? 0) ||
+        message.provider_model !== "mimo-v2.5-asr" ||
+        message.finish_reason !== "stop"
+      )) {
+        throw new SpeechWorkerProcessError("SPEECH_WORKER_PROVIDER_RESULT_INVALID", "provider worker emitted invalid ASR result evidence");
+      }
+      if (!pending.provider && (
+        message.provider_model !== undefined ||
+        message.provider_request_id !== undefined ||
+        message.finish_reason !== undefined ||
+        message.usage_seconds !== undefined
+      )) {
+        throw new SpeechWorkerProcessError("SPEECH_WORKER_PROVIDER_RESULT_UNEXPECTED", "mock worker emitted provider ASR evidence");
+      }
       this.#pending.delete(message.request_id);
       pending.resolve({
         audioRef: message.audio_ref,
         cancelled: false,
         partials: [...pending.partials],
         text: message.text,
-        utteranceId: message.utterance_id
+        utteranceId: message.utterance_id,
+        ...(pending.provider ? {
+          providerEvidence: {
+            ...(message.finish_reason ? { finishReason: message.finish_reason } : {}),
+            ...(message.provider_model ? { model: message.provider_model } : {}),
+            ...(message.provider_request_id ? { requestId: message.provider_request_id } : {}),
+            ...(message.usage_seconds !== undefined ? { usageSeconds: message.usage_seconds } : {})
+          }
+        } : {})
       });
       return;
     }

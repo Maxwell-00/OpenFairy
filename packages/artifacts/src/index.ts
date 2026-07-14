@@ -31,6 +31,8 @@ export interface RegisterArtifactOptions {
   readonly sourceFilename?: string;
 }
 
+export type SupportedAudioMime = "audio/mpeg" | "audio/wav";
+
 const hashBuffer = (content: Buffer): string => createHash("sha256").update(content).digest("hex");
 
 const extensionForMime = (mime: string, sourceFilename?: string): string => {
@@ -52,6 +54,9 @@ const extensionForMime = (mime: string, sourceFilename?: string): string => {
   }
   if (mime === "audio/mpeg") {
     return ".mp3";
+  }
+  if (mime === "audio/wav") {
+    return ".wav";
   }
   if (mime.startsWith("text/")) {
     return ".txt";
@@ -82,7 +87,23 @@ export const detectMime = (sourceFilename?: string, fallback = "application/octe
   if (extension === ".mp3") {
     return "audio/mpeg";
   }
+  if (extension === ".wav") {
+    return "audio/wav";
+  }
   return fallback;
+};
+
+export const isSupportedAudioMime = (value: string): value is SupportedAudioMime =>
+  value === "audio/mpeg" || value === "audio/wav";
+
+export const hasAudioMagic = (content: Buffer, mime: SupportedAudioMime): boolean => {
+  if (mime === "audio/wav") {
+    return content.length >= 12 &&
+      content.subarray(0, 4).toString("ascii") === "RIFF" &&
+      content.subarray(8, 12).toString("ascii") === "WAVE";
+  }
+  return content.subarray(0, 3).toString("ascii") === "ID3" ||
+    (content.length >= 2 && content[0] === 0xff && ((content[1] ?? 0) & 0xe0) === 0xe0);
 };
 
 const assertInside = (root: string, target: string): void => {

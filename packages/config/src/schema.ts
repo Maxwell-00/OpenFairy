@@ -211,9 +211,11 @@ export const configSchema = {
           type: "array",
           maxItems: 16,
           items: {
-            type: "object",
-            additionalProperties: false,
-            properties: {
+            oneOf: [
+              {
+                type: "object",
+                additionalProperties: false,
+                properties: {
               id: { type: "string", pattern: "^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$" },
               stage: { const: "tts" },
               transport: { const: "minimax-t2a-v2-http" },
@@ -283,14 +285,84 @@ export const configSchema = {
                   }
                 ]
               }
-            },
-            required: ["id", "stage", "transport", "endpoint_profile", "voice", "api_key_ref", "language_boost", "audio", "data_clearance"]
+                },
+                required: ["id", "stage", "transport", "endpoint_profile", "voice", "api_key_ref", "language_boost", "audio", "data_clearance"]
+              },
+              {
+                type: "object",
+                additionalProperties: false,
+                properties: {
+                  id: { type: "string", pattern: "^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$" },
+                  stage: { const: "asr" },
+                  transport: { const: "mimo-v2.5-asr-chat-http" },
+                  endpoint_profile: { const: "mimo-paygo-cn" },
+                  model: { const: "mimo-v2.5-asr" },
+                  api_key_ref: { type: "string", pattern: "^secret://[A-Za-z0-9_.-]+$" },
+                  language: { type: "string", enum: ["auto", "zh", "en"] },
+                  limits: {
+                    type: "object",
+                    additionalProperties: false,
+                    properties: {
+                      max_input_bytes: { type: "integer", minimum: 1, maximum: 7000000 },
+                      max_response_bytes: { type: "integer", minimum: 1, maximum: 1048576 },
+                      max_transcript_chars: { type: "integer", minimum: 1, maximum: 20000 }
+                    }
+                  },
+                  data_clearance: {
+                    type: "object",
+                    additionalProperties: false,
+                    properties: {
+                      max_sensitivity: { type: "string", enum: ["public", "internal", "personal", "secret"] },
+                      residency: {
+                        type: "array",
+                        minItems: 1,
+                        uniqueItems: true,
+                        items: { type: "string", enum: ["local-only", "region-restricted", "global-ok"] }
+                      },
+                      regions: {
+                        type: "array",
+                        minItems: 1,
+                        uniqueItems: true,
+                        items: { type: "string", minLength: 1 }
+                      }
+                    },
+                    required: ["max_sensitivity", "residency"],
+                    allOf: [
+                      {
+                        if: {
+                          properties: {
+                            residency: { contains: { const: "region-restricted" } }
+                          },
+                          required: ["residency"]
+                        },
+                        then: { required: ["regions"] }
+                      }
+                    ]
+                  }
+                },
+                required: ["id", "stage", "transport", "endpoint_profile", "model", "api_key_ref", "language", "data_clearance"]
+              }
+            ]
           }
         },
         roles: {
           type: "object",
           additionalProperties: false,
           properties: {
+            asr: {
+              type: "object",
+              additionalProperties: false,
+              properties: {
+                primary: { type: "string", minLength: 1 },
+                fallback: {
+                  type: "array",
+                  maxItems: 0,
+                  uniqueItems: true,
+                  items: { type: "string", minLength: 1 }
+                }
+              },
+              required: ["primary", "fallback"]
+            },
             tts: {
               type: "object",
               additionalProperties: false,
@@ -306,7 +378,7 @@ export const configSchema = {
               required: ["primary", "fallback"]
             }
           },
-          required: ["tts"]
+          minProperties: 1
         }
       },
       required: ["providers", "roles"]

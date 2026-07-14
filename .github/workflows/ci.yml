@@ -62,3 +62,7 @@ jobs:
         env:
           FAIRY_TEST_PYTHON: ${{ steps.python.outputs.python-path }}
         run: pnpm --filter @fairy/testing test:voice-tts-provider
+      - name: R0.9-01 MiMo ASR provider conformance on Python 3.11
+        env:
+          FAIRY_TEST_PYTHON: ${{ steps.python.outputs.python-path }}
+        run: pnpm --filter @fairy/testing test:voice-mimo-asr-provider
