@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
-import { mkdtemp, readFile, readdir, rm, symlink, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, readdir, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -353,6 +353,15 @@ describe.sequential("voice.mimo-asr-provider-v0", () => {
     const mp3 = await registry.register({ content: mp3Fixture, kind: "input", labels, mime: "audio/mpeg", origin: "test", sourceFilename: "input.mp3" });
     expect(await validateSpeechInputArtifact(registry, wav.record.artifact_id, 7_000_000)).toMatchObject({ mime: "audio/wav", sizeBytes: wavFixture.byteLength });
     expect(await validateSpeechInputArtifact(registry, mp3.record.artifact_id, 7_000_000)).toMatchObject({ mime: "audio/mpeg", sizeBytes: mp3Fixture.byteLength });
+    const aliasRoot = await mkdtemp(join(tmpdir(), "fairy-mimo-artifact-alias-"));
+    tempRoots.push(aliasRoot);
+    const physical = join(aliasRoot, "physical");
+    const logical = join(aliasRoot, "logical");
+    await mkdir(physical);
+    await symlink(physical, logical, process.platform === "win32" ? "junction" : "dir");
+    const aliasRegistry = new ArtifactRegistry(join(logical, "artifacts"));
+    const aliased = await aliasRegistry.register({ content: wavFixture, kind: "input", labels, mime: "audio/wav", origin: "test", sourceFilename: "alias.wav" });
+    expect(await validateSpeechInputArtifact(aliasRegistry, aliased.record.artifact_id, 7_000_000)).toMatchObject({ mime: "audio/wav", sizeBytes: wavFixture.byteLength });
     const speech = await registry.register({ content: Buffer.concat([mp3Fixture, Buffer.from([1])]), kind: "speech", labels, mime: "audio/mpeg", origin: "test", sourceFilename: "speech.mp3" });
     await expect(validateSpeechInputArtifact(registry, speech.record.artifact_id, 7_000_000)).rejects.toMatchObject({ code: "SPEECH_ASR_ARTIFACT_KIND_INVALID" });
     const wrongMagic = await registry.register({ content: Buffer.from("not a wav"), kind: "input", labels, mime: "audio/wav", origin: "test", sourceFilename: "bad.wav" });
@@ -362,7 +371,7 @@ describe.sequential("voice.mimo-asr-provider-v0", () => {
     await expect(validateSpeechInputArtifact(registry, wav.record.artifact_id, 7_000_000)).rejects.toMatchObject({ code: "SPEECH_ASR_ARTIFACT_SIZE_MISMATCH" });
   });
 
-  it("Case C stages one fixed token and rejects traversal, absolute, UNC, drive, ADS, and symlinks", async () => {
+  it("Case C stages one fixed token and rejects traversal, absolute, UNC, drive, ADS, symlinks, and partial files", async () => {
     const root = await mkdtemp(join(tmpdir(), "fairy-mimo-stage-"));
     tempRoots.push(root);
     const artifact = { audioRef: "art_aaaaaaaaaaaaaaaaaaaa", bytes: wavFixture, mime: "audio/wav" as const, record: {} as never, sha256: digest(wavFixture), sizeBytes: wavFixture.byteLength };
@@ -374,8 +383,13 @@ describe.sequential("voice.mimo-asr-provider-v0", () => {
     tempRoots.push(symlinkRoot);
     await symlink(join(root, "asr-input.bin"), join(symlinkRoot, "asr-input.bin")).catch(() => undefined);
     if ((await readdir(symlinkRoot)).length > 0) {
-      await expect(stageSpeechInputArtifact(symlinkRoot, artifact)).rejects.toBeDefined();
+      await expect(stageSpeechInputArtifact(symlinkRoot, artifact)).rejects.toMatchObject({ code: "SPEECH_ASR_STAGE_INVALID" });
     }
+    const partialRoot = await mkdtemp(join(tmpdir(), "fairy-mimo-partial-"));
+    tempRoots.push(partialRoot);
+    await writeFile(join(partialRoot, "asr-input.bin.partial"), wavFixture);
+    await expect(stageSpeechInputArtifact(partialRoot, artifact)).rejects.toMatchObject({ code: "SPEECH_ASR_STAGE_INVALID" });
+    expect(await readFile(join(partialRoot, "asr-input.bin.partial"))).toEqual(wavFixture);
   });
 
   it("Case D denies under-cleared audio before spawn, stage, connection, request, final, turn, or model", async () => {

@@ -1,6 +1,6 @@
 import { hasAudioMagic, isSupportedAudioMime, type ArtifactRecord, type ArtifactRegistry, type SupportedAudioMime } from "@fairy/artifacts";
 import { createHash } from "node:crypto";
-import { lstat, open, readFile, realpath, rename, unlink } from "node:fs/promises";
+import { link, lstat, open, readFile, realpath, unlink } from "node:fs/promises";
 import { isAbsolute, relative, resolve, win32 } from "node:path";
 
 export const speechWorkerInputName = "asr-input.bin" as const;
@@ -89,13 +89,13 @@ export const validateSpeechInputArtifact = async (
     throw new SpeechInputArtifactValidationError("SPEECH_ASR_ARTIFACT_PATH_INVALID", "ASR input artifact path form is forbidden");
   }
   const root = resolve(registry.artifactsDir());
+  const target = resolve(record.path);
+  if (!isContained(root, target)) {
+    throw new SpeechInputArtifactValidationError("SPEECH_ASR_ARTIFACT_PATH_ESCAPE", "ASR input artifact escaped the artifact root");
+  }
   const rootReal = await realpath(root).catch(() => {
     throw new SpeechInputArtifactValidationError("SPEECH_ASR_ARTIFACT_ROOT_INVALID", "artifact root is unavailable");
   });
-  const target = resolve(record.path);
-  if (!isContained(rootReal, target)) {
-    throw new SpeechInputArtifactValidationError("SPEECH_ASR_ARTIFACT_PATH_ESCAPE", "ASR input artifact escaped the artifact root");
-  }
   const before = await lstat(target).catch(() => {
     throw new SpeechInputArtifactValidationError("SPEECH_ASR_ARTIFACT_MISSING", "ASR input artifact file is missing");
   });
@@ -158,8 +158,19 @@ export const stageSpeechInputArtifact = async (
   });
   const target = resolveSpeechWorkerInput(rootReal, speechWorkerInputName);
   const partial = resolve(rootReal, speechWorkerInputPartialName);
-  await unlink(partial).catch(() => undefined);
-  await unlink(target).catch(() => undefined);
+  const assertAbsent = async (path: string): Promise<void> => {
+    try {
+      await lstat(path);
+    } catch (error) {
+      if (error && typeof error === "object" && "code" in error && error.code === "ENOENT") {
+        return;
+      }
+      throw new SpeechInputArtifactValidationError("SPEECH_ASR_STAGE_INVALID", "ASR staging path could not be inspected safely");
+    }
+    throw new SpeechInputArtifactValidationError("SPEECH_ASR_STAGE_INVALID", "ASR staging root contained a pre-existing target or partial file");
+  };
+  await assertAbsent(partial);
+  await assertAbsent(target);
   const handle = await open(partial, "wx");
   try {
     await handle.writeFile(artifact.bytes);
@@ -167,7 +178,23 @@ export const stageSpeechInputArtifact = async (
   } finally {
     await handle.close();
   }
-  await rename(partial, target);
+  const partialStats = await lstat(partial);
+  if (partialStats.isSymbolicLink() || !partialStats.isFile() || partialStats.size !== artifact.sizeBytes) {
+    await unlink(partial).catch(() => undefined);
+    throw new SpeechInputArtifactValidationError("SPEECH_ASR_STAGE_INVALID", "partial ASR input was not the verified regular file");
+  }
+  try {
+    await link(partial, target);
+  } catch {
+    await unlink(partial).catch(() => undefined);
+    throw new SpeechInputArtifactValidationError("SPEECH_ASR_STAGE_INVALID", "ASR staging target could not be finalized without replacement");
+  }
+  try {
+    await unlink(partial);
+  } catch {
+    await unlink(target).catch(() => undefined);
+    throw new SpeechInputArtifactValidationError("SPEECH_ASR_STAGE_INVALID", "partial ASR input could not be removed after finalization");
+  }
   const staged = await lstat(target);
   if (staged.isSymbolicLink() || !staged.isFile() || staged.size !== artifact.sizeBytes) {
     throw new SpeechInputArtifactValidationError("SPEECH_ASR_STAGE_INVALID", "staged ASR input is not the verified regular file");
