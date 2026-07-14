@@ -345,6 +345,13 @@ export const runVoice = async (args: readonly string[]): Promise<void> => {
     if (record.kind !== "input" || record.mime !== mime || record.size_bytes !== content.byteLength) {
       throw new Error("registered audio artifact did not preserve validated input metadata");
     }
+    const coveredLabels = clampVoiceFrameLabels(record.labels, options.labels);
+    if (coveredLabels.sensitivity !== record.labels.sensitivity || coveredLabels.residency !== record.labels.residency) {
+      throw new Error("registered audio artifact does not cover the requested labels");
+    }
+    if (options.region && record.metadata?.region !== options.region) {
+      throw new Error("registered audio artifact did not preserve the requested region");
+    }
     const summary = {
       artifact_id: record.artifact_id,
       hash: record.hash,

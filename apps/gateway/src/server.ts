@@ -317,6 +317,7 @@ export class MinimalGateway {
   readonly #chronicleStore: ChronicleStore;
   readonly #memoryStore: MemoryStore;
   readonly #sessions = new Map<string, SessionState>();
+  readonly #sessionExecutions = new Map<string, { readonly kind: "asr" | "turn"; readonly token: symbol }>();
   readonly #connections = new Set<WebSocket>();
   readonly #subscriptions = new Map<string, Set<WebSocket>>();
   readonly #turns = new Set<Promise<unknown>>();
@@ -722,17 +723,29 @@ export class MinimalGateway {
         this.#sendOpError(socket, op, "voice.asr requires sid and audio_ref");
         return;
       }
-      if (!this.#sessions.has(message.sid)) {
-        this.#sendOpError(socket, op, `unknown session ${message.sid}`, { sid: message.sid });
+      const sid = message.sid;
+      if (!this.#sessions.has(sid)) {
+        this.#sendOpError(socket, op, `unknown session ${sid}`, { sid });
         return;
       }
       if (message.labels !== undefined && !isLabels(message.labels)) {
-        this.#sendOpError(socket, op, "voice.asr labels must include valid sensitivity and residency.", { sid: message.sid });
+        this.#sendOpError(socket, op, "voice.asr labels must include valid sensitivity and residency.", { sid });
         return;
       }
-      const operation = this.#runVoiceAsr(socket, message.sid, message.audio_ref, message.labels, op);
+      if (this.#sessionExecutions.has(sid) || this.#runner.isRunning(sid)) {
+        this.#sendOpError(socket, op, "A turn or voice ASR is already in flight for this session.", { sid });
+        return;
+      }
+      const reservationToken = Symbol("voice.asr");
+      this.#sessionExecutions.set(sid, { kind: "asr", token: reservationToken });
+      const operation = this.#runVoiceAsr(socket, sid, message.audio_ref, message.labels, op, reservationToken);
       this.#workerOperations.add(operation);
-      await operation.finally(() => this.#workerOperations.delete(operation));
+      await operation.finally(() => {
+        this.#workerOperations.delete(operation);
+        if (this.#sessionExecutions.get(sid)?.token === reservationToken) {
+          this.#sessionExecutions.delete(sid);
+        }
+      });
       return;
     }
 
@@ -768,7 +781,9 @@ export class MinimalGateway {
         this.#sendOpError(socket, op, `unknown session ${message.sid}`, { sid: message.sid });
         return;
       }
-      const cancelled = this.#runner.cancel(message.sid) || await this.#speechProviders.cancelAsr(message.sid);
+      const runnerCancelled = this.#runner.cancel(message.sid);
+      const asrCancelled = await this.#speechProviders.cancelAsr(message.sid);
+      const cancelled = runnerCancelled || asrCancelled;
       this.#sendAck(socket, op, { cancelled, sid: message.sid });
       return;
     }
@@ -849,7 +864,8 @@ export class MinimalGateway {
     payload: Record<string, unknown>,
     inputLabels?: Labels,
     routingHints?: RoutingHints,
-    turnOverride?: number
+    turnOverride?: number,
+    reservationToken?: symbol
   ): Promise<readonly EventEnvelope[]> {
     const emitted: EventEnvelope[] = [];
     const emitAndCapture = async (event: {
@@ -869,72 +885,90 @@ export class MinimalGateway {
     if (!state) {
       throw new Error(`unknown session ${sid}`);
     }
-
-    this.#subscribe(socket, sid);
-    if (this.#runner.isRunning(sid)) {
-      await this.#emitError(socket, sid, "A turn is already in flight for this session.");
-      return emitted;
+    const reservation = this.#sessionExecutions.get(sid);
+    const ownsAsrReservation = reservationToken !== undefined && reservation?.kind === "asr" && reservation.token === reservationToken;
+    let turnReservationToken: symbol | undefined;
+    if (!ownsAsrReservation) {
+      if (reservationToken !== undefined || reservation) {
+        this.#sendOpError(socket, "turn.input", "A turn or voice ASR is already in flight for this session.", { sid });
+        return emitted;
+      }
+      turnReservationToken = Symbol("turn");
+      this.#sessionExecutions.set(sid, { kind: "turn", token: turnReservationToken });
     }
 
-    const rendered = await renderContent(payload.content, new ArtifactRegistry(this.#config.artifactsDir));
-    const text = rendered.text;
-    if (!text) {
-      this.#sendOpError(socket, "turn.input", "turn.input content must include at least one text or artifact part.", { sid });
+    try {
+      this.#subscribe(socket, sid);
+      if (this.#runner.isRunning(sid)) {
+        await this.#emitError(socket, sid, "A turn is already in flight for this session.");
+        return emitted;
+      }
+
+      const rendered = await renderContent(payload.content, new ArtifactRegistry(this.#config.artifactsDir));
+      const text = rendered.text;
+      if (!text) {
+        this.#sendOpError(socket, "turn.input", "turn.input content must include at least one text or artifact part.", { sid });
+        return emitted;
+      }
+
+      const baseLabels = inputLabels ?? this.#defaultLabels();
+      const contentLabels = deriveLabels([
+        { labels: baseLabels },
+        ...rendered.labels.map((labels) => ({ labels }))
+      ], baseLabels);
+      const labelEscalation = escalateLabelsForContent(text, contentLabels);
+      const labels = labelEscalation.labels;
+      const channelTrust = channelTrustFromPayload(payload);
+      const history: TurnRunnerHistory = { messages: [...state.history] };
+      const turn = turnOverride ?? state.turn + 1;
+      await emitAndCapture({
+        actor: "user",
+        labels,
+        payload: {
+          ...payload,
+          ...(labelEscalation.escalations.length > 0 ? { label_escalations: labelEscalation.escalations } : {})
+        },
+        provenance: "user",
+        sid,
+        turn,
+        type: "turn.input"
+      });
+
+      const run = this.#runner.runTurn({
+        emit: (event) =>
+          emitAndCapture({
+            actor: actorForKernelEvent(event.type),
+            ...(event.labels ? { labels: event.labels } : {}),
+            payload: event.payload,
+            provenance: event.provenance ?? "agent",
+            sid,
+            turn,
+            type: event.type
+          }),
+        history,
+        input: text,
+        labels,
+        channelTrust,
+        ...(routingHints ? { routingHints } : {}),
+        sid,
+        turn
+      });
+      this.#turns.add(run);
+      await run.finally(() => this.#turns.delete(run));
       return emitted;
+    } finally {
+      if (turnReservationToken && this.#sessionExecutions.get(sid)?.token === turnReservationToken) {
+        this.#sessionExecutions.delete(sid);
+      }
     }
-
-    const baseLabels = inputLabels ?? this.#defaultLabels();
-    const contentLabels = deriveLabels([
-      { labels: baseLabels },
-      ...rendered.labels.map((labels) => ({ labels }))
-    ], baseLabels);
-    const labelEscalation = escalateLabelsForContent(text, contentLabels);
-    const labels = labelEscalation.labels;
-    const channelTrust = channelTrustFromPayload(payload);
-    const history: TurnRunnerHistory = { messages: [...state.history] };
-    const turn = turnOverride ?? state.turn + 1;
-    await emitAndCapture({
-      actor: "user",
-      labels,
-      payload: {
-        ...payload,
-        ...(labelEscalation.escalations.length > 0 ? { label_escalations: labelEscalation.escalations } : {})
-      },
-      provenance: "user",
-      sid,
-      turn,
-      type: "turn.input"
-    });
-
-    const run = this.#runner.runTurn({
-      emit: (event) =>
-        emitAndCapture({
-          actor: actorForKernelEvent(event.type),
-          ...(event.labels ? { labels: event.labels } : {}),
-          payload: event.payload,
-          provenance: event.provenance ?? "agent",
-          sid,
-          turn,
-          type: event.type
-        }),
-      history,
-      input: text,
-      labels,
-      channelTrust,
-      ...(routingHints ? { routingHints } : {}),
-      sid,
-      turn
-    });
-    this.#turns.add(run);
-    await run.finally(() => this.#turns.delete(run));
-    return emitted;
   }
 
   async #submitVoiceFinalTranscript(
     socket: WebSocket,
     sid: `ses_${string}`,
     input: SubmitFinalTranscriptInput,
-    turn: number
+    turn: number,
+    reservationToken?: symbol
   ): Promise<{ assistantFinalText: string; labels: Labels; turnEvents: readonly EventEnvelope[] }> {
     const payload: Record<string, unknown> = {
       channel: "voice",
@@ -945,7 +979,7 @@ export class MinimalGateway {
         utterance_id: input.utteranceId
       }
     };
-    const turnEvents = await this.#acceptTurnInput(socket, sid, payload, input.labels, input.routingHints, turn);
+    const turnEvents = await this.#acceptTurnInput(socket, sid, payload, input.labels, input.routingHints, turn, reservationToken);
     const final = turnEvents.filter((event) => event.type === "turn.final").at(-1);
     const assistantFinalText = final ? payloadText(final.payload) : "";
     return {
@@ -960,7 +994,8 @@ export class MinimalGateway {
     sid: `ses_${string}`,
     audioRef: string,
     requestLabels: Labels | undefined,
-    op: string
+    op: string,
+    reservationToken: symbol
   ): Promise<void> {
     if (!this.#config.voiceConfig.enabled) {
       this.#sendOpError(socket, op, "voice ASR is disabled", { sid });
@@ -1012,7 +1047,7 @@ export class MinimalGateway {
         ...(policy.routingHints ? { routingHints: policy.routingHints } : {}),
         text: transcriptText,
         utteranceId
-      }, turn);
+      }, turn, reservationToken);
       turnEvents = submitted.turnEvents;
       assistantFinalText = submitted.assistantFinalText;
     }

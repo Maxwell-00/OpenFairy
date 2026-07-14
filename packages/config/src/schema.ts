@@ -312,32 +312,27 @@ export const configSchema = {
                     type: "object",
                     additionalProperties: false,
                     properties: {
-                      max_sensitivity: { type: "string", enum: ["public", "internal", "personal", "secret"] },
+                      max_sensitivity: { const: "personal" },
                       residency: {
                         type: "array",
-                        minItems: 1,
+                        minItems: 2,
+                        maxItems: 2,
                         uniqueItems: true,
-                        items: { type: "string", enum: ["local-only", "region-restricted", "global-ok"] }
+                        items: { type: "string", enum: ["region-restricted", "global-ok"] },
+                        allOf: [
+                          { contains: { const: "region-restricted" } },
+                          { contains: { const: "global-ok" } }
+                        ]
                       },
                       regions: {
                         type: "array",
                         minItems: 1,
+                        maxItems: 1,
                         uniqueItems: true,
-                        items: { type: "string", minLength: 1 }
+                        items: { const: "cn" }
                       }
                     },
-                    required: ["max_sensitivity", "residency"],
-                    allOf: [
-                      {
-                        if: {
-                          properties: {
-                            residency: { contains: { const: "region-restricted" } }
-                          },
-                          required: ["residency"]
-                        },
-                        then: { required: ["regions"] }
-                      }
-                    ]
+                    required: ["max_sensitivity", "residency", "regions"]
                   }
                 },
                 required: ["id", "stage", "transport", "endpoint_profile", "model", "api_key_ref", "language", "data_clearance"]

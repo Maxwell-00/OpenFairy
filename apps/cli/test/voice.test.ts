@@ -6,6 +6,7 @@ import { join, resolve } from "node:path";
 import type { Readable } from "node:stream";
 import { afterEach, describe, expect, it } from "vitest";
 
+import { ArtifactRegistry } from "@fairy/artifacts";
 import { MockOpenAIChatServer } from "@fairy/testing";
 import { loadGatewayConfig } from "../../gateway/src/config.js";
 import { MinimalGateway } from "../../gateway/src/server.js";
@@ -758,8 +759,19 @@ describe("fairy voice CLI", () => {
     const dataDir = join(temp, "data");
     const configPath = join(temp, "fairy.yaml");
     const inputPath = join(temp, "input.wav");
+    const weakCollisionPath = join(temp, "weak-collision.wav");
+    const kindCollisionPath = join(temp, "kind-collision.wav");
+    const regionCollisionPath = join(temp, "region-collision.wav");
     const token = "voice-mimo-cli-token";
-    await writeFile(inputPath, Buffer.from([0x52, 0x49, 0x46, 0x46, 0x04, 0, 0, 0, 0x57, 0x41, 0x56, 0x45, 1, 2, 3, 4]));
+    const wavHeader = [0x52, 0x49, 0x46, 0x46, 0x04, 0, 0, 0, 0x57, 0x41, 0x56, 0x45];
+    const inputBytes = Buffer.from([...wavHeader, 1, 2, 3, 4]);
+    const weakCollisionBytes = Buffer.from([...wavHeader, 5, 6, 7, 8]);
+    const kindCollisionBytes = Buffer.from([...wavHeader, 9, 10, 11, 12]);
+    const regionCollisionBytes = Buffer.from([...wavHeader, 13, 14, 15, 16]);
+    await writeFile(inputPath, inputBytes);
+    await writeFile(weakCollisionPath, weakCollisionBytes);
+    await writeFile(kindCollisionPath, kindCollisionBytes);
+    await writeFile(regionCollisionPath, regionCollisionBytes);
     await writeFile(configPath, [
       "models:",
       "  - id: mock-main",
@@ -823,6 +835,47 @@ describe("fairy voice CLI", () => {
     };
 
     try {
+      const registry = new ArtifactRegistry(join(dataDir, "artifacts"));
+      await registry.register({
+        content: weakCollisionBytes,
+        kind: "input",
+        labels: { residency: "global-ok", sensitivity: "public" },
+        mime: "audio/wav",
+        origin: "test:weak-collision",
+        sourceFilename: "weak-collision.wav"
+      });
+      await expect(invoke([
+        "import-audio", "--file", weakCollisionPath, "--sensitivity", "secret",
+        "--residency", "local-only", "--config", configPath, "--json"
+      ])).rejects.toThrow(/does not cover the requested labels/);
+      await registry.register({
+        content: kindCollisionBytes,
+        kind: "speech",
+        labels: { residency: "region-restricted", sensitivity: "personal" },
+        metadata: { region: "cn" },
+        mime: "audio/wav",
+        origin: "test:kind-collision",
+        sourceFilename: "kind-collision.wav"
+      });
+      await expect(invoke([
+        "import-audio", "--file", kindCollisionPath, "--sensitivity", "personal",
+        "--residency", "region-restricted", "--region", "cn", "--config", configPath, "--json"
+      ])).rejects.toThrow(/did not preserve validated input metadata/);
+      await registry.register({
+        content: regionCollisionBytes,
+        kind: "input",
+        labels: { residency: "region-restricted", sensitivity: "personal" },
+        metadata: { source: "preexisting-without-region" },
+        mime: "audio/wav",
+        origin: "test:region-collision",
+        sourceFilename: "region-collision.wav"
+      });
+      await expect(invoke([
+        "import-audio", "--file", regionCollisionPath, "--sensitivity", "personal",
+        "--residency", "region-restricted", "--region", "cn", "--config", configPath, "--json"
+      ])).rejects.toThrow(/did not preserve the requested region/);
+      expect(mimo.requests()).toBe(0);
+
       const importedOutput = await invoke([
         "import-audio", "--file", inputPath, "--sensitivity", "personal",
         "--residency", "region-restricted", "--region", "cn", "--config", configPath, "--json"

@@ -164,6 +164,30 @@ const parseClearance = (record: Record<string, unknown>, path: string): DataClea
   };
 };
 
+const parseMimoClearance = (record: Record<string, unknown>, path: string): DataClearance => {
+  const clearance = requiredRecord(record.data_clearance, `${path}.data_clearance`);
+  if (Object.keys(clearance).some((key) => key !== "max_sensitivity" && key !== "residency" && key !== "regions")) {
+    throw new Error(`${path}.data_clearance contains an unsupported field`);
+  }
+  if (clearance.max_sensitivity !== "personal") {
+    throw new Error(`${path}.data_clearance.max_sensitivity must be personal`);
+  }
+  const residency = clearance.residency;
+  if (!Array.isArray(residency) || residency.length !== 2 ||
+    !residency.includes("region-restricted") || !residency.includes("global-ok") || new Set(residency).size !== 2) {
+    throw new Error(`${path}.data_clearance.residency must contain exactly region-restricted and global-ok`);
+  }
+  const regions = clearance.regions;
+  if (!Array.isArray(regions) || regions.length !== 1 || regions[0] !== "cn") {
+    throw new Error(`${path}.data_clearance.regions must contain exactly cn`);
+  }
+  return {
+    max_sensitivity: "personal",
+    regions: ["cn"],
+    residency: ["region-restricted", "global-ok"]
+  };
+};
+
 const parseMiniMaxProvider = (record: Record<string, unknown>, index: number): MiniMaxTtsProviderConfig => {
   const path = `speech.providers[${index}]`;
   const id = requiredString(record, "id", path);
@@ -261,7 +285,7 @@ const parseMimoProvider = (record: Record<string, unknown>, index: number): Mimo
   }
   return {
     apiKeyRef: apiKeyRef as `secret://${string}`,
-    dataClearance: parseClearance(record, path),
+    dataClearance: parseMimoClearance(record, path),
     endpointProfile: "mimo-paygo-cn",
     id,
     language,

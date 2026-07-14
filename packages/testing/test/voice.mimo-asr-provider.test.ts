@@ -310,6 +310,9 @@ describe.sequential("voice.mimo-asr-provider-v0", () => {
     expect(server).toContain("#submitVoiceFinalTranscript");
     expect(server).not.toContain("minimax-t2a-v2-http");
     expect(server).not.toContain("mimo-v2.5-asr-chat-http");
+    expect(server).toContain("const runnerCancelled = this.#runner.cancel(message.sid)");
+    expect(server).toContain("const asrCancelled = await this.#speechProviders.cancelAsr(message.sid)");
+    expect(server).not.toMatch(/#runner\.cancel\([^)]*\)\s*\|\|/);
     expect(coordinator).toContain("runTts");
     expect(coordinator).toContain("runAsr");
     expect(coordinator).not.toContain("TurnRunner");
@@ -318,6 +321,7 @@ describe.sequential("voice.mimo-asr-provider-v0", () => {
   it("Case B accepts only the closed pay-go config and never discloses credential mismatch", () => {
     const provider = baseProvider();
     expect(provider).toMatchObject({ endpointProfile: "mimo-paygo-cn", model: "mimo-v2.5-asr", stage: "asr" });
+    expect(provider.dataClearance).toEqual({ max_sensitivity: "personal", regions: ["cn"], residency: ["region-restricted", "global-ok"] });
     expect(mimoAsrEndpointProfiles).toEqual({ "mimo-paygo-cn": "https://api.xiaomimimo.com/v1/chat/completions" });
     expect(resolveMimoCredential(provider, { mimo_paygo: fakeCredential })).toBe(fakeCredential);
     expect(() => resolveMimoCredential(provider, { mimo_paygo: "tp-token-plan" })).toThrowError(expect.objectContaining({ code: "MIMO_ASR_CREDENTIAL_KIND_MISMATCH" }));
@@ -331,14 +335,30 @@ describe.sequential("voice.mimo-asr-provider-v0", () => {
       { stream: false }
     ]) {
       const speech = { providers: [{ ...{
-        api_key_ref: "secret://mimo_paygo", data_clearance: { max_sensitivity: "personal", regions: ["cn"], residency: ["region-restricted"] }, endpoint_profile: "mimo-paygo-cn", id: "mimo-asr", language: "auto", model: "mimo-v2.5-asr", stage: "asr", transport: "mimo-v2.5-asr-chat-http"
+        api_key_ref: "secret://mimo_paygo", data_clearance: { max_sensitivity: "personal", regions: ["cn"], residency: ["region-restricted", "global-ok"] }, endpoint_profile: "mimo-paygo-cn", id: "mimo-asr", language: "auto", model: "mimo-v2.5-asr", stage: "asr", transport: "mimo-v2.5-asr-chat-http"
       }, ...patch }], roles: { asr: { fallback: [], primary: "mimo-asr" } } };
       expect(() => loadConfig({ sessionOverrides: { speech } })).toThrow();
+    }
+    for (const dataClearance of [
+      { max_sensitivity: "secret", regions: ["cn"], residency: ["region-restricted", "global-ok"] },
+      { max_sensitivity: "personal", regions: ["cn"], residency: ["local-only"] },
+      { max_sensitivity: "personal", regions: ["us"], residency: ["region-restricted", "global-ok"] },
+      { max_sensitivity: "personal", regions: ["cn"], residency: ["region-restricted"] },
+      { max_sensitivity: "personal", regions: ["cn"], residency: ["region-restricted", "region-restricted"] },
+      { max_sensitivity: "personal", residency: ["region-restricted", "global-ok"] },
+      { max_sensitivity: "personal", regions: ["cn", "us"], residency: ["region-restricted", "global-ok"] },
+      { max_sensitivity: "personal", regions: ["cn"], residency: ["region-restricted", "global-ok"], scope: "broader" }
+    ]) {
+      const speech = { providers: [{
+        api_key_ref: "secret://mimo_paygo", data_clearance: dataClearance, endpoint_profile: "mimo-paygo-cn", id: "mimo-asr", language: "auto", model: "mimo-v2.5-asr", stage: "asr", transport: "mimo-v2.5-asr-chat-http"
+      }], roles: { asr: { fallback: [], primary: "mimo-asr" } } };
+      expect(() => loadConfig({ sessionOverrides: { speech } })).toThrow();
+      expect(() => parseSpeechProviderConfig({ speech })).toThrow();
     }
   });
 
   it("Case B rejects unknown, duplicate, cross-stage, and fallback ASR role bindings", () => {
-    const provider = { api_key_ref: "secret://mimo_paygo", data_clearance: { max_sensitivity: "personal", regions: ["cn"], residency: ["region-restricted"] }, endpoint_profile: "mimo-paygo-cn", id: "mimo", language: "auto", model: "mimo-v2.5-asr", stage: "asr", transport: "mimo-v2.5-asr-chat-http" };
+    const provider = { api_key_ref: "secret://mimo_paygo", data_clearance: { max_sensitivity: "personal", regions: ["cn"], residency: ["region-restricted", "global-ok"] }, endpoint_profile: "mimo-paygo-cn", id: "mimo", language: "auto", model: "mimo-v2.5-asr", stage: "asr", transport: "mimo-v2.5-asr-chat-http" };
     expect(() => parseSpeechProviderConfig({ speech: { providers: [provider, provider], roles: { asr: { fallback: [], primary: "mimo" } } } })).toThrow(/duplicate/);
     expect(() => parseSpeechProviderConfig({ speech: { providers: [provider], roles: { asr: { fallback: [], primary: "missing" } } } })).toThrow(/unknown/);
     expect(() => parseSpeechProviderConfig({ speech: { providers: [provider], roles: { asr: { fallback: ["mimo"], primary: "mimo" } } } })).toThrow(/fallback/);
@@ -395,7 +415,7 @@ describe.sequential("voice.mimo-asr-provider-v0", () => {
   it("Case D denies under-cleared audio before spawn, stage, connection, request, final, turn, or model", async () => {
     const mimo = await FakeMimoServer.start();
     mimoServers.push(mimo);
-    const model = await MockOpenAIChatServer.start({ text: ["must not run"] });
+    const model = await MockOpenAIChatServer.start({ delayMs: 500, text: ["delayed turn answer"] });
     modelServers.push(model);
     const root = await mkdtemp(join(tmpdir(), "fairy-mimo-denial-"));
     tempRoots.push(root);
@@ -410,12 +430,26 @@ describe.sequential("voice.mimo-asr-provider-v0", () => {
     const client = await MockFairyClient.connect({ token: "denial-token", url: `ws://127.0.0.1:${address.port}` });
     const session = await client.createSession("MiMo denial");
     const result = await runGatewayAsr(client, session.sid, registered.record.artifact_id);
-    client.close();
     expect(result.ack).toMatchObject({ asr_final_count: 0, model_request_count: 0, provider_connection_count: 0, provider_request_count: 0, staged_input_bytes: 0, turn_input_count: 0, worker_spawn_count: 0 });
     expect(result.events.some((event) => event.type === "speech.asr.final" || event.type === "turn.input")).toBe(false);
     expect(mimo.connections).toBe(0);
     expect(mimo.requestBytes).toBe(0);
     expect(model.requests).toBe(0);
+    const beforeRoots = await tempAsrRoots();
+    const beforeEvents = client.events().length;
+    const beforeFrames = client.frames().length;
+    client.sendTurnInputNoWait(session.sid, { content: [{ kind: "text", text: "hold the turn reservation" }] });
+    await client.waitFor((event) => event.sid === session.sid && event.type === "turn.input", 10_000);
+    client.sendRaw({ audio_ref: registered.record.artifact_id, op: "voice.asr", sid: session.sid });
+    const rejected = await client.waitForFrame((frame) => frame.kind === "op-error" && frame.op === "voice.asr" && client.frames().indexOf(frame) >= beforeFrames, 10_000);
+    expect(rejected).toMatchObject({ kind: "op-error", op: "voice.asr", sid: session.sid });
+    expect(client.events().slice(beforeEvents).some((event) => event.type === "speech.asr.final")).toBe(false);
+    expect(mimo.connections).toBe(0);
+    expect(mimo.requestBytes).toBe(0);
+    expect(await tempAsrRoots()).toEqual(beforeRoots);
+    await client.waitFor((event) => event.sid === session.sid && event.type === "turn.final", 10_000);
+    expect(model.requests).toBe(1);
+    client.close();
   }, 120_000);
 
   it("Case E sends one exact api-key request with only the closed MiMo envelope", async () => {
@@ -509,6 +543,8 @@ describe.sequential("voice.mimo-asr-provider-v0", () => {
     await expect(requestDirect(mimo, { mode: "crash" })).rejects.toMatchObject({ code: "SPEECH_WORKER_EXITED" });
     await expect(requestDirect(mimo, { mode: "malformed" })).rejects.toMatchObject({ code: expect.stringMatching(/SPEECH_WORKER_(MALFORMED_OUTPUT|PROTOCOL_FAILED)/) });
     await expect(requestDirect(mimo, { deadlineMs: 250, mode: "timeout" })).rejects.toMatchObject({ code: "SPEECH_WORKER_REQUEST_TIMEOUT" });
+    const cancelMimo = await FakeMimoServer.start([{ hang: true }]);
+    mimoServers.push(cancelMimo);
     const model = await MockOpenAIChatServer.start({ text: ["must not run"] });
     modelServers.push(model);
     const root = await mkdtemp(join(tmpdir(), "fairy-mimo-cancel-"));
@@ -517,13 +553,20 @@ describe.sequential("voice.mimo-asr-provider-v0", () => {
     const configPath = join(root, "fairy.yaml");
     await writeGatewayConfig(configPath, dataDir, model.url, "cancel-token");
     const registered = await new ArtifactRegistry(join(dataDir, "artifacts")).register({ content: wavFixture, kind: "input", labels: { residency: "region-restricted", sensitivity: "personal" }, mime: "audio/wav", origin: "test", sourceFilename: "cancel.wav" });
-    const gateway = new MinimalGateway(loadGatewayConfig({ configPath }, repoRoot, { ...process.env, mimo_paygo: fakeCredential }), { speechProviderLoopbackPorts: { "mimo-asr": mimo.port } });
+    const gateway = new MinimalGateway(loadGatewayConfig({ configPath }, repoRoot, { ...process.env, mimo_paygo: fakeCredential }), { speechProviderLoopbackPorts: { "mimo-asr": cancelMimo.port } });
     gateways.push(gateway);
     const address = await gateway.start();
     const client = await MockFairyClient.connect({ token: "cancel-token", url: `ws://127.0.0.1:${address.port}` });
     const session = await client.createSession("MiMo cancel");
     client.sendRaw({ audio_ref: registered.record.artifact_id, op: "voice.asr", sid: session.sid });
-    await waitUntil(() => mimo.requests.length === 1);
+    await waitUntil(() => cancelMimo.requests.length === 1);
+    const beforeTurnEvents = client.events().length;
+    const beforeTurnFrames = client.frames().length;
+    client.sendTurnInputNoWait(session.sid, { content: [{ kind: "text", text: "must not overlap active ASR" }] });
+    const turnRejected = await client.waitForFrame((frame) => frame.kind === "op-error" && frame.op === "turn.input" && client.frames().indexOf(frame) >= beforeTurnFrames, 10_000);
+    expect(turnRejected).toMatchObject({ kind: "op-error", op: "turn.input", sid: session.sid });
+    expect(client.events().slice(beforeTurnEvents).some((event) => event.type === "turn.input")).toBe(false);
+    expect(model.requests).toBe(0);
     client.sendRaw({ op: "turn.cancel", sid: session.sid });
     const cancelAck = await client.waitForFrame((frame) => frame.kind === "ack" && frame.op === "turn.cancel", 10_000);
     const asrAck = await client.waitForFrame((frame) => frame.kind === "ack" && frame.op === "voice.asr", 10_000);
