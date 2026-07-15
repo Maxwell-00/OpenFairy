@@ -1,0 +1,25 @@
+$ vitest run test/voice.mimo-asr-provider.test.ts --reporter verbose
+
+[1m[30m[46m RUN [49m[39m[22m [36mv4.1.9 [39m[90mE:/Claude_Projects/Projects/Fairy/OpenFairy/packages/testing[39m
+
+(node:9180) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+ [32m✓[39m test/voice.mimo-asr-provider.test.ts[2m > [22mvoice.mimo-asr-provider-v0[2m > [22mCase A extracts provider orchestration while keeping one TurnRunner and a smaller server[32m 8[2mms[22m[39m
+ [32m✓[39m test/voice.mimo-asr-provider.test.ts[2m > [22mvoice.mimo-asr-provider-v0[2m > [22mCase B accepts only the closed pay-go config and never discloses credential mismatch[32m 128[2mms[22m[39m
+ [32m✓[39m test/voice.mimo-asr-provider.test.ts[2m > [22mvoice.mimo-asr-provider-v0[2m > [22mCase B rejects unknown, duplicate, cross-stage, and fallback ASR role bindings[32m 0[2mms[22m[39m
+ [32m✓[39m test/voice.mimo-asr-provider.test.ts[2m > [22mvoice.mimo-asr-provider-v0[2m > [22mCase C validates WAV and MP3 input artifacts and rejects wrong kind, magic, size, and hash[32m 99[2mms[22m[39m
+ [32m✓[39m test/voice.mimo-asr-provider.test.ts[2m > [22mvoice.mimo-asr-provider-v0[2m > [22mCase C stages one fixed token and rejects traversal, absolute, UNC, drive, ADS, symlinks, and partial files[32m 18[2mms[22m[39m
+ [32m✓[39m test/voice.mimo-asr-provider.test.ts[2m > [22mvoice.mimo-asr-provider-v0[2m > [22mCase D denies under-cleared audio before spawn, stage, connection, request, final, turn, or model[33m 1378[2mms[22m[39m
+ [32m✓[39m test/voice.mimo-asr-provider.test.ts[2m > [22mvoice.mimo-asr-provider-v0[2m > [22mCase E sends one exact api-key request with only the closed MiMo envelope[33m 955[2mms[22m[39m
+ [32m✓[39m test/voice.mimo-asr-provider.test.ts[2m > [22mvoice.mimo-asr-provider-v0[2m > [22mCase E supports MP3 without adding another MIME or request shape[33m 814[2mms[22m[39m
+ [32m✓[39m test/voice.mimo-asr-provider.test.ts[2m > [22mvoice.mimo-asr-provider-v0[2m > [22mCase F emits one canonical final, one turn, one model request, replayable JSONL, and no residue[33m 945[2mms[22m[39m
+ [32m✓[39m test/voice.mimo-asr-provider.test.ts[2m > [22mvoice.mimo-asr-provider-v0[2m > [22mCases G-H reject malformed successes and map every required HTTP status without retry[33m 11632[2mms[22m[39m
+ [32m✓[39m test/voice.mimo-asr-provider.test.ts[2m > [22mvoice.mimo-asr-provider-v0[2m > [22mCase I bounds crash, malformed output, and supervisor timeout with no staging residue[33m 3711[2mms[22m[39m
+ [32m✓[39m test/voice.mimo-asr-provider.test.ts[2m > [22mvoice.mimo-asr-provider-v0[2m > [22mCase J keeps credentials, audio, base64, paths, and provider bodies out of wire and source diagnostics[32m 16[2mms[22m[39m
+ [32m✓[39m test/voice.mimo-asr-provider.test.ts[2m > [22mvoice.mimo-asr-provider-v0[2m > [22mCases K-L enforce Python 3.11, golden wire fixtures, source policy, and residual boundaries[32m 32[2mms[22m[39m
+
+[2m Test Files [22m [1m[32m1 passed[39m[22m[90m (1)[39m
+[2m      Tests [22m [1m[32m13 passed[39m[22m[90m (13)[39m
+[2m   Start at [22m 09:32:44
+[2m   Duration [22m 35.71s[2m (transform 1.85s, setup 0ms, import 14.65s, tests 19.74s, environment 0ms)[22m
+

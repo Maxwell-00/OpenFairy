@@ -1,0 +1,11 @@
+{
+  "artifact_id": "art_dab01c1e7ff96621969c",
+  "hash": "sha256:dab01c1e7ff96621969c06ed38778632ac348e203ecbf242468516a24f1f0fa2",
+  "kind": "input",
+  "labels": {
+    "residency": "region-restricted",
+    "sensitivity": "personal"
+  },
+  "mime": "audio/mpeg",
+  "size_bytes": 76020
+}

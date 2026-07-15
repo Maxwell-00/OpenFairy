@@ -1,0 +1,4 @@
+(node:1340) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+{"actor":"system","id":"evt_01KXHPWWH7J2KPTB0BHGG56EGT","labels":{"residency":"global-ok","sensitivity":"internal"},"payload":{"created_at":"2026-07-15T01:40:10.407Z","title":"Voice asr"},"provenance":"agent","sid":"ses_01KXHPWWH7MY3M379PNKHZVND4","ts":"2026-07-15T01:40:10.407Z","turn":0,"type":"session.created","v":1}
+{"actor":"system","id":"evt_01KXHPWWHB1J28A9W1RT8DQH9N","labels":{"residency":"local-only","sensitivity":"secret"},"payload":{"detail":"ASR candidate was denied before staging, worker spawn, or provider I/O.","stage":"voice.asr.route-denied","candidate_id":"mimo-asr-paygo-cn","reason":"request sensitivity secret exceeds model max personal"},"provenance":"agent","sid":"ses_01KXHPWWH7MY3M379PNKHZVND4","ts":"2026-07-15T01:40:10.411Z","turn":1,"type":"progress.update","v":1}

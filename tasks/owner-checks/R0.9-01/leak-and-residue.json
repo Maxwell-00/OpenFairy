@@ -1,0 +1,10 @@
+{
+  "checked_at_utc": "2026-07-15T01:41:07.4594416Z",
+  "credential_leak": false,
+  "data_url_leak": false,
+  "long_base64_leak": false,
+  "worker_token_leak": false,
+  "temporary_path_leak": false,
+  "temporary_root_residue": 0,
+  "worker_process_residue": 0
+}

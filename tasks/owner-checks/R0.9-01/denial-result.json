@@ -1,0 +1,33 @@
+{
+  "kind": "ack",
+  "op": "voice.asr",
+  "asr_final_count": 0,
+  "assistant_final_text": "",
+  "audio_ref": "art_643f8a8dc8bd9c19225a",
+  "cancelled": false,
+  "effective_labels": {
+    "residency": "local-only",
+    "sensitivity": "secret"
+  },
+  "error_category": "invalid_request",
+  "error_status": "asr_route_denied",
+  "event_counts": {
+    "progress.update": 1
+  },
+  "model_request_count": 0,
+  "provider_connection_count": 0,
+  "provider_request_count": 0,
+  "provider_retryable": false,
+  "provider_route": [
+    "mimo-asr-paygo-cn:denied"
+  ],
+  "replay_command": "fairy replay ses_01KXHPWWH7MY3M379PNKHZVND4",
+  "request_id": null,
+  "sid": "ses_01KXHPWWH7MY3M379PNKHZVND4",
+  "staged_input_bytes": 0,
+  "transcript_text": "",
+  "turn": 1,
+  "turn_input_count": 0,
+  "worker_process_id": null,
+  "worker_spawn_count": 0
+}

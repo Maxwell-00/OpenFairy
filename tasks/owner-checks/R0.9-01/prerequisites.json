@@ -1,0 +1,19 @@
+{
+  "checked_at_utc": "2026-07-15T01:38:33.3147815Z",
+  "reviewed_head": "d63ae074cb377f5f290b1d4a175feb3d1c702207",
+  "implementation_commit": "8e211755c195d2a06aeacdbc1745e8f209b7d5c3",
+  "implementation_ci": "29337325296",
+  "final_head_ci": "29338293955",
+  "ci_status": "pass",
+  "credential_class": "pay-as-you-go-sk",
+  "provider_profile": "mimo-paygo-cn",
+  "model": "mimo-v2.5-asr",
+  "node": "v24.14.1",
+  "pnpm": "11.7.0",
+  "powershell": "7.6.3",
+  "os": "Microsoft Windows NT 10.0.26200.0",
+  "gateway_port": 60333,
+  "positive_audio_name": "art_dab01c1e7ff96621969c.mp3",
+  "positive_audio_bytes": 76020,
+  "positive_audio_sha256": "dab01c1e7ff96621969c06ed38778632ac348e203ecbf242468516a24f1f0fa2"
+}

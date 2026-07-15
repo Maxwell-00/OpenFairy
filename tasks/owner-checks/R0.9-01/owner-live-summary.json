@@ -1,0 +1,47 @@
+{
+  "status": "pass",
+  "checked_at_utc": "2026-07-15T01:41:18.3482834Z",
+  "implementation_commit": "8e211755c195d2a06aeacdbc1745e8f209b7d5c3",
+  "reviewed_head": "d63ae074cb377f5f290b1d4a175feb3d1c702207",
+  "ci": {
+    "windows_verify": "pass",
+    "final_head_run": "29338293955",
+    "ubuntu_verify": "pass",
+    "ubuntu_python_311": "pass",
+    "implementation_run": "29337325296",
+    "windows_python_311": "pass"
+  },
+  "positive": {
+    "provider_request_count": 1,
+    "provider_id": "mimo-asr-paygo-cn",
+    "usage_seconds": null,
+    "transcript": "你好，this is the visible M305 owner, TTS check.",
+    "asr_final_count": 1,
+    "auth": "api-key",
+    "audio_ref": "art_dab01c1e7ff96621969c",
+    "endpoint_profile": "mimo-paygo-cn",
+    "worker_spawn_count": 1,
+    "replay": "pass",
+    "turn_input_count": 1,
+    "sid": "ses_01KXHPV1SMK6BETWEQYBR1CKC5",
+    "model": "mimo-v2.5-asr",
+    "model_request_count": 1,
+    "provider_connection_count": 1
+  },
+  "denial": {
+    "model_request_count": 0,
+    "turn_input_count": 0,
+    "worker_spawn_count": 0,
+    "provider_connection_count": 0,
+    "replay": "pass",
+    "error_status": "asr_route_denied",
+    "provider_request_count": 0,
+    "sid": "ses_01KXHPWWH7MY3M379PNKHZVND4",
+    "asr_final_count": 0,
+    "staged_input_bytes": 0
+  },
+  "leakage": "pass",
+  "temporary_residue": 0,
+  "worker_process_residue": 0,
+  "owner_live_closed": false
+}

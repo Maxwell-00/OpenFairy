@@ -1,0 +1,11 @@
+{
+  "artifact_id": "art_643f8a8dc8bd9c19225a",
+  "hash": "sha256:643f8a8dc8bd9c19225afffad2becfec5426180b3749cb208abdf1a6c8354efc",
+  "kind": "input",
+  "labels": {
+    "residency": "local-only",
+    "sensitivity": "secret"
+  },
+  "mime": "audio/wav",
+  "size_bytes": 32044
+}
