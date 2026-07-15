@@ -1,0 +1,100 @@
+R0.9-02 owner preflight 2026-07-15T16:50:35.5730725+08:00
+$ vitest run "--reporter=verbose"
+
+[1m[30m[46m RUN [49m[39m[22m [36mv4.1.9 [39m[90mE:/Claude_Projects/Projects/Fairy/OpenFairy/apps/web[39m
+
+ [32m✓[39m test/wav.test.ts[2m > [22mWeb voice pure modules[2m > [22mencodes a canonical deterministic PCM16 WAV[32m 1[2mms[22m[39m
+ [32m✓[39m test/wav.test.ts[2m > [22mWeb voice pure modules[2m > [22mresamples non-16 kHz source deterministically and caps output[32m 4[2mms[22m[39m
+ [32m✓[39m test/wav.test.ts[2m > [22mWeb voice pure modules[2m > [22muses target samples for warnings, countdown, and exactly-once auto-stop[32m 1[2mms[22m[39m
+ [32m✓[39m test/wav.test.ts[2m > [22mWeb voice pure modules[2m > [22mkeeps the bounded UI transition reducer deterministic[32m 0[2mms[22m[39m
+ [32m✓[39m test/wav.test.ts[2m > [22mWeb voice pure modules[2m > [22mparses only canonical session hash routes[32m 0[2mms[22m[39m
+ [32m✓[39m test/wav.test.ts[2m > [22mWeb voice pure modules[2m > [22mconsumes only provider-neutral replay fields[32m 0[2mms[22m[39m
+ [32m✓[39m test/wav.test.ts[2m > [22mWeb voice pure modules[2m > [22mbinds an operation to one immutable session generation[32m 0[2mms[22m[39m
+ [32m✓[39m test/wav.test.ts[2m > [22mWeb voice pure modules[2m > [22mdiscards a deferred upload response after its session generation becomes stale[32m 1[2mms[22m[39m
+ [32m✓[39m test/wav.test.ts[2m > [22mWeb voice pure modules[2m > [22maccepts session.created only for the current create action[32m 0[2mms[22m[39m
+ [32m✓[39m test/wav.test.ts[2m > [22mWeb voice pure modules[2m > [22mignores late old-session frames and stale MP3 responses[32m 0[2mms[22m[39m
+ [32m✓[39m test/wav.test.ts[2m > [22mWeb voice pure modules[2m > [22mcoalesces replay to the latest speech artifact exactly once[32m 0[2mms[22m[39m
+ [32m✓[39m test/wav.test.ts[2m > [22mWeb voice pure modules[2m > [22mmaps bounded failures and resets locally without private detail[32m 0[2mms[22m[39m
+ [32m✓[39m test/wav.test.ts[2m > [22mWeb voice pure modules[2m > [22mstops playback locally and revokes the object URL[32m 0[2mms[22m[39m
+
+[2m Test Files [22m [1m[32m1 passed[39m[22m[90m (1)[39m
+[2m      Tests [22m [1m[32m13 passed[39m[22m[90m (13)[39m
+[2m   Start at [22m 16:50:36
+[2m   Duration [22m 354ms[2m (transform 45ms, setup 0ms, import 149ms, tests 10ms, environment 0ms)[22m
+
+$ vitest run test/voice.web-ptt.test.ts --reporter verbose
+
+[1m[30m[46m RUN [49m[39m[22m [36mv4.1.9 [39m[90mE:/Claude_Projects/Projects/Fairy/OpenFairy/packages/testing[39m
+
+(node:37384) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+ [32m✓[39m test/voice.web-ptt.test.ts[2m > [22mvoice.web-ptt-v0[2m > [22mCase A — architecture and static source policy[33m 373[2mms[22m[39m
+ [32m✓[39m test/voice.web-ptt.test.ts[2m > [22mvoice.web-ptt-v0[2m > [22mCase B — PCM16 WAV encoder[32m 1[2mms[22m[39m
+ [32m✓[39m test/voice.web-ptt.test.ts[2m > [22mvoice.web-ptt-v0[2m > [22mCase C — recorder sample clock and auto-stop[32m 1[2mms[22m[39m
+ [32m✓[39m test/voice.web-ptt.test.ts[2m > [22mvoice.web-ptt-v0[2m > [22mCase D — strict WAV parser boundaries[32m 1[2mms[22m[39m
+ [32m✓[39m test/voice.web-ptt.test.ts[2m > [22mvoice.web-ptt-v0[2m > [22mCase E — upload authentication and bounded body[32m 54[2mms[22m[39m
+ [32m✓[39m test/voice.web-ptt.test.ts[2m > [22mvoice.web-ptt-v0[2m > [22mCase F — upload success and governance[32m 22[2mms[22m[39m
+ [32m✓[39m test/voice.web-ptt.test.ts[2m > [22mvoice.web-ptt-v0[2m > [22mCase G — repeated-content collision fail-closed[32m 74[2mms[22m[39m
+ [32m✓[39m test/voice.web-ptt.test.ts[2m > [22mvoice.web-ptt-v0[2m > [22mCase H — Web socket authentication and projection[33m 325[2mms[22m[39m
+ [32m✓[39m test/voice.web-ptt.test.ts[2m > [22mvoice.web-ptt-v0[2m > [22mCase I — full fake Web voice turn[33m 2278[2mms[22m[39m
+ [32m✓[39m test/voice.web-ptt.test.ts[2m > [22mvoice.web-ptt-v0[2m > [22mCase J — TTS failure preserves the text turn[33m 1906[2mms[22m[39m
+ [32m✓[39m test/voice.web-ptt.test.ts[2m > [22mvoice.web-ptt-v0[2m > [22mCase K — authenticated MP3 fetch and ownership[33m 371[2mms[22m[39m
+ [32m✓[39m test/voice.web-ptt.test.ts[2m > [22mvoice.web-ptt-v0[2m > [22mCase L — local playback stop contract[32m 1[2mms[22m[39m
+ [32m✓[39m test/voice.web-ptt.test.ts[2m > [22mvoice.web-ptt-v0[2m > [22mCase M — reload and canonical replay[33m 464[2mms[22m[39m
+ [32m✓[39m test/voice.web-ptt.test.ts[2m > [22mvoice.web-ptt-v0[2m > [22mCase N — regression and cleanup[32m 232[2mms[22m[39m
+
+[2m Test Files [22m [1m[32m1 passed[39m[22m[90m (1)[39m
+[2m      Tests [22m [1m[32m14 passed[39m[22m[90m (14)[39m
+[2m   Start at [22m 16:50:37
+[2m   Duration [22m 8.26s[2m (transform 444ms, setup 0ms, import 1.96s, tests 6.11s, environment 0ms)[22m
+
+$ vitest run test/voice.mimo-asr-provider.test.ts --reporter verbose
+
+[1m[30m[46m RUN [49m[39m[22m [36mv4.1.9 [39m[90mE:/Claude_Projects/Projects/Fairy/OpenFairy/packages/testing[39m
+
+(node:21284) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+ [32m✓[39m test/voice.mimo-asr-provider.test.ts[2m > [22mvoice.mimo-asr-provider-v0[2m > [22mCase A extracts provider orchestration while keeping one TurnRunner and a smaller server[32m 4[2mms[22m[39m
+ [32m✓[39m test/voice.mimo-asr-provider.test.ts[2m > [22mvoice.mimo-asr-provider-v0[2m > [22mCase B accepts only the closed pay-go config and never discloses credential mismatch[32m 53[2mms[22m[39m
+ [32m✓[39m test/voice.mimo-asr-provider.test.ts[2m > [22mvoice.mimo-asr-provider-v0[2m > [22mCase B rejects unknown, duplicate, cross-stage, and fallback ASR role bindings[32m 0[2mms[22m[39m
+ [32m✓[39m test/voice.mimo-asr-provider.test.ts[2m > [22mvoice.mimo-asr-provider-v0[2m > [22mCase C validates WAV and MP3 input artifacts and rejects wrong kind, magic, size, and hash[32m 93[2mms[22m[39m
+ [32m✓[39m test/voice.mimo-asr-provider.test.ts[2m > [22mvoice.mimo-asr-provider-v0[2m > [22mCase C stages one fixed token and rejects traversal, absolute, UNC, drive, ADS, symlinks, and partial files[32m 14[2mms[22m[39m
+ [32m✓[39m test/voice.mimo-asr-provider.test.ts[2m > [22mvoice.mimo-asr-provider-v0[2m > [22mCase D denies under-cleared audio before spawn, stage, connection, request, final, turn, or model[33m 1311[2mms[22m[39m
+ [32m✓[39m test/voice.mimo-asr-provider.test.ts[2m > [22mvoice.mimo-asr-provider-v0[2m > [22mCase E sends one exact api-key request with only the closed MiMo envelope[33m 868[2mms[22m[39m
+ [32m✓[39m test/voice.mimo-asr-provider.test.ts[2m > [22mvoice.mimo-asr-provider-v0[2m > [22mCase E supports MP3 without adding another MIME or request shape[33m 927[2mms[22m[39m
+ [32m✓[39m test/voice.mimo-asr-provider.test.ts[2m > [22mvoice.mimo-asr-provider-v0[2m > [22mCase F emits one canonical final, one turn, one model request, replayable JSONL, and no residue[33m 1083[2mms[22m[39m
+ [32m✓[39m test/voice.mimo-asr-provider.test.ts[2m > [22mvoice.mimo-asr-provider-v0[2m > [22mCases G-H reject malformed successes and map every required HTTP status without retry[33m 16716[2mms[22m[39m
+ [32m✓[39m test/voice.mimo-asr-provider.test.ts[2m > [22mvoice.mimo-asr-provider-v0[2m > [22mCase I bounds crash, malformed output, and supervisor timeout with no staging residue[33m 4613[2mms[22m[39m
+ [32m✓[39m test/voice.mimo-asr-provider.test.ts[2m > [22mvoice.mimo-asr-provider-v0[2m > [22mCase J keeps credentials, audio, base64, paths, and provider bodies out of wire and source diagnostics[32m 4[2mms[22m[39m
+ [32m✓[39m test/voice.mimo-asr-provider.test.ts[2m > [22mvoice.mimo-asr-provider-v0[2m > [22mCases K-L enforce Python 3.11, golden wire fixtures, source policy, and residual boundaries[32m 6[2mms[22m[39m
+
+[2m Test Files [22m [1m[32m1 passed[39m[22m[90m (1)[39m
+[2m      Tests [22m [1m[32m13 passed[39m[22m[90m (13)[39m
+[2m   Start at [22m 16:50:46
+[2m   Duration [22m 27.91s[2m (transform 464ms, setup 0ms, import 1.97s, tests 25.69s, environment 0ms)[22m
+
+$ vitest run test/voice.tts-provider.test.ts --reporter verbose
+
+[1m[30m[46m RUN [49m[39m[22m [36mv4.1.9 [39m[90mE:/Claude_Projects/Projects/Fairy/OpenFairy/packages/testing[39m
+
+(node:14072) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+ [32m✓[39m test/voice.tts-provider.test.ts[2m > [22mvoice.tts-provider-v0[2m > [22mCase A validates the closed config, endpoint profiles, provider wire, and Python >= 3.11 floor[33m 952[2mms[22m[39m
+ [32m✓[39m test/voice.tts-provider.test.ts[2m > [22mvoice.tts-provider-v0[2m > [22mCases B, D, and G send visible final text only and register one governed MP3 artifact[33m 2985[2mms[22m[39m
+ [32m✓[39m test/voice.tts-provider.test.ts[2m > [22mvoice.tts-provider-v0[2m > [22mCase C gives an under-cleared primary zero connections and selects one cleared fallback[33m 1704[2mms[22m[39m
+ [32m✓[39m test/voice.tts-provider.test.ts[2m > [22mvoice.tts-provider-v0[2m > [22mCase C makes zero provider requests and no artifact when every candidate is under-cleared[33m 1738[2mms[22m[39m
+ [32m✓[39m test/voice.tts-provider.test.ts[2m > [22mvoice.tts-provider-v0[2m > [22mCases C and G apply speech egress before a provider that otherwise has secret clearance[33m 687[2mms[22m[39m
+ [32m✓[39m test/voice.tts-provider.test.ts[2m > [22mvoice.tts-provider-v0[2m > [22mCase E classifies every required MiniMax error and rejects malformed success envelopes[33m 10679[2mms[22m[39m
+ [32m✓[39m test/voice.tts-provider.test.ts[2m > [22mvoice.tts-provider-v0[2m > [22mCase E never retries auth, quota, or safety failures and attempts a transient fallback once[33m 6986[2mms[22m[39m
+ [32m✓[39m test/voice.tts-provider.test.ts[2m > [22mvoice.tts-provider-v0[2m > [22mCase E rejects unsupported adapter input before provider I/O[33m 507[2mms[22m[39m
+ [32m✓[39m test/voice.tts-provider.test.ts[2m > [22mvoice.tts-provider-v0[2m > [22mCases D and F reject unsafe, partial, mismatched, and non-regular worker outputs[32m 29[2mms[22m[39m
+ [32m✓[39m test/voice.tts-provider.test.ts[2m > [22mvoice.tts-provider-v0[2m > [22mCase F preserves and replays the text turn with zero artifacts after crash, malformed output, timeout, and partial output[33m 8858[2mms[22m[39m
+ [32m✓[39m test/voice.tts-provider.test.ts[2m > [22mvoice.tts-provider-v0[2m > [22mCase F leaves no artifact after an invalid provider response[33m 2621[2mms[22m[39m
+ [32m✓[39m test/voice.tts-provider.test.ts[2m > [22mvoice.tts-provider-v0[2m > [22mCase F cleans cancellation and forced gateway shutdown without temporary residue[33m 3632[2mms[22m[39m
+ [32m✓[39m test/voice.tts-provider.test.ts[2m > [22mvoice.tts-provider-v0[2m > [22mCases B and H disable inherited proxies twice and keep worker sources and architecture guards closed[33m 1118[2mms[22m[39m
+
+[2m Test Files [22m [1m[32m1 passed[39m[22m[90m (1)[39m
+[2m      Tests [22m [1m[32m13 passed[39m[22m[90m (13)[39m
+[2m   Start at [22m 16:51:15
+[2m   Duration [22m 44.89s[2m (transform 516ms, setup 0ms, import 2.16s, tests 42.50s, environment 0ms)[22m
+

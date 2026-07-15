@@ -1,0 +1,82 @@
+{
+  "checked_at_utc": "2026-07-15T09:23:57.8851319Z",
+  "status": "pass",
+  "session_id": "ses_01KXJH3VR4TZYQ92DJ0YYEBT4H",
+  "browser": "chrome",
+  "browser_version": "150.0.7871.124",
+  "interaction": "manual",
+  "manual_observations": {
+    "asr_result_nonempty": true,
+    "transcript_visible": true,
+    "autoplay_result": "played",
+    "stored_mp3_played_after_reload": true,
+    "owner_speech_clarity_observation": "possibly_unclear",
+    "asr_quality_is_release_blocker": false,
+    "local_stop_only": true,
+    "session_controls_locked_during_operation": true,
+    "state_sequence_observed": true,
+    "assistant_final_visible": true,
+    "provider_private_fields_visible": false,
+    "asr_quality_observation": "imperfect_but_usable",
+    "reload_replay_restored_view": true
+  },
+  "input_artifact": {
+    "bits_per_sample": 16,
+    "sample_rate": 16000,
+    "size_bytes": 223104,
+    "duration_ms": 6970,
+    "sample_count": 111530,
+    "kind": "input",
+    "mime": "audio/wav",
+    "channels": 1,
+    "artifact_id": "art_71cbb85d9673060d42ab"
+  },
+  "transcript": {
+    "present": true,
+    "sha256": "19d047ab868d307ffe0c6ea8e135f459f32086dbca75b742748767db45220d31",
+    "char_count": 71
+  },
+  "assistant_final": {
+    "present": true,
+    "sha256": "f6d4a2d3d60e667225e9715e3558119c3049ceb0fcaa8907cd73b0fa9befb062",
+    "char_count": 41
+  },
+  "speech_artifact": {
+    "hash": "sha256:2b1aafc30b54dbd49e6d4cc024a5deb027aab657d2d981476f0a1c99fbf0187c",
+    "kind": "speech",
+    "mime": "audio/mpeg",
+    "size_bytes": 57012,
+    "artifact_id": "art_2b1aafc30b54dbd49e6d"
+  },
+  "exact_counts": {
+    "turn_input": 1,
+    "speech_asr_final": 1,
+    "speech_tts_chunk": 1,
+    "turn_final": 1,
+    "local_model_request_delta": 1
+  },
+  "provider_execution_evidence": {
+    "expected_mimo_request_count": 1,
+    "mimo_success_observed": true,
+    "minimax_success_observed": true,
+    "no_retry_contract": true,
+    "expected_minimax_request_count": 1
+  },
+  "labels": {
+    "residency": "region-restricted",
+    "sensitivity": "personal"
+  },
+  "labels_consistent": true,
+  "canonical_event_type_counts": {
+    "context.manifest": 1,
+    "session.created": 1,
+    "session.resumed": 1,
+    "speech.asr.final": 1,
+    "speech.mark": 2,
+    "speech.tts.chunk": 1,
+    "turn.delta": 1,
+    "turn.final": 1,
+    "turn.input": 1
+  },
+  "canonical_log_sha256": "4a371900d1f04fefffcfee115ad74d7e2cd8b88ef98e42c2282a9d3bbcae76ea"
+}

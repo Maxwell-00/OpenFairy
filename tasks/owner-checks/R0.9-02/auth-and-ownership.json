@@ -1,0 +1,14 @@
+{
+  "checked_at_utc": "2026-07-15T10:18:11.7634577Z",
+  "status": "pass",
+  "wrong_token_session_list_status": 401,
+  "wrong_token_upload_status": 401,
+  "wrong_token_websocket_close_code": 4401,
+  "wrong_token_mp3_fetch_status": 401,
+  "cross_session_mp3_fetch_status": 404,
+  "arbitrary_artifact_fetch_status": 404,
+  "traversal_shaped_fetch_status": 404,
+  "artifact_bytes_returned_on_denied_checks": 0,
+  "model_request_delta": 0,
+  "provider_request_delta": 0
+}

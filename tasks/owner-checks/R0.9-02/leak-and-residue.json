@@ -1,0 +1,22 @@
+{
+  "checked_at_utc": "2026-07-15T10:24:51.9517924Z",
+  "status": "pass",
+  "findings": {
+    "credential_leak": false,
+    "gateway_token_leak": false,
+    "secret_ref_leak": false,
+    "authorization_or_api_key_leak": false,
+    "data_url_leak": false,
+    "long_base64_leak": false,
+    "raw_audio_marker_leak": false,
+    "provider_envelope_leak": false,
+    "temporary_path_leak": false,
+    "artifact_path_leak": false,
+    "object_url_leak": false,
+    "new_mimo_temp_roots": 0,
+    "new_minimax_temp_roots": 0,
+    "worker_process_residue": 0,
+    "generated_audio_in_evidence": 0,
+    "microphone_device_label_recorded": false
+  }
+}
