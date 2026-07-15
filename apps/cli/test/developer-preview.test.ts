@@ -36,6 +36,21 @@ const secretValues = {
   minimax: "synthetic-minimax-token-never-print"
 } as const;
 
+const inheritedEnvironmentKeys = [
+  "PATH",
+  "Path",
+  "PATHEXT",
+  "SYSTEMROOT",
+  "SystemRoot",
+  "WINDIR",
+  "TEMP",
+  "TMP",
+  "TMPDIR"
+] as const;
+
+const boundedTestEnvironment = (source: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEnv =>
+  Object.fromEntries(inheritedEnvironmentKeys.flatMap((name) => source[name] === undefined ? [] : [[name, source[name]]])) as NodeJS.ProcessEnv;
+
 interface Harness {
   readonly configPath: string;
   readonly dataDir: string;
@@ -140,7 +155,7 @@ const createHarness = async (options: ConfigFixtureOptions = {}): Promise<Harnes
     configPath,
     dataDir,
     env: {
-      ...process.env,
+      ...boundedTestEnvironment(),
       GATEWAY_TOKEN: secretValues.gateway,
       MAIN_KEY: secretValues.main,
       MIMO_KEY: secretValues.mimo,
@@ -154,7 +169,7 @@ const createHarness = async (options: ConfigFixtureOptions = {}): Promise<Harnes
 const deterministicProbes = (gatewayPort: GatewayPortState = "available"): DoctorProbeOverrides => ({
   commandVersion: (command) => command === "pnpm" ? "11.7.0" : command === "docker" ? "Docker synthetic" : undefined,
   gatewayPort: async () => gatewayPort,
-  python: () => ({ source: process.env.FAIRY_TEST_PYTHON ? "test-override" : "discovered", version: "3.11.9" })
+  python: () => ({ source: "discovered", version: "3.11.9" })
 });
 
 const runtimeOnlyProbes = (): DoctorProbeOverrides => {
@@ -204,6 +219,17 @@ afterAll(async () => {
 describe("developer-preview.launch-v0", () => {
   it("Case A — doctor schema and stable ordering", async () => {
     const harness = await createHarness();
+    expect(boundedTestEnvironment({
+      CI: "true",
+      CONDA_PREFIX: "must-not-inherit",
+      FAIRY_CONFIG: "must-not-inherit",
+      FAIRY_OWNER_LIVE_ASR: "1",
+      FAIRY_OWNER_LIVE_TTS: "1",
+      FAIRY_TEST_PYTHON: "must-not-inherit",
+      PATH: "synthetic-path"
+    })).toEqual({ PATH: "synthetic-path" });
+    expect(harness.env).not.toHaveProperty("CI");
+    expect(Object.keys(harness.env).filter((name) => name.startsWith("FAIRY_"))).toEqual([]);
     const first = await doctorFor(harness);
     const second = await doctorFor(harness);
 
@@ -251,7 +277,7 @@ describe("developer-preview.launch-v0", () => {
       expect(valid.checks.find((item) => item.id === id)?.status).toBe("pass");
     }
 
-    const missing = await doctorFor({ ...harness, env: { ...process.env, NODE_ENV: "test" } });
+    const missing = await doctorFor({ ...harness, env: { ...boundedTestEnvironment(), NODE_ENV: "test" } });
     expect(missing.checks.filter((item) => item.id.startsWith("config.")).map((item) => [item.id, item.status])).toEqual(expect.arrayContaining([
       ["config.main-role", "fail"], ["config.gateway-auth", "fail"], ["config.speech-asr", "fail"], ["config.speech-tts", "fail"]
     ]));
