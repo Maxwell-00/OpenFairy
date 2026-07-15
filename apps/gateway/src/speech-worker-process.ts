@@ -1,5 +1,6 @@
 import { redactText } from "@fairy/kernel";
 import type { Labels } from "@fairy/protocol";
+import { parseSpeechPythonVersion, speechPythonCandidates, SpeechPythonVersionError, type SpeechPythonCandidate } from "@fairy/voice";
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { dirname, isAbsolute, resolve } from "node:path";
 import { tmpdir } from "node:os";
@@ -36,7 +37,6 @@ const rawAudioPattern = /^[A-Za-z0-9+/]{120,}={0,2}$/;
 const mockWorkerPath = resolve(dirname(fileURLToPath(import.meta.url)), "../../../workers/speech/mock_worker.py");
 const miniMaxWorkerPath = resolve(dirname(fileURLToPath(import.meta.url)), "../../../workers/speech/minimax_tts_worker.py");
 const mimoAsrWorkerPath = resolve(dirname(fileURLToPath(import.meta.url)), "../../../workers/speech/mimo_asr_worker.py");
-const minimumPythonVersion = { major: 3, minor: 11 } as const;
 
 export type SpeechWorkerTestMode = "malformed-startup" | "startup-timeout" | "stderr-secret";
 export type SpeechProviderWorkerTestMode = "crash" | "malformed" | "partial" | "timeout" | "version-mismatch";
@@ -276,12 +276,6 @@ interface Deferred<T> {
   readonly resolve: (value: T) => void;
 }
 
-interface InterpreterCandidate {
-  readonly args: readonly string[];
-  readonly argv0: string;
-  readonly source: "discovered" | "test-override";
-}
-
 interface ProbeResult {
   readonly python_version: string;
 }
@@ -299,17 +293,16 @@ export class SpeechWorkerProcessError extends Error {
 }
 
 export const assertSupportedSpeechWorkerPythonVersion = (version: string): void => {
-  const match = /^(\d+)\.(\d+)\.(\d+)$/.exec(version);
-  if (!match) {
-    throw new SpeechWorkerProcessError("SPEECH_WORKER_INTERPRETER_INVALID", "Python interpreter returned invalid version evidence");
-  }
-  const major = Number(match[1]);
-  const minor = Number(match[2]);
-  if (major < minimumPythonVersion.major || (major === minimumPythonVersion.major && minor < minimumPythonVersion.minor)) {
-    throw new SpeechWorkerProcessError(
-      "SPEECH_WORKER_PYTHON_UNSUPPORTED",
-      `Python ${version} is unsupported; speech workers require Python >= ${minimumPythonVersion.major}.${minimumPythonVersion.minor}`
-    );
+  try {
+    parseSpeechPythonVersion(version);
+  } catch (error) {
+    if (error instanceof SpeechPythonVersionError) {
+      throw new SpeechWorkerProcessError(
+        error.code === "SPEECH_PYTHON_UNSUPPORTED" ? "SPEECH_WORKER_PYTHON_UNSUPPORTED" : "SPEECH_WORKER_INTERPRETER_INVALID",
+        error.message
+      );
+    }
+    throw error;
   }
 };
 
@@ -688,18 +681,7 @@ const childEnvironment = (options: SpeechWorkerChildEnvironmentOptions = {}): No
   return result;
 };
 
-const interpreterCandidates = (testOverride: string | undefined): readonly InterpreterCandidate[] => {
-  if (testOverride !== undefined && testOverride.length > 0) {
-    return [{ args: [], argv0: testOverride, source: "test-override" }];
-  }
-  return [
-    { args: [], argv0: "python3", source: "discovered" },
-    { args: [], argv0: "python", source: "discovered" },
-    ...(process.platform === "win32" ? [{ args: ["-3"] as const, argv0: "py", source: "discovered" as const }] : [])
-  ];
-};
-
-const probeInterpreter = async (candidate: InterpreterCandidate, timeoutMs: number): Promise<PythonInterpreterEvidence> => {
+const probeInterpreter = async (candidate: SpeechPythonCandidate, timeoutMs: number): Promise<PythonInterpreterEvidence> => {
   const program = "import json,sys;print(json.dumps({'python_version':'.'.join(map(str,sys.version_info[:3]))}))";
   const child = spawn(candidate.argv0, [...candidate.args, "-u", "-B", "-c", program], {
     cwd: tmpdir(),
@@ -1123,7 +1105,7 @@ export class SpeechWorkerProcess {
   }
 
   async #discoverInterpreter(): Promise<PythonInterpreterEvidence> {
-    const candidates = interpreterCandidates(this.#testPythonOverride);
+    const candidates = speechPythonCandidates(process.platform, this.#testPythonOverride);
     const errors: string[] = [];
     let unsupported: SpeechWorkerProcessError | undefined;
     const perCandidateMs = Math.max(250, Math.floor(this.#deadlines.discoveryMs / candidates.length));

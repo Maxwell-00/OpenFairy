@@ -3,6 +3,18 @@ import { randomUUID } from "node:crypto";
 import { createServer, type IncomingMessage } from "node:http";
 import WebSocket, { WebSocketServer, type RawData } from "ws";
 
+export {
+  minimumSpeechPythonVersion,
+  parseSpeechPythonVersion,
+  speechPythonCandidates,
+  SpeechPythonVersionError
+} from "./python.js";
+export type {
+  SpeechPythonCandidate,
+  SpeechPythonCandidateSource,
+  SpeechPythonVersion
+} from "./python.js";
+
 export type GovernanceProfile = "balanced" | "sovereign" | "cloud-friendly";
 
 export interface VoiceInputPolicy {

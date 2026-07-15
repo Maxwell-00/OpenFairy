@@ -26,6 +26,11 @@ const forward = (signal) => {
 
 process.on("SIGINT", () => forward("SIGINT"));
 process.on("SIGTERM", () => forward("SIGTERM"));
+process.on("message", (message) => {
+  if (message?.kind === "fairy.launcher.shutdown") {
+    forward("SIGTERM");
+  }
+});
 
 gateway.on("exit", (code, signal) => {
   if (signal) {

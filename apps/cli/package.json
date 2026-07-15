@@ -8,15 +8,18 @@
   },
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
-    "doctor": "pnpm run build && node dist/bin/fairy.js doctor",
+    "doctor": "node ../../scripts/run-cli.mjs doctor",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "vitest run"
+    "test": "vitest run",
+    "test:developer-preview": "vitest run test/developer-preview.test.ts --reporter verbose"
   },
   "dependencies": {
     "@fairy/artifacts": "workspace:*",
     "@fairy/config": "workspace:*",
+    "@fairy/gateway": "workspace:*",
     "@fairy/kernel": "workspace:*",
     "@fairy/memory": "workspace:*",
+    "@fairy/model-gateway": "workspace:*",
     "@fairy/perception": "workspace:*",
     "@fairy/protocol": "workspace:*",
     "@fairy/research": "workspace:*",

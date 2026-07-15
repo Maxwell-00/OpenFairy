@@ -1,5 +1,6 @@
 #!/usr/bin/env node
-import { runDoctor } from "../doctor.js";
+import { doctorExitCode, doctorUsage, parseDoctorOptions, renderDoctorJson, runDoctor } from "../doctor.js";
+import { devUsage, parseDevOptions, runDev } from "../dev.js";
 import { runAudit, runChat, runSessions } from "../chat.js";
 import { runChronicle } from "../chronicle.js";
 import { runMemory } from "../memory.js";
@@ -12,9 +13,35 @@ import { runVoice } from "../voice.js";
 const [command, ...args] = process.argv.slice(2);
 
 if (command === "doctor") {
-  const report = await runDoctor();
-  console.log(report.lines.join("\n"));
-  process.exit(report.ok ? 0 : 1);
+  try {
+    const options = parseDoctorOptions(args);
+    const report = await runDoctor(options);
+    console.log(options.json ? renderDoctorJson(report) : report.lines.join("\n"));
+    process.exit(doctorExitCode(report));
+  } catch {
+    console.error(doctorUsage);
+    process.exit(1);
+  }
+}
+
+if (command === "dev") {
+  try {
+    const options = parseDevOptions(args);
+    const controller = new AbortController();
+    const stop = (): void => controller.abort();
+    process.once("SIGINT", stop);
+    process.once("SIGTERM", stop);
+    try {
+      const result = await runDev({ ...options, signal: controller.signal });
+      process.exit(result.ok ? 0 : 1);
+    } finally {
+      process.removeListener("SIGINT", stop);
+      process.removeListener("SIGTERM", stop);
+    }
+  } catch {
+    console.error(devUsage);
+    process.exit(1);
+  }
 }
 
 if (command === "chat") {
@@ -72,5 +99,5 @@ if (command === "voice") {
   process.exit(0);
 }
 
-console.error("Usage: fairy <doctor|chat|sessions|audit|artifacts|replay|memory|chronicle|research|persona|affect|voice>");
+console.error("Usage: fairy <doctor|dev|chat|sessions|audit|artifacts|replay|memory|chronicle|research|persona|affect|voice>");
 process.exit(1);

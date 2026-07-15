@@ -70,3 +70,7 @@ jobs:
         env:
           FAIRY_TEST_PYTHON: ${{ steps.python.outputs.python-path }}
         run: pnpm --filter @fairy/testing test:voice-web-ptt
+      - name: R0.9-05 doctor/dev readiness on Python 3.11
+        env:
+          FAIRY_TEST_PYTHON: ${{ steps.python.outputs.python-path }}
+        run: pnpm --filter @fairy/cli test:developer-preview

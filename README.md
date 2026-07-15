@@ -1,44 +1,184 @@
-# Project Fairy
+# OpenFairy
 
-**A personal, always-on AI companion** — inspired by Fairy from *Zenless Zone Zero*: an assistant with real capability (search, code execution, automation), real continuity (short- and long-term memory), and real presence (low-latency voice, a personality with moods).
+## Project positioning
 
-Fairy is model-agnostic by design: any OpenAI-compatible LLM can serve as its brain, and different components (main agent, subagents, summarizer, vision, voice) can each run on models from different vendors.
+OpenFairy is a local-first, model-agnostic AI companion runtime. Its gateway unifies governed model routing, tools, memory, research, replay, and a browser push-to-talk surface while keeping canonical history in append-only JSONL.
 
-> **Status: early implementation.** M0 (scaffold + protocol) and M1 (text spine: any OpenAI-compatible brain, tools with permissions + audit, context ladder, offline replay, conformance kit) are complete. M2 (trust milestone: governance routing, memory, research) is in progress. The docs below remain the normative design; `tasks/*-review.md` records the implementation trail.
+## Current status: OpenFairy v0.9 Developer Preview
+
+This repository is an interviewable developer preview, not a production-ready desktop product. The closed R0.9-02 voice session ledger is **3/20**. R0.9-03+04 bounded workflows and Morning Briefing are deferred; M3-06 faster-whisper local ASR is deferred to full M3/v1.0.
+
+## What is implemented
+
+- One authenticated loopback gateway and one TurnRunner path.
+- OpenAI-compatible text models with clearance-aware routing and tools.
+- Local artifacts, memory gates, research snapshots/citations, JSONL replay, and audit evidence.
+- Non-streaming artifact-backed MiMo ASR and MiniMax TTS through supervised Python workers.
+- Browser push-to-talk for WAV capture, transcript/final rendering, MP3 playback, and replay.
+- Source-first CLI commands including `doctor`, `dev`, voice import/ASR, replay, memory, and research inspection.
+
+## What is explicitly deferred
+
+There is no installer, service, tray app, remote/LAN listener, streaming voice, VAD/endpointing, barge-in, local ASR, autonomous scheduler/workflow runtime, or production subagent runtime. Local playback **Stop** only stops playback in the browser; it is not barge-in.
+
+## Architecture overview
+
+```mermaid
+flowchart LR
+  UI["Browser Web UI"] -->|"authenticated loopback"| GW["Gateway"]
+  GW --> A["Governed audio artifact"]
+  A --> SC["Speech coordinator"]
+  SC --> ASR["MiMo ASR"]
+  ASR --> CF["Canonical final"]
+  CF --> TR["One TurnRunner"]
+  TR --> GOV["Memory / research / tools / governance"]
+  GOV --> VF["Visible final"]
+  VF --> TTS["MiniMax TTS artifact"]
+  TTS -->|"authenticated playback"| UI
+  GW --> LOG["JSONL replay"]
+  LOG --> UI
+```
+
+The gateway is the sole session owner. Browser state is a projection, provider workers remain behind the gateway boundary, and raw/base64 audio never enters canonical JSONL.
+
+## Prerequisites
+
+- Windows 11 and PowerShell 7 are the primary developer-preview path.
+- Node.js 22 or newer.
+- pnpm 11.7.0 (the repository pins it through `packageManager`).
+- Python 3.11 or newer on the normal `python3`, `python`, then Windows `py -3` discovery path.
+- A generic OpenAI-compatible model, ordinary MiMo pay-as-you-go key, and MiniMax T2A v2 credential for the live voice scenario.
+- Docker or Podman is optional; doctor reports a warning when neither is present.
+
+## Quick start
+
+From Windows PowerShell:
+
+```powershell
+pnpm install
+New-Item -ItemType Directory -Force "$env:APPDATA\fairy" | Out-Null
+Copy-Item examples/fairy.v0.9.yaml "$env:APPDATA\fairy\fairy.yaml"
+notepad "$env:APPDATA\fairy\fairy.yaml"
+
+# Use process-scoped values for this shell; do not commit or paste them into YAML.
+$env:MAIN_MODEL_API_KEY = '<set locally>'
+$env:GATEWAY_TOKEN = '<set locally>'
+$env:MIMO_ASR_PAYGO = '<set locally>'
+$env:MINIMAX_T2A_TOKEN = '<set locally>'
+
+pnpm fairy doctor
+pnpm fairy dev
+```
+
+The example model URL and model name are intentionally unusable placeholders. Replace them with the OpenAI-compatible service you control. Do not replace the closed MiMo/MiniMax endpoint profiles with URLs.
+
+## Configuration and secret references
+
+On Windows, the default user configuration is `%APPDATA%\fairy\fairy.yaml`; local data defaults to `%LOCALAPPDATA%\fairy`. Effective precedence is repository defaults, the explicit `--config`/`FAIRY_CONFIG` file or user file, `fairy.workspace.yaml`, then code-owned session overrides.
+
+Configuration stores references such as `secret://gateway_token`, never values. A reference name resolves from its exact name, normalized uppercase name, or `FAIRY_SECRET_`-prefixed normalized name. Keep values process-local or in your normal secret manager and never commit them.
+
+## Doctor
+
+```powershell
+pnpm fairy doctor
+pnpm fairy doctor --json
+pnpm fairy doctor --config .\path\to\fairy.yaml --data-dir .\.fairy-data --port 8787
+```
+
+Doctor validates runtime floors, effective configuration, credential presence/class, storage roots, loopback ownership, gateway health, exact Web assets, and optional capabilities. It never probes a model, MiMo, MiniMax, or research provider. JSON mode emits one machine-readable object; warnings do not fail the command.
+
+## One-command dev start
+
+```powershell
+pnpm fairy dev
+# or keep browser launch manual
+pnpm fairy dev --no-open
+```
+
+If the port is free, dev owns a source-first gateway child. If a healthy Fairy gateway already owns it, dev reuses that process and never kills it. Any non-Fairy or unhealthy occupant fails before gateway or browser spawn. The printed browser URL is always `http://127.0.0.1:<port>/web/` and never contains the gateway token. Press Ctrl+C to stop the launcher; only an owned gateway is stopped.
+
+## Web voice walkthrough
+
+1. Run doctor, then dev.
+2. Enter the configured gateway token in the Web UI. It is held in memory only.
+3. Hold Record, speak a short non-sensitive bilingual phrase, release, and submit.
+4. Confirm the final transcript, visible answer, and MP3 playback. If autoplay is blocked, press Play.
+5. **Stop** is local-only playback control, not barge-in.
+6. Reload the session link to render canonical replay.
+
+This walkthrough demonstrates the implemented path; it does not claim ASR accuracy benchmarking. A non-empty but imperfect transcript is acceptable for the preview.
+
+## Three demo scenarios
+
+- [Normal bilingual voice round trip](docs/demo/scenarios/01-normal-voice.md)
+- [Synthetic secret route denial](docs/demo/scenarios/02-secret-route-denial.md)
+- [Memory/research/replay evidence](docs/demo/scenarios/03-memory-research-replay.md)
+
+Use the [three-minute script](docs/demo/v0.9-demo-script.md) and [interview summary](docs/demo/interview-project-summary.md). Screenshot capture remains an owner gate:
+
+![Doctor PASS owner capture](docs/demo/assets/01-doctor-pass.png)
+![Web voice round-trip owner capture](docs/demo/assets/02-web-voice-roundtrip.png)
+![Replay and governance owner capture](docs/demo/assets/03-replay-governance.png)
+
+## Security / threat-model summary
+
+- Gateway and Web bind to loopback only; WebSocket and HTTP actions require the configured token.
+- Tokens and provider credentials are never placed in browser URLs, doctor output, CLI evidence, NDJSON, or JSONL.
+- Labels and provider clearance are checked before speech staging, worker spawn, or provider I/O.
+- Provider workers use repository-owned closed endpoint profiles, disable proxies/redirects, and keep audio at the file/HTTP boundary.
+- Browser artifacts are session-owned; replay and diagnostics use bounded redaction.
+
+## Replay and evidence
+
+```powershell
+pnpm fairy sessions
+pnpm fairy replay <session-id>
+pnpm fairy replay <session-id> --json
+pnpm fairy research sources --json
+pnpm fairy research citations --json
+```
+
+Canonical JSONL is the evidence source. Do not commit live session logs, audio, registry state, tokens, provider bodies, or owner data.
+
+## Troubleshooting
+
+| Symptom | Safe action |
+|---|---|
+| Node too old | Install Node 22+ and rerun doctor. |
+| pnpm missing | Enable Corepack/install the pinned pnpm version. |
+| Python below 3.11 | Put Python 3.11+ on the normal discovery path; do not add a YAML interpreter path. |
+| Config parse failure | Fix the bounded paths doctor reports; validate `examples/fairy.v0.9.yaml`. |
+| Unresolved secret reference | Set the referenced environment variable in the current shell without printing it. |
+| MiMo credential class mismatch | Use an ordinary pay-as-you-go `sk-*` key, not a Token Plan credential. |
+| MiniMax resource unavailable | Verify account resource/voice availability; do not change the closed endpoint profile. |
+| Port occupied | Stop the unrelated process or choose another loopback `--port`. |
+| Gateway already running | `Gateway: REUSED` is expected; exiting dev leaves it alive. |
+| Microphone permission denied | Grant the browser site microphone permission and retry a non-sensitive phrase. |
+| Browser autoplay blocked | Press Play; do not weaken browser security. |
+| ASR imperfect but non-empty | Continue the demo and describe it honestly; accuracy is not benchmarked here. |
+| Docker warning | Ignore it for the Tier-1 voice demo; optional execution tools remain unavailable. |
+| Where files live | Config: `%APPDATA%\fairy`; data: `%LOCALAPPDATA%\fairy`, unless explicitly overridden. |
+| Stop/cleanup | Press Ctrl+C in the dev terminal; verify the selected port is free before restarting. |
+
+## Technology stack
+
+TypeScript, Node.js, pnpm workspaces, tsx source-first execution, Vitest, JSON Schema/Ajv, WebSocket, browser Web Audio, stdlib-only Python speech workers, append-only JSONL, and GitHub Actions on Ubuntu/Windows with Python 3.11 floor lanes.
+
+## Interview / portfolio summary
+
+OpenFairy demonstrates that a voice-enabled assistant can be assembled around explicit trust boundaries rather than a single vendor SDK: one governed gateway, content-derived labels, zero-byte provider denial, canonical replay, source-first developer tooling, and deterministic cross-platform tests. See the [bounded interview pitches](docs/demo/interview-project-summary.md).
 
 ## Document map
 
 | Document | Purpose |
 |---|---|
-| [docs/PRD.md](docs/PRD.md) | Product requirements — vision, use cases, functional & non-functional requirements, success metrics |
-| [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | Technical architecture — system views, turn pipelines, protocols, data, cross-cutting concerns |
-| [docs/ROADMAP.md](docs/ROADMAP.md) | Phased milestones M0–M5 with exit criteria |
-| [docs/DECISIONS.md](docs/DECISIONS.md) | Architecture Decision Records (ADRs) — why things are the way they are |
-| [docs/COMPANION-CONTRACT.md](docs/COMPANION-CONTRACT.md) | Conduct contract — when Fairy speaks, stays silent, remembers, backs off |
-| [docs/specs/model-gateway.md](docs/specs/model-gateway.md) | Multi-vendor LLM gateway, capability degradation, multimodal perception service |
-| [docs/specs/voice-pipeline.md](docs/specs/voice-pipeline.md) | Low-latency duplex voice: streaming ASR/TTS, barge-in, latency budgets |
-| [docs/specs/memory.md](docs/specs/memory.md) | Working / episodic / semantic / procedural memory, consolidation daemon |
-| [docs/specs/context-engine.md](docs/specs/context-engine.md) | Context budgeting, assembly, five-stage reduction ladder, KV-cache discipline |
-| [docs/specs/orchestration.md](docs/specs/orchestration.md) | Subagents, Plan mode, Loop mode, workflow engine, proactivity |
-| [docs/specs/sandbox-security.md](docs/specs/sandbox-security.md) | Execution sandbox, permission engine, prompt-injection defenses, secrets |
-| [docs/specs/persona-affect.md](docs/specs/persona-affect.md) | Persona packs, affect (emotion) engine, expression mapping, ethics |
-| [docs/specs/protocol.md](docs/specs/protocol.md) | Runtime event canon — normative type registry, approval flow, golden fixtures |
-| [docs/specs/research.md](docs/specs/research.md) | Research orchestrator — bilingual fan-out, source grading, snapshots, citation ledger |
-| [docs/specs/data-governance.md](docs/specs/data-governance.md) | Data labels & residency — provider clearances, five enforcement points |
-| [docs/specs/evals.md](docs/specs/evals.md) | Evaluation framework — every suite, cadence, and milestone gate in one registry |
-| [docs/specs/computer-use.md](docs/specs/computer-use.md) | Computer use — ABI reserved now, implementation post-v1 |
-
-## Design principles (summary)
-
-1. **OpenAI-format first, vendor-neutral always.** The wire format is Chat Completions; everything else is an adapter.
-2. **The gateway is the product.** One resident daemon owns sessions, memory, and scheduling; every UI is a thin client.
-3. **Events are the source of truth.** Append-only session logs; every UI renders the same event stream; everything is replayable.
-4. **Context is the scarcest resource.** Budgeted zones, a reduction ladder, filesystem spillover, KV-cache discipline.
-5. **Capability degradation over capability assumption.** Text-only models get a perception service; models without tool tokens get prompted tool calling.
-6. **Security by default.** Container sandbox, permission engine, provenance-tagged content, secrets never in context.
-7. **Personality is a presentation layer.** Affect shapes tone and voice — it never blocks function and never deceives.
-8. **Local-first data.** Everything user-generated lives on the user's machine in open formats (SQLite, JSONL, Markdown).
-
-## Reference points (studied, not copied)
-
-pi-mono (unified event architecture, minimal tool core) · Hermes Agent (one agent class, pluggable transports, self-improving skills) · OpenClaw (gateway control plane, multi-channel) · Claude Code (compaction pipeline, subagents, skills/hooks, plan mode) · Codex CLI (OS-level sandboxing, tool router) · Pipecat/LiveKit (frame-based voice pipelines, barge-in) · Letta/Mem0/Zep (memory tiers, extraction, temporal facts) · Manus (context engineering lessons) · Ralph loop (fresh-context iteration).
+| [Product requirements](docs/PRD.md) | Product intent and non-functional requirements |
+| [Architecture](docs/ARCHITECTURE.md) | System views and responsibility boundaries |
+| [Roadmap](docs/ROADMAP.md) | Milestones and gates |
+| [Decisions](docs/DECISIONS.md) | Architecture decision records |
+| [Data governance](docs/specs/data-governance.md) | Labels, residency, routing, and egress |
+| [Voice pipeline](docs/specs/voice-pipeline.md) | Voice design and deferred full-M3 targets |
+| [Protocol](docs/specs/protocol.md) | Canonical event and transport contracts |
+| [Evaluations](docs/specs/evals.md) | Registered deterministic suites and future benches |
+| [Reviewer handbook](REVIEWER-HANDBOOK.md) | Gate and evidence discipline |
