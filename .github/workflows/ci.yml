@@ -66,3 +66,7 @@ jobs:
         env:
           FAIRY_TEST_PYTHON: ${{ steps.python.outputs.python-path }}
         run: pnpm --filter @fairy/testing test:voice-mimo-asr-provider
+      - name: R0.9-02 Web PTT end-to-end on Python 3.11
+        env:
+          FAIRY_TEST_PYTHON: ${{ steps.python.outputs.python-path }}
+        run: pnpm --filter @fairy/testing test:voice-web-ptt

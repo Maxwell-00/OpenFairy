@@ -24,6 +24,9 @@ import { EventLog } from "./event-log.js";
 import type { GatewayRuntimeConfig } from "./config.js";
 import { SpeechProviderCoordinator, type ProviderTtsEvidence, type SpeechProviderCoordinatorTestOptions } from "./speech-provider-coordinator.js";
 import { SpeechWorkerProcess, SpeechWorkerProcessError, speechProviderWorkerDeadlines, speechWorkerDeadlines, type SpeechWorkerMockBehavior, type SpeechWorkerReadyInfo } from "./speech-worker-process.js";
+import { synthesizeVisibleFinalSpeech } from "./visible-final-speech.js";
+import { WebVoiceHttp, webVoiceHomeRegions } from "./web-voice-http.js";
+import { isWebSocketOpAllowed, projectEventForWeb, projectFrameForWeb, socketSurfaceFromUrl, type GatewaySocketSurface } from "./web-voice-projection.js";
 
 export const gatewayVersion = "0.1.0-m1";
 
@@ -321,7 +324,7 @@ export class MinimalGateway {
   readonly #memoryStore: MemoryStore;
   readonly #sessions = new Map<string, SessionState>();
   readonly #sessionExecutions = new Map<string, { cancelled: boolean; readonly kind: "asr" | "turn"; readonly token: symbol }>();
-  readonly #connections = new Set<WebSocket>();
+  readonly #connections = new Set<WebSocket>(); readonly #connectionSurfaces = new Map<WebSocket, GatewaySocketSurface>();
   readonly #subscriptions = new Map<string, Set<WebSocket>>();
   readonly #turns = new Set<Promise<unknown>>();
   readonly #workerOperations = new Set<Promise<void>>();
@@ -329,6 +332,7 @@ export class MinimalGateway {
   readonly #speechProviders: SpeechProviderCoordinator;
   readonly #testOptions: MinimalGatewayTestOptions;
   readonly #runner: TurnRunner;
+  readonly #webVoiceHttp: WebVoiceHttp;
 
   constructor(config: GatewayRuntimeConfig, testOptions: MinimalGatewayTestOptions = {}) {
     if ((testOptions.beforeAsrCanonicalFinal || testOptions.beforeAsrCoordinator) && process.env.NODE_ENV !== "test" && process.env.CI !== "true") {
@@ -385,7 +389,15 @@ export class MinimalGateway {
       tools,
       systemPrompt: config.systemPrompt
     });
-    this.#server = createServer((request, response) => this.#handleHttp(request, response));
+    this.#webVoiceHttp = new WebVoiceHttp({
+      artifactsDir: config.artifactsDir, authToken: config.authToken,
+      homeRegions: webVoiceHomeRegions(config.config),
+      isSessionBusy: (sid) => this.#sessionExecutions.has(sid) || this.#runner.isRunning(sid),
+      readSessionEvents: (sid) => this.#log.readSessionEvents(sid), sessionExists: (sid) => this.#sessions.has(sid),
+      voiceEnabled: config.voiceConfig.enabled,
+      voiceLabels: voiceInputPolicyForProfile(governanceProfile(config.config)).labels
+    });
+    this.#server = createServer((request, response) => { void this.#handleHttp(request, response).catch(() => json(response, 500, { error: "internal_error" })); });
     this.#wss = new WebSocketServer({ server: this.#server });
     this.#wss.on("connection", (socket, request) => this.#handleConnection(socket, request));
   }
@@ -525,7 +537,10 @@ export class MinimalGateway {
     }
   }
 
-  #handleHttp(request: IncomingMessage, response: ServerResponse): void {
+  async #handleHttp(request: IncomingMessage, response: ServerResponse): Promise<void> {
+    if (await this.#webVoiceHttp.handle(request, response)) {
+      return;
+    }
     if (request.method !== "GET") {
       json(response, 405, { error: "method_not_allowed" });
       return;
@@ -603,8 +618,9 @@ export class MinimalGateway {
     }
 
     this.#connections.add(socket);
+    this.#connectionSurfaces.set(socket, socketSurfaceFromUrl(request.url));
     socket.on("close", () => {
-      this.#connections.delete(socket);
+      this.#connections.delete(socket); this.#connectionSurfaces.delete(socket);
       for (const subscribers of this.#subscriptions.values()) {
         subscribers.delete(socket);
       }
@@ -625,6 +641,10 @@ export class MinimalGateway {
       return;
     }
     const op = typeof message.op === "string" && message.op.length > 0 ? message.op : "unknown";
+    if (this.#connectionSurfaces.get(socket) === "web-v0" && !isWebSocketOpAllowed(op)) {
+      this.#sendOpError(socket, op, "Operation is not available on the Web surface.");
+      return;
+    }
 
     if (message.op === "session.create") {
       await this.#createSession(socket, typeof message.title === "string" ? message.title : undefined);
@@ -1048,6 +1068,7 @@ export class MinimalGateway {
     let turnEvents: readonly EventEnvelope[] = [];
     let assistantFinalText = "";
     let transcriptText = "";
+    let webTts: ProviderTtsEvidence | undefined; let ttsAudioRef: string | undefined; let ttsChunkCount = 0;
     if (result.status === "none" && result.transcriptText) {
       await this.#testOptions.beforeAsrCanonicalFinal?.();
       if (ownsUncancelledReservation()) {
@@ -1072,21 +1093,52 @@ export class MinimalGateway {
           }, turn, reservationToken);
           turnEvents = submitted.turnEvents;
           assistantFinalText = submitted.assistantFinalText;
+          if (
+            this.#connectionSurfaces.get(socket) === "web-v0" &&
+            assistantFinalText.length > 0 &&
+            ownsUncancelledReservation() &&
+            this.#config.speechProviderConfig.ttsCandidates.length > 0
+          ) {
+            const synthesis = await synthesizeVisibleFinalSpeech({
+              coordinator: this.#speechProviders,
+              emitProgress: ({ detail, extra, labels, stage }) => this.#emit({
+                actor: "system",
+                labels,
+                payload: { detail, stage, ...extra },
+                provenance: "agent",
+                sid,
+                turn,
+                type: "progress.update"
+              }),
+              emitSpeech: async (event) => {
+                speechEvents.push(await this.#emit({ ...event, sid }));
+              },
+              labels: submitted.labels,
+              maxProviderCandidates: 1,
+              text: assistantFinalText,
+              turn,
+              utteranceId
+            });
+            webTts = synthesis.provider;
+            ttsAudioRef = synthesis.audioRef;
+            ttsChunkCount = synthesis.ttsChunkCount;
+          }
         }
       }
     }
-    const allEvents = [...result.events, ...speechEvents, ...turnEvents];
+    const allEvents = [...result.events, ...speechEvents, ...turnEvents, ...(webTts?.events ?? [])];
     assertNoRawAudioPayloads(allEvents);
     const provider = result.selectedProvider;
     const cancelled = result.cancelled || !ownsUncancelledReservation();
+    const ttsFailed = webTts !== undefined && webTts.status !== "none";
     this.#sendAck(socket, op, {
-      asr_final_count: speechEvents.length,
+      asr_final_count: speechEvents.filter((event) => event.type === "speech.asr.final").length,
       assistant_final_text: assistantFinalText,
       audio_ref: audioRef,
       cancelled,
       effective_labels: result.effectiveLabels,
-      error_category: cancelled && result.errorCategory === "none" ? "cancelled" : result.errorCategory,
-      error_status: cancelled && result.status === "none" ? "asr_cancelled" : result.status,
+      error_category: cancelled && result.errorCategory === "none" ? "cancelled" : ttsFailed ? "tts_failed" : result.errorCategory,
+      error_status: cancelled && result.status === "none" ? "asr_cancelled" : ttsFailed ? "tts_failed" : result.status,
       event_counts: eventCounts(allEvents),
       model_request_count: turnEvents.filter((event) => event.type === "turn.final").length,
       provider_connection_count: result.providerConnectionCount,
@@ -1098,6 +1150,8 @@ export class MinimalGateway {
       sid,
       staged_input_bytes: result.stagedBytes,
       transcript_text: transcriptText,
+      tts_audio_ref: ttsAudioRef,
+      tts_chunk_count: ttsChunkCount,
       turn,
       turn_input_count: turnEvents.filter((event) => event.type === "turn.input").length,
       worker_process_id: result.worker?.processId ?? null,
@@ -1442,7 +1496,8 @@ export class MinimalGateway {
         const ttsLabels = submitted.labels;
         if (assistantFinalText.length > 0) {
           if (this.#config.speechProviderConfig.ttsCandidates.length > 0) {
-            providerTts = await this.#speechProviders.runTts({
+            const synthesis = await synthesizeVisibleFinalSpeech({
+              coordinator: this.#speechProviders,
               emitProgress: ({ detail, extra, labels, stage }) => this.#emit({
                 actor: "system",
                 labels,
@@ -1452,30 +1507,17 @@ export class MinimalGateway {
                 turn,
                 type: "progress.update"
               }),
+              emitSpeech,
               labels: ttsLabels,
               routingHints: policy.routingHints ?? {},
               text: assistantFinalText,
+              turn,
               utteranceId: asr.utteranceId
             });
+            providerTts = synthesis.provider;
+            ttsChunkCount = synthesis.ttsChunkCount;
             if (providerTts.status !== "none") {
               errorStatus = providerTts.status;
-            }
-            if (providerTts.artifactRef) {
-              await emitMark("tts-start", ttsLabels);
-              await emitSpeech({
-                actor: "agent",
-                labels: ttsLabels,
-                payload: {
-                  audio_ref: providerTts.artifactRef,
-                  chunk_id: `${asr.utteranceId}:tts:001`,
-                  text: assistantFinalText
-                },
-                provenance: "agent",
-                turn,
-                type: "speech.tts.chunk"
-              });
-              ttsChunkCount = 1;
-              await emitMark("tts-end", ttsLabels);
             }
           } else {
             await emitMark("tts-start", ttsLabels);
@@ -1657,8 +1699,9 @@ export class MinimalGateway {
   }
 
   #sendEvent(socket: WebSocket, event: EventEnvelope): void {
-    if (socket.readyState === WebSocket.OPEN) {
-      socket.send(JSON.stringify(event));
+    const projected = this.#connectionSurfaces.get(socket) === "web-v0" ? projectEventForWeb(event) : event;
+    if (projected && socket.readyState === WebSocket.OPEN) {
+      socket.send(JSON.stringify(projected));
     }
   }
 
@@ -1681,7 +1724,9 @@ export class MinimalGateway {
     if (!result.ok) {
       throw new Error(`invalid transport frame: ${result.issues.map((issue) => `${issue.path}: ${issue.message}`).join("; ")}`);
     }
-    this.#sendRaw(socket, result.frame);
+    this.#sendRaw(socket, this.#connectionSurfaces.get(socket) === "web-v0"
+      ? projectFrameForWeb(result.frame as unknown as Record<string, unknown>)
+      : result.frame);
   }
 
   async #emitError(socket: WebSocket, sid: `ses_${string}`, message: string): Promise<void> {

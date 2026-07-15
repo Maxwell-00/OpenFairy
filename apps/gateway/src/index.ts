@@ -77,3 +77,26 @@ export type {
   SpeechWorkerWireMessage,
   SpeechWorkerWireValidationResult
 } from "./speech-worker-process.js";
+export { synthesizeVisibleFinalSpeech } from "./visible-final-speech.js";
+export { WebVoiceHttp, webVoiceHomeRegions } from "./web-voice-http.js";
+export type { WebVoiceHttpOptions } from "./web-voice-http.js";
+export {
+  isWebSocketOpAllowed,
+  projectEventForWeb,
+  projectFrameForWeb,
+  socketSurfaceFromUrl
+} from "./web-voice-projection.js";
+export type { GatewaySocketSurface } from "./web-voice-projection.js";
+export {
+  parseCanonicalWebWav,
+  webVoiceBitsPerSample,
+  webVoiceChannels,
+  webVoiceCountdownSamples,
+  webVoiceMaximumSamples,
+  webVoiceMaximumWavBytes,
+  webVoiceRecommendedSamples,
+  webVoiceSampleRate,
+  webVoiceWarningSamples,
+  webVoiceWavHeaderBytes,
+  WebVoiceWavError
+} from "./web-voice-wav.js";

@@ -12,6 +12,7 @@
   "scripts": {
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run --reporter verbose",
+    "test:voice-web-ptt": "vitest run test/voice.web-ptt.test.ts --reporter verbose",
     "test:voice-mimo-asr-provider": "vitest run test/voice.mimo-asr-provider.test.ts --reporter verbose",
     "test:voice-worker-process": "vitest run test/voice.worker-process.test.ts --reporter verbose",
     "test:voice-tts-provider": "vitest run test/voice.tts-provider.test.ts --reporter verbose"

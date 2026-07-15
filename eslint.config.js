@@ -56,5 +56,25 @@ export default tseslint.config(
         { "fixStyle": "inline-type-imports" }
       ]
     }
+  },
+  {
+    files: ["apps/web/**/*.js"],
+    languageOptions: {
+      globals: {
+        AudioContext: "readonly",
+        AudioWorkletNode: "readonly",
+        Blob: "readonly",
+        DataView: "readonly",
+        Element: "readonly",
+        Float32Array: "readonly",
+        Option: "readonly",
+        Uint8Array: "readonly",
+        WebSocket: "readonly",
+        document: "readonly",
+        location: "readonly",
+        navigator: "readonly",
+        window: "readonly"
+      }
+    }
   }
 );

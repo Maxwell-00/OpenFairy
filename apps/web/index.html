@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark light">
+  <title>Fairy Voice</title>
+  <link rel="stylesheet" href="/web/styles.css">
+</head>
+<body>
+  <main>
+    <header>
+      <p class="eyebrow">LOCAL FAIRY</p>
+      <h1>Push to talk</h1>
+      <p id="status" role="status">Disconnected</p>
+    </header>
+
+    <section id="connect-panel" class="panel">
+      <label for="token">Gateway token</label>
+      <div class="row">
+        <input id="token" type="password" autocomplete="off" spellcheck="false">
+        <button id="connect" type="button">Connect</button>
+      </div>
+    </section>
+
+    <section id="session-panel" class="panel" hidden>
+      <div class="row spread">
+        <div>
+          <p class="label">Session</p>
+          <p id="session">None selected</p>
+        </div>
+        <button id="new-session" type="button">New session</button>
+      </div>
+      <label for="sessions">Open a previous session</label>
+      <select id="sessions">
+        <option value="">Choose a session</option>
+      </select>
+    </section>
+
+    <section class="voice">
+      <button id="record" class="record" type="button" disabled aria-label="Hold to record">
+        <span>Hold to speak</span>
+        <small>or hold Space</small>
+      </button>
+      <p id="timer">0.0 s · 60.0 s remaining</p>
+      <p id="warning" class="warning" aria-live="polite"></p>
+    </section>
+
+    <section class="panel transcript" aria-live="polite">
+      <div>
+        <p class="label">You</p>
+        <p id="transcript">—</p>
+      </div>
+      <div>
+        <p class="label">Fairy</p>
+        <p id="assistant">—</p>
+      </div>
+    </section>
+
+    <section class="playback">
+      <audio id="audio"></audio>
+      <button id="play" type="button" hidden>Play</button>
+      <button id="stop" type="button" hidden>Stop playback</button>
+    </section>
+  </main>
+  <script type="module" src="/web/app.js"></script>
+</body>
+</html>

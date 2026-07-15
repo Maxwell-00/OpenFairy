@@ -110,6 +110,8 @@ importers:
         specifier: ^8.18.1
         version: 8.18.1
 
+  apps/web: {}
+
   packages/artifacts: {}
 
   packages/channels: {}

@@ -33,6 +33,7 @@ import {
 export interface SpeechProviderCoordinatorTestOptions {
   readonly speechProviderLoopbackPorts?: Readonly<Record<string, number>>;
   readonly speechProviderRequestDeadlineMs?: Readonly<Record<string, number>>;
+  readonly speechProviderTempPrefix?: string;
   readonly speechProviderWorkerModes?: Readonly<Record<string, SpeechProviderWorkerTestMode>>;
 }
 
@@ -135,9 +136,12 @@ export class SpeechProviderCoordinator {
 
   constructor(options: SpeechProviderCoordinatorOptions) {
     const testOptions = options.testOptions ?? {};
-    const hasTestSeam = Boolean(testOptions.speechProviderLoopbackPorts || testOptions.speechProviderRequestDeadlineMs || testOptions.speechProviderWorkerModes);
+    const hasTestSeam = Boolean(testOptions.speechProviderLoopbackPorts || testOptions.speechProviderRequestDeadlineMs || testOptions.speechProviderTempPrefix || testOptions.speechProviderWorkerModes);
     if (hasTestSeam && !isTestRuntime()) {
       throw new Error("speech provider test seams are available only to code-gated tests");
+    }
+    if (testOptions.speechProviderTempPrefix !== undefined && !/^fairy-[a-z0-9-]{1,40}-$/.test(testOptions.speechProviderTempPrefix)) {
+      throw new Error("speech provider test temp prefix must be a bounded repository-owned token");
     }
     for (const [providerId, port] of Object.entries(testOptions.speechProviderLoopbackPorts ?? {})) {
       if (!providerId || !Number.isInteger(port) || port < 1 || port > 65_535) {
@@ -175,6 +179,7 @@ export class SpeechProviderCoordinator {
   }
 
   async runTts(input: {
+    readonly candidateLimit?: number;
     readonly emitProgress: SpeechProviderProgressEmitter;
     readonly labels: Labels;
     readonly routingHints?: RoutingHints;
@@ -185,7 +190,9 @@ export class SpeechProviderCoordinator {
     const route: string[] = [];
     let providerRequestCount = 0;
     let lastStatus = "no_eligible_provider";
-    const candidates = this.#options.providers.ttsCandidates;
+    const candidates = input.candidateLimit === undefined
+      ? this.#options.providers.ttsCandidates
+      : this.#options.providers.ttsCandidates.slice(0, Math.max(0, input.candidateLimit));
     const emitProgress = async (stage: string, detail: string, extra: Record<string, unknown> = {}): Promise<void> => {
       events.push(await input.emitProgress({ detail, extra, labels: input.labels, stage }));
     };
@@ -262,7 +269,7 @@ export class SpeechProviderCoordinator {
       let ready: SpeechWorkerReadyInfo | undefined;
       let cleanShutdown = false;
       try {
-        outputRoot = await mkdtemp(join(tmpdir(), "fairy-minimax-tts-"));
+        outputRoot = await mkdtemp(join(tmpdir(), `${this.#options.testOptions?.speechProviderTempPrefix ?? "fairy-"}minimax-tts-`));
         const testRequestDeadline = this.#options.testOptions?.speechProviderRequestDeadlineMs?.[provider.id];
         worker = new SpeechWorkerProcess({
           ...(testRequestDeadline === undefined ? {} : { deadlines: { requestMs: testRequestDeadline } }),
@@ -502,7 +509,7 @@ export class SpeechProviderCoordinator {
     let ownsActive = false;
     let active: { cancelled: boolean; worker: SpeechWorkerProcess } | undefined;
     try {
-      inputRoot = await mkdtemp(join(tmpdir(), "fairy-mimo-asr-"));
+      inputRoot = await mkdtemp(join(tmpdir(), `${this.#options.testOptions?.speechProviderTempPrefix ?? "fairy-"}mimo-asr-`));
       if (input.isCancelled()) {
         return await cancelled();
       }

@@ -1,0 +1,89 @@
+:root {
+  color: #ecf7ff;
+  background: #09111d;
+  font-family: Inter, ui-sans-serif, system-ui, sans-serif;
+  font-synthesis: none;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  min-height: 100vh;
+  margin: 0;
+  background:
+    radial-gradient(circle at 20% 10%, #173a58 0, transparent 38%),
+    radial-gradient(circle at 80% 80%, #262a60 0, transparent 34%),
+    #09111d;
+}
+
+main {
+  width: min(720px, calc(100% - 32px));
+  margin: 0 auto;
+  padding: 48px 0 64px;
+}
+
+header { margin-bottom: 28px; }
+h1 { margin: 4px 0 8px; font-size: clamp(2.25rem, 8vw, 4.5rem); line-height: .95; }
+p { margin: 6px 0; }
+.eyebrow, .label { color: #75d8ff; font-size: .75rem; font-weight: 700; letter-spacing: .16em; text-transform: uppercase; }
+
+.panel {
+  padding: 20px;
+  margin: 14px 0;
+  border: 1px solid #40627a;
+  border-radius: 18px;
+  background: #101d2bd9;
+  box-shadow: 0 20px 60px #0006;
+}
+
+.row { display: flex; gap: 10px; align-items: center; }
+.spread { justify-content: space-between; }
+label { display: block; margin: 0 0 8px; color: #b8cad8; }
+input, select, button { font: inherit; }
+input, select {
+  width: 100%;
+  padding: 11px 13px;
+  color: inherit;
+  background: #07111c;
+  border: 1px solid #44667c;
+  border-radius: 10px;
+}
+
+button {
+  padding: 11px 16px;
+  color: #07111c;
+  background: #8ce4ff;
+  border: 0;
+  border-radius: 10px;
+  font-weight: 700;
+  cursor: pointer;
+}
+button:disabled { cursor: not-allowed; opacity: .42; }
+
+.voice { display: grid; justify-items: center; padding: 34px 0 22px; }
+.record {
+  width: 220px;
+  height: 220px;
+  display: grid;
+  place-content: center;
+  gap: 8px;
+  color: #edfaff;
+  background: linear-gradient(145deg, #0d7aa3, #4942bd);
+  border: 1px solid #a7eaff;
+  border-radius: 50%;
+  box-shadow: 0 18px 70px #248fd766, inset 0 0 35px #a1f0ff33;
+  touch-action: none;
+  user-select: none;
+}
+.record[aria-pressed="true"] { transform: scale(.96); background: linear-gradient(145deg, #b42b5e, #6738b8); }
+.record small { font-weight: 400; opacity: .75; }
+.warning { min-height: 1.4em; color: #ffc66b; font-weight: 700; }
+.transcript { display: grid; gap: 22px; }
+.transcript p:not(.label) { white-space: pre-wrap; line-height: 1.55; }
+.playback { display: flex; justify-content: center; gap: 10px; margin-top: 18px; }
+
+@media (max-width: 520px) {
+  main { padding-top: 28px; }
+  .row { align-items: stretch; flex-direction: column; }
+  .record { width: 180px; height: 180px; }
+}
