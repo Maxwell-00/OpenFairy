@@ -48,8 +48,13 @@ export interface WebVoiceHttpOptions {
   readonly isSessionBusy: (sid: `ses_${string}`) => boolean;
   readonly readSessionEvents: (sid: `ses_${string}`) => Promise<readonly EventEnvelope[]>;
   readonly sessionExists: (sid: `ses_${string}`) => boolean;
+  readonly testOptions?: WebVoiceHttpTestOptions;
   readonly voiceEnabled: boolean;
   readonly voiceLabels: Labels;
+}
+
+export interface WebVoiceHttpTestOptions {
+  readonly afterUploadReservation?: (sid: `ses_${string}`) => Promise<void>;
 }
 
 export const webVoiceHomeRegions = (config: Record<string, unknown>): string[] => {
@@ -198,6 +203,9 @@ export class WebVoiceHttp {
   readonly #uploads = new Set<string>();
 
   constructor(options: WebVoiceHttpOptions) {
+    if (options.testOptions?.afterUploadReservation && process.env.NODE_ENV !== "test" && process.env.CI !== "true") {
+      throw new Error("Web voice HTTP test seams are available only to code-gated tests");
+    }
     this.#options = options;
   }
 
@@ -280,6 +288,7 @@ export class WebVoiceHttp {
     }
     this.#uploads.add(sid);
     try {
+      await this.#options.testOptions?.afterUploadReservation?.(sid);
       const body = await readBoundedBody(request);
       const wav = parseCanonicalWebWav(body);
       const registry = new ArtifactRegistry(this.#options.artifactsDir);

@@ -311,7 +311,10 @@ const uploadWav = async (port: number, token: string, sid: string, wav: Buffer):
   { body: wav, headers: { Authorization: `Bearer ${token}`, "Content-Type": "audio/wav" }, method: "POST" }
 );
 
-const webHttpHarness = async (artifactsDir: string, options: { busy?: () => boolean } = {}): Promise<{ readonly port: number; readonly sid: `ses_${string}`; readonly token: string }> => {
+const webHttpHarness = async (artifactsDir: string, options: {
+  readonly afterUploadReservation?: (sid: `ses_${string}`) => Promise<void>;
+  readonly busy?: () => boolean;
+} = {}): Promise<{ readonly port: number; readonly sid: `ses_${string}`; readonly token: string }> => {
   const sid = createSessionId();
   const token = "http-harness-token";
   const controller = new WebVoiceHttp({
@@ -321,6 +324,7 @@ const webHttpHarness = async (artifactsDir: string, options: { busy?: () => bool
     isSessionBusy: () => options.busy?.() ?? false,
     readSessionEvents: async () => [],
     sessionExists: (candidate) => candidate === sid,
+    ...(options.afterUploadReservation ? { testOptions: { afterUploadReservation: options.afterUploadReservation } } : {}),
     voiceEnabled: true,
     voiceLabels: labels
   });
@@ -370,6 +374,8 @@ describe.sequential("voice.web-ptt-v0", () => {
     expect(await readdir(webRoot)).not.toContain("dist");
     expect(webPackage).not.toHaveProperty("dependencies");
     expect(http).toContain("staticAssets");
+    expect(http).toContain("afterUploadReservation");
+    expect(http).toContain("Web voice HTTP test seams are available only to code-gated tests");
     expect(http).not.toMatch(/join\([^\n]*(request|pathname|path)\b/);
     const started = await startGateway();
     for (const route of ["/web/", "/web/index.html", "/web/styles.css", "/web/app.js", "/web/recorder.js", "/web/wav.js", "/web/audio-worklet.js"]) {
@@ -380,6 +386,10 @@ describe.sequential("voice.web-ptt-v0", () => {
       expect(response.headers.get("referrer-policy")).toBe("no-referrer");
       expect(response.headers.get("content-security-policy")).toContain("connect-src 'self' ws://127.0.0.1:*");
     }
+    const html = await (await fetch(`http://127.0.0.1:${started.port}/web/`)).text();
+    expect(html).toContain("30 seconds or less");
+    expect(html).toContain('id="replay-link"');
+    expect(html).toContain('id="reset"');
     expect((await fetch(`http://127.0.0.1:${started.port}/web/server.ts`)).status).toBe(404);
     expect((await fetch(`http://127.0.0.1:${started.port}/web/%2e%2e%2fserver.ts`)).status).toBe(404);
   });
@@ -408,6 +418,9 @@ describe.sequential("voice.web-ptt-v0", () => {
     expect(app).toContain("if (!holdActive) finishRecording();");
     expect(app).toContain("if (recorder !== activeRecorder)");
     expect(app).toContain("window.addEventListener(\"pagehide\"");
+    expect(app).not.toContain("let selectedSession");
+    expect(app).toContain("binding.sid");
+    expect(app).toContain("canChangeSelectedSession");
   });
 
   it("Case D — strict WAV parser boundaries", () => {
@@ -435,7 +448,19 @@ describe.sequential("voice.web-ptt-v0", () => {
   it("Case E — upload authentication and bounded body", async () => {
     const root = await mkdtemp(join(tmpdir(), "fairy-web-http-")); roots.push(root);
     let busy = false;
-    const harness = await webHttpHarness(join(root, "artifacts"), { busy: () => busy });
+    let barrierArmed = false;
+    let signalReservation = (): void => undefined;
+    let releaseReservation = (): void => undefined;
+    const reservationReached = new Promise<void>((resolvePromise) => { signalReservation = resolvePromise; });
+    const reservationRelease = new Promise<void>((resolvePromise) => { releaseReservation = resolvePromise; });
+    const harness = await webHttpHarness(join(root, "artifacts"), {
+      afterUploadReservation: async () => {
+        if (!barrierArmed) return;
+        signalReservation();
+        await reservationRelease;
+      },
+      busy: () => busy
+    });
     const url = `http://127.0.0.1:${harness.port}/web/api/sessions/${harness.sid}/input-audio`;
     const post = (body: Buffer, token = harness.token, contentType = "audio/wav") => fetch(url, { body, headers: { Authorization: `Bearer ${token}`, "Content-Type": contentType }, method: "POST" });
     expect((await post(canonicalWav(2), "wrong")).status).toBe(401);
@@ -449,11 +474,13 @@ describe.sequential("voice.web-ptt-v0", () => {
     expect((await post(Buffer.from("not a wav"))).status).toBe(400);
     expect((await new ArtifactRegistry(join(root, "artifacts")).list())).toHaveLength(0);
     const wav = canonicalWav(8_000);
+    barrierArmed = true;
     const first = httpRequest(url, { headers: { Authorization: `Bearer ${harness.token}`, "Content-Length": wav.byteLength, "Content-Type": "audio/wav" }, method: "POST" });
     first.write(wav.subarray(0, 44));
-    await new Promise((resolvePromise) => setTimeout(resolvePromise, 20));
+    await withDeadline("first upload reservation", reservationReached);
     expect((await post(canonicalWav(2))).status).toBe(409);
     const firstResponse = new Promise<number>((resolvePromise) => first.on("response", (response) => { response.resume(); resolvePromise(response.statusCode ?? 0); }));
+    releaseReservation();
     first.end(wav.subarray(44));
     expect(await withDeadline("first concurrent upload", firstResponse)).toBe(201);
     expect((await new ArtifactRegistry(join(root, "artifacts")).list())).toHaveLength(1);
@@ -519,6 +546,16 @@ describe.sequential("voice.web-ptt-v0", () => {
     }, 1));
     expect(JSON.stringify(projected)).toContain("bounded detail");
     expect(JSON.stringify(projected)).not.toMatch(/POISON_PROVIDER|POISON_ENDPOINT|POISON_MODEL|POISON_PATH|POISON_WORKER/);
+    const app = await readFile(join(repoRoot, "apps/web/app.js"), "utf8");
+    const resetBody = app.match(/const resetLocalFailure = \(\) => \{([\s\S]*?)\n\};/)?.[1] ?? "";
+    expect(resetBody).toContain("invalidateBrowserSessionOperation");
+    expect(resetBody).not.toMatch(/socket|send|cancel|interrupt/);
+    expect(app).toContain('frame.kind === "op-error"');
+    expect(app).toContain('renderState("failed"');
+    expect(app).toContain("Voice routing is unavailable for this recording.");
+    expect(app).toContain("projectedFrameMatchesBrowserSession");
+    expect(app).toContain("isCurrentBrowserSessionBinding");
+    expect(app).toContain("canChangeSelectedSession");
     const defaultClient = await MockFairyClient.connect({ token: started.token, url: `ws://127.0.0.1:${started.port}` });
     const defaultCreated = await defaultClient.createSession();
     defaultClient.close();
@@ -560,6 +597,7 @@ describe.sequential("voice.web-ptt-v0", () => {
     web.send({ audio_ref: uploaded.artifact_id, op: "voice.asr", sid });
     const ack = await web.waitFor((message) => message.kind === "ack" && message.op === "voice.asr", 120_000);
     expect(ack).toMatchObject({ asr_final_count: 1, assistant_final_text: "visible web answer", error_status: "request_failed", model_request_count: 1, tts_chunk_count: 0, turn_input_count: 1 });
+    expect(await readFile(join(repoRoot, "apps/web/app.js"), "utf8")).toContain("The text answer is ready, but speech playback failed.");
     expect(started.minimax?.requests).toHaveLength(1);
     expect(web.messages.filter((message) => message.type === "turn.final")).toHaveLength(1);
     expect(web.messages.filter((message) => message.type === "speech.tts.chunk")).toHaveLength(0);
@@ -645,6 +683,7 @@ describe.sequential("voice.web-ptt-v0", () => {
       event(sid, "session.created", { created_at: new Date().toISOString(), title: "replay" }, 0),
       event(sid, "speech.asr.final", { audio_ref: "art_0123456789abcdef0123", text: "replayed transcript", utterance_id: "utt-replay" }, 1),
       event(sid, "turn.final", { content: [{ kind: "text", text: "replayed answer" }], finish_reason: "stop" }, 1),
+      event(sid, "speech.tts.chunk", { audio_ref: "art_00000000000000000000", chunk_id: "chunk-old", text: "old answer" }, 1),
       event(sid, "speech.tts.chunk", { audio_ref: "art_abcdef0123456789abcd", chunk_id: "chunk-replay", text: "replayed answer" }, 1)
     ];
     await mkdir(join(started.dataDir, "sessions", sid), { recursive: true });
@@ -661,6 +700,9 @@ describe.sequential("voice.web-ptt-v0", () => {
       expect.objectContaining({ sid, type: "turn.final", payload: { text: "replayed answer" } }),
       expect.objectContaining({ sid, type: "speech.tts.chunk", payload: expect.objectContaining({ audio_ref: "art_abcdef0123456789abcd" }) })
     ]));
+    const app = await readFile(join(repoRoot, "apps/web/app.js"), "utf8");
+    expect(app).toContain("completeBrowserReplay");
+    expect(app.match(/void loadSpeech\(binding, replayAudioRef\)/g)).toHaveLength(1);
   });
 
   it("Case N — regression and cleanup", async () => {

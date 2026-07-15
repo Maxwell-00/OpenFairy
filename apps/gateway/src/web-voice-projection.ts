@@ -80,7 +80,10 @@ export const projectEventForWeb = (event: EventEnvelope): Record<string, unknown
       }
     };
   }
-  if (event.type === "turn.input" || event.type === "turn.delta" || event.type === "turn.final") {
+  if (event.type === "turn.delta") {
+    return { ...base, payload: { text: bounded(payload.text, 20_000) } };
+  }
+  if (event.type === "turn.input" || event.type === "turn.final") {
     return { ...base, payload: { text: bounded(contentText(payload), 20_000) } };
   }
   if (event.type === "speech.mark") {

@@ -1,6 +1,26 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { consumeProjectedEvent, createPlaybackController, parseSessionHash, sessionHash } from "../app.js";
+import {
+  beginBrowserSessionOperation,
+  beginBrowserSessionCreate,
+  acceptCreatedBrowserSession,
+  canChangeSelectedSession,
+  completeBrowserReplay,
+  consumeProjectedEvent,
+  createBrowserSessionState,
+  createPlaybackController,
+  invalidateBrowserSessionOperation,
+  isCurrentBrowserSessionBinding,
+  noteBrowserReplayAudio,
+  parseSessionHash,
+  projectedEventFailureMessage,
+  projectedFrameMatchesBrowserSession,
+  replaceBrowserPlaybackForBinding,
+  selectBrowserSession,
+  sessionHash,
+  submitBrowserAsrForUpload,
+  voiceAckFailureMessage
+} from "../app.js";
 import { reduceRecorderState, TargetSampleClock } from "../recorder.js";
 import {
   COUNTDOWN_SAMPLES,
@@ -52,7 +72,9 @@ describe("Web voice pure modules", () => {
     expect(reduceRecorderState("ready", "start")).toBe("recording");
     expect(reduceRecorderState("recording", "finalize")).toBe("uploading");
     expect(reduceRecorderState("uploading", "uploaded")).toBe("transcribing");
-    expect(reduceRecorderState("playing", "stop")).toBe("playback-ready");
+    expect(reduceRecorderState("uploading", "fail")).toBe("failed");
+    expect(reduceRecorderState("failed", "reset")).toBe("ready");
+    expect(reduceRecorderState("playing", "stop")).toBe("ready");
     expect(reduceRecorderState("ready", "unknown")).toBe("ready");
   });
 
@@ -74,6 +96,98 @@ describe("Web voice pure modules", () => {
       sid: "ses_01J00000000000000000000000",
       transcript: "hello"
     });
+  });
+
+  it("binds an operation to one immutable session generation", () => {
+    const state = createBrowserSessionState();
+    const sessionA = selectBrowserSession(state, "ses_01J00000000000000000000000", false);
+    const operation = beginBrowserSessionOperation(state);
+    expect(operation).toEqual(sessionA);
+    expect(canChangeSelectedSession("recording")).toBe(false);
+    expect(canChangeSelectedSession("uploading")).toBe(false);
+    selectBrowserSession(state, "ses_01J00000000000000000000001", false);
+    expect(operation?.sid).toBe("ses_01J00000000000000000000000");
+    expect(isCurrentBrowserSessionBinding(state, operation)).toBe(false);
+    expect(projectedFrameMatchesBrowserSession(state, { sid: operation?.sid, type: "turn.final" })).toBe(false);
+  });
+
+  it("discards a deferred upload response after its session generation becomes stale", async () => {
+    const state = createBrowserSessionState();
+    const sessionA = selectBrowserSession(state, "ses_01J00000000000000000000000", false);
+    const operation = beginBrowserSessionOperation(state);
+    if (!operation) throw new Error("expected a bound operation");
+    let releaseUpload = (artifactId: string): void => { void artifactId; };
+    const uploadResponse = new Promise<string>((resolvePromise) => { releaseUpload = resolvePromise; });
+    const sent: Array<{ audio_ref: string; op: "voice.asr"; sid: string }> = [];
+    const completion = uploadResponse.then((artifactId) => submitBrowserAsrForUpload(state, operation, artifactId, (frame) => sent.push(frame)));
+    expect(canChangeSelectedSession("uploading")).toBe(false);
+    selectBrowserSession(state, "ses_01J00000000000000000000001", false);
+    releaseUpload("art_0123456789abcdef0123");
+    await expect(completion).resolves.toBe(false);
+    expect(sent).toEqual([]);
+    expect(sessionA.sid).not.toBe(state.sid);
+  });
+
+  it("accepts session.created only for the current create action", () => {
+    const state = createBrowserSessionState();
+    expect(acceptCreatedBrowserSession(state, "ses_01J00000000000000000000000")).toBeUndefined();
+    const generation = beginBrowserSessionCreate(state);
+    expect(acceptCreatedBrowserSession(state, "ses_01J00000000000000000000001")).toEqual({
+      generation,
+      sid: "ses_01J00000000000000000000001"
+    });
+    expect(acceptCreatedBrowserSession(state, "ses_01J00000000000000000000002")).toBeUndefined();
+  });
+
+  it("ignores late old-session frames and stale MP3 responses", async () => {
+    const state = createBrowserSessionState();
+    const sessionA = selectBrowserSession(state, "ses_01J00000000000000000000000", false);
+    let releaseSpeech = (url: string): void => { void url; };
+    const speechResponse = new Promise<string>((resolvePromise) => { releaseSpeech = resolvePromise; });
+    const replacements: string[] = [];
+    const completion = speechResponse.then((url) => replaceBrowserPlaybackForBinding(state, sessionA, url, (currentUrl) => replacements.push(currentUrl)));
+    selectBrowserSession(state, "ses_01J00000000000000000000001", false);
+    releaseSpeech("blob:late-audio-a");
+    await expect(completion).resolves.toBe(false);
+    expect(replacements).toEqual([]);
+    expect(projectedFrameMatchesBrowserSession(state, { sid: sessionA.sid, type: "speech.tts.chunk" })).toBe(false);
+    expect(isCurrentBrowserSessionBinding(state, sessionA)).toBe(false);
+    const view = { assistant: "B answer", sid: "ses_01J00000000000000000000001", transcript: "B transcript" };
+    expect(consumeProjectedEvent(view, { sid: sessionA.sid, type: "turn.final", payload: { text: "late A" } }, view.sid)).toBe(view);
+  });
+
+  it("coalesces replay to the latest speech artifact exactly once", () => {
+    const state = createBrowserSessionState();
+    const binding = selectBrowserSession(state, "ses_01J00000000000000000000000", true);
+    noteBrowserReplayAudio(state, binding, "art_00000000000000000000");
+    noteBrowserReplayAudio(state, binding, "art_11111111111111111111");
+    expect(completeBrowserReplay(state, binding)).toBe("art_11111111111111111111");
+    expect(completeBrowserReplay(state, binding)).toBeUndefined();
+  });
+
+  it("maps bounded failures and resets locally without private detail", () => {
+    const poisoned = {
+      assistant_final_text: "visible answer",
+      endpoint_profile: "POISON_ENDPOINT",
+      error_status: "request_failed",
+      kind: "ack",
+      op: "voice.asr",
+      provider_id: "POISON_PROVIDER"
+    };
+    expect(voiceAckFailureMessage(poisoned)).toBe("The text answer is ready, but speech playback failed.");
+    expect(voiceAckFailureMessage({ error_status: "asr_route_denied", kind: "ack", op: "voice.asr" })).toBe("Voice routing is unavailable for this recording.");
+    expect(voiceAckFailureMessage({ error_status: "asr_input_invalid", kind: "ack", op: "voice.asr" })).toBe("The recording could not be processed.");
+    expect(voiceAckFailureMessage({ cancelled: true, error_status: "asr_cancelled", kind: "ack", op: "voice.asr" })).toBe("Voice processing was cancelled.");
+    expect(voiceAckFailureMessage({ asr_final_count: 1, error_status: "none", kind: "ack", model_request_count: 1, op: "voice.asr", turn_input_count: 1 })).toBeUndefined();
+    expect(projectedEventFailureMessage({ type: "progress.update", payload: { stage: "voice.tts.failed" } })).toBe("The text answer is ready, but speech playback failed.");
+    expect(JSON.stringify([voiceAckFailureMessage(poisoned)])).not.toMatch(/POISON_ENDPOINT|POISON_PROVIDER/);
+    const state = createBrowserSessionState();
+    const before = selectBrowserSession(state, "ses_01J00000000000000000000000", false);
+    beginBrowserSessionOperation(state);
+    const after = invalidateBrowserSessionOperation(state);
+    expect(after?.sid).toBe(before.sid);
+    expect(after?.generation).toBeGreaterThan(before.generation);
+    expect(state.operation).toBeUndefined();
   });
 
   it("stops playback locally and revokes the object URL", () => {

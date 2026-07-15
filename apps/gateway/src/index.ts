@@ -79,7 +79,7 @@ export type {
 } from "./speech-worker-process.js";
 export { synthesizeVisibleFinalSpeech } from "./visible-final-speech.js";
 export { WebVoiceHttp, webVoiceHomeRegions } from "./web-voice-http.js";
-export type { WebVoiceHttpOptions } from "./web-voice-http.js";
+export type { WebVoiceHttpOptions, WebVoiceHttpTestOptions } from "./web-voice-http.js";
 export {
   isWebSocketOpAllowed,
   projectEventForWeb,

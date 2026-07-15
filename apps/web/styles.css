@@ -49,6 +49,12 @@ input, select {
   border-radius: 10px;
 }
 
+.session-link {
+  display: inline-block;
+  margin-top: 12px;
+  color: #8ce4ff;
+}
+
 button {
   padding: 11px 16px;
   color: #07111c;
@@ -77,6 +83,7 @@ button:disabled { cursor: not-allowed; opacity: .42; }
 }
 .record[aria-pressed="true"] { transform: scale(.96); background: linear-gradient(145deg, #b42b5e, #6738b8); }
 .record small { font-weight: 400; opacity: .75; }
+.guidance { max-width: 480px; color: #b8cad8; text-align: center; }
 .warning { min-height: 1.4em; color: #ffc66b; font-weight: 700; }
 .transcript { display: grid; gap: 22px; }
 .transcript p:not(.label) { white-space: pre-wrap; line-height: 1.55; }

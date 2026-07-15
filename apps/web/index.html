@@ -35,6 +35,7 @@
       <select id="sessions">
         <option value="">Choose a session</option>
       </select>
+      <a id="replay-link" class="session-link" href="/web/" hidden>Reload and replay this session</a>
     </section>
 
     <section class="voice">
@@ -42,8 +43,10 @@
         <span>Hold to speak</span>
         <small>or hold Space</small>
       </button>
+      <p class="guidance">Keep most turns to 30 seconds or less. Recording stops automatically at 60 seconds.</p>
       <p id="timer">0.0 s · 60.0 s remaining</p>
       <p id="warning" class="warning" aria-live="polite"></p>
+      <button id="reset" type="button" hidden>Reset / retry</button>
     </section>
 
     <section class="panel transcript" aria-live="polite">

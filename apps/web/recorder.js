@@ -53,13 +53,13 @@ export const reduceRecorderState = (state, action) => {
     disconnected: { connect: "ready" },
     ready: { start: "recording", disconnect: "disconnected" },
     recording: { finalize: "uploading", discard: "ready" },
-    uploading: { uploaded: "transcribing", fail: "error" },
-    transcribing: { final: "thinking", fail: "error" },
-    thinking: { final: "synthesizing", fail: "error" },
-    synthesizing: { audio: "playing", text: "ready", fail: "ready" },
-    playing: { stop: "playback-ready", ended: "playback-ready" },
+    uploading: { uploaded: "transcribing", fail: "failed" },
+    transcribing: { final: "thinking", fail: "failed" },
+    thinking: { final: "synthesizing", fail: "failed" },
+    synthesizing: { audio: "playing", text: "ready", fail: "failed" },
+    playing: { stop: "ready", ended: "playback-ready" },
     "playback-ready": { play: "playing", start: "recording" },
-    error: { reset: "ready", disconnect: "disconnected" }
+    failed: { reset: "ready", disconnect: "disconnected" }
   };
   return transitions[state]?.[action] ?? state;
 };
