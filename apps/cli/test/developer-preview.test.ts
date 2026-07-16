@@ -196,6 +196,28 @@ const freePort = async (): Promise<number> => new Promise((resolvePromise, rejec
   });
 });
 
+const gatewayTestPortStart = 20_000;
+const gatewayTestPortCount = 10_000;
+let nextGatewayTestPort = gatewayTestPortStart + (process.pid % gatewayTestPortCount);
+
+const freeGatewayTestPort = async (): Promise<number> => {
+  for (let attempt = 0; attempt < 256; attempt += 1) {
+    const port = gatewayTestPortStart + ((nextGatewayTestPort - gatewayTestPortStart + attempt) % gatewayTestPortCount);
+    const available = await new Promise<boolean>((resolvePromise) => {
+      const server = createNetServer();
+      server.once("error", () => resolvePromise(false));
+      server.listen({ exclusive: true, host: "127.0.0.1", port }, () => {
+        server.close((error) => resolvePromise(!error));
+      });
+    });
+    if (available) {
+      nextGatewayTestPort = gatewayTestPortStart + ((port - gatewayTestPortStart + 1) % gatewayTestPortCount);
+      return port;
+    }
+  }
+  throw new Error("no loopback port is available in the bounded gateway test range");
+};
+
 const listenHttp = async (handler: RequestListener, port = 0): Promise<{ readonly port: number; readonly server: HttpServer }> => {
   const server = createHttpServer(handler);
   await new Promise<void>((resolvePromise, reject) => {
@@ -487,7 +509,7 @@ describe("developer-preview.launch-v0", () => {
   });
 
   it("Case I — owned gateway start", { timeout: 30_000 }, async () => {
-    const port = await freePort();
+    const port = await freeGatewayTestPort();
     const harness = await createHarness({ port });
     const output: string[] = [];
     const browserUrls: string[] = [];
@@ -585,7 +607,7 @@ describe("developer-preview.launch-v0", () => {
   });
 
   it("Case K — shutdown and browser failure", { timeout: 30_000 }, async () => {
-    const port = await freePort();
+    const port = await freeGatewayTestPort();
     const harness = await createHarness({ port });
     const output: string[] = [];
     const controller = new AbortController();
