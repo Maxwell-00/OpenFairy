@@ -67,10 +67,21 @@ $env:MIMO_ASR_PAYGO = '<set locally>'
 $env:MINIMAX_T2A_TOKEN = '<set locally>'
 
 pnpm fairy doctor
+
+# Explicit process-scoped owner consent for real speech-provider execution.
+$env:FAIRY_OWNER_LIVE_ASR = '1'
+$env:FAIRY_OWNER_LIVE_TTS = '1'
+
 pnpm fairy dev
+
+# After Ctrl+C, remove the consent flags from this shell.
+Remove-Item Env:FAIRY_OWNER_LIVE_ASR -ErrorAction SilentlyContinue
+Remove-Item Env:FAIRY_OWNER_LIVE_TTS -ErrorAction SilentlyContinue
 ```
 
 The example model URL and model name are intentionally unusable placeholders. Replace them with the OpenAI-compatible service you control. Do not replace the closed MiMo/MiniMax endpoint profiles with URLs.
+
+Doctor remains provider-zero. The two owner-live flags are explicit process-scoped owner consent for real speech-provider execution. Setting the flags alone makes no provider request; a request occurs only after a valid governed voice submission. Do not store these flags in YAML or any committed configuration.
 
 ## Configuration and secret references
 
@@ -90,6 +101,8 @@ Doctor validates runtime floors, effective configuration, credential presence/cl
 
 ## One-command dev start
 
+For a real speech-provider voice turn, first run doctor, then set the two process-scoped owner-consent flags shown in Quick start before launching dev. Setting them does not itself contact a provider.
+
 ```powershell
 pnpm fairy dev
 # or keep browser launch manual
@@ -100,7 +113,7 @@ If the port is free, dev owns a source-first gateway child. If a healthy Fairy g
 
 ## Web voice walkthrough
 
-1. Run doctor, then dev.
+1. Run doctor, explicitly activate process-scoped owner consent with `FAIRY_OWNER_LIVE_ASR` and `FAIRY_OWNER_LIVE_TTS`, then run dev.
 2. Enter the configured gateway token in the Web UI. It is held in memory only.
 3. Hold Record, speak a short non-sensitive bilingual phrase, release, and submit.
 4. Confirm the final transcript, visible answer, and MP3 playback. If autoplay is blocked, press Play.
@@ -114,6 +127,8 @@ This walkthrough demonstrates the implemented path; it does not claim ASR accura
 - [Normal bilingual voice round trip](docs/demo/scenarios/01-normal-voice.md)
 - [Synthetic secret route denial](docs/demo/scenarios/02-secret-route-denial.md)
 - [Memory/research/replay evidence](docs/demo/scenarios/03-memory-research-replay.md)
+
+Run Scenario 2 from a clean shell. If Scenario 1 enabled real speech providers, stop that dev launcher, clear both owner-live flags with the cleanup commands above, and restart dev from the clean shell before running the synthetic denial procedure.
 
 Use the [three-minute script](docs/demo/v0.9-demo-script.md) and [interview summary](docs/demo/interview-project-summary.md). Screenshot capture remains an owner gate:
 

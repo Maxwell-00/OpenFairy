@@ -668,6 +668,20 @@ describe("developer-preview.launch-v0", () => {
     expect(demo).toContain("**3/20**");
     expect(demo).toContain("synthetic secret fixture");
     expect(demo).toContain("not an ASR accuracy benchmark");
+    const scenarioOne = await readFile(join(repoRoot, "docs/demo/scenarios/01-normal-voice.md"), "utf8");
+    for (const deliveredGuide of [readme, demo, scenarioOne]) {
+      expect(deliveredGuide).toContain("FAIRY_OWNER_LIVE_ASR");
+      expect(deliveredGuide).toContain("FAIRY_OWNER_LIVE_TTS");
+      expect(deliveredGuide).toMatch(/explicit(?:ly)? (?:activate )?process-scoped owner consent/i);
+      expect(deliveredGuide).toContain("Setting the flags alone makes no provider request");
+      expect(deliveredGuide).toContain("valid governed voice submission");
+      expect(deliveredGuide).toMatch(/Do not store (?:these |the )flags in YAML or (?:any )?committed configuration/);
+      expect(deliveredGuide).toContain("Remove-Item Env:FAIRY_OWNER_LIVE_ASR -ErrorAction SilentlyContinue");
+      expect(deliveredGuide).toContain("Remove-Item Env:FAIRY_OWNER_LIVE_TTS -ErrorAction SilentlyContinue");
+      expect(deliveredGuide.indexOf("pnpm fairy doctor")).toBeLessThan(deliveredGuide.indexOf("$env:FAIRY_OWNER_LIVE_ASR = '1'"));
+      expect(deliveredGuide.indexOf("$env:FAIRY_OWNER_LIVE_ASR = '1'")).toBeLessThan(deliveredGuide.indexOf("$env:FAIRY_OWNER_LIVE_TTS = '1'"));
+      expect(deliveredGuide.indexOf("$env:FAIRY_OWNER_LIVE_TTS = '1'")).toBeLessThan(deliveredGuide.indexOf("pnpm fairy dev"));
+    }
     const assets = await readFile(join(repoRoot, "docs/demo/assets/README.md"), "utf8");
     for (const name of ["01-doctor-pass.png", "02-web-voice-roundtrip.png", "03-replay-governance.png"]) {
       expect(assets).toContain(`docs/demo/assets/${name}`);
