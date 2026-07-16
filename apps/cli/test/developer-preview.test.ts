@@ -611,6 +611,7 @@ describe("developer-preview.launch-v0", () => {
     const harness = await createHarness({ port });
     const output: string[] = [];
     const controller = new AbortController();
+    let gatewayHealthPassed = false;
     let healthyDuringBrowserFailure = false;
     const result = await runDev({
       configPath: harness.configPath,
@@ -621,10 +622,17 @@ describe("developer-preview.launch-v0", () => {
       port,
       probes: {
         browserOpen: async () => {
-          healthyDuringBrowserFailure = await probeGatewayPort(port) === "fairy-running";
+          healthyDuringBrowserFailure = gatewayHealthPassed;
           throw new Error("synthetic browser failure");
         },
         doctor: runtimeOnlyProbes(),
+        gatewayHealth: async (candidatePort, timeoutMs) => {
+          const state = await probeGatewayPort(candidatePort, timeoutMs);
+          if (state === "fairy-running") {
+            gatewayHealthPassed = true;
+          }
+          return state;
+        },
         output: (line) => {
           output.push(line);
           if (line.startsWith("Browser: WARN")) {
