@@ -345,6 +345,20 @@ describe("developer-preview.launch-v0", () => {
       }
     });
     expect(testOverride).toBe("test-only-python");
+    if (process.platform === "win32") {
+      const productionPnpm = await runDoctor({
+        configPath: harness.configPath,
+        cwd: repoRoot,
+        dataDir: harness.dataDir,
+        env: harness.env,
+        port: 18787,
+        probes: {
+          gatewayPort: deterministicProbes().gatewayPort!,
+          python: deterministicProbes().python!
+        }
+      });
+      expect(productionPnpm.checks.find((item) => item.id === "runtime.pnpm")?.status).toBe("pass");
+    }
     if (process.env.FAIRY_TEST_PYTHON) {
       const floor = await runDoctor({
         configPath: harness.configPath,

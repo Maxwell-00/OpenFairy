@@ -188,8 +188,10 @@ const probeEnvironment = (env: NodeJS.ProcessEnv): NodeJS.ProcessEnv => {
 };
 
 const defaultCommandVersion = (command: "docker" | "pnpm" | "podman", args: readonly string[], timeoutMs: number): string | undefined => {
-  const argv0 = process.platform === "win32" && command === "pnpm" ? "pnpm.cmd" : command;
-  const result = spawnSync(argv0, [...args], {
+  const windowsPnpm = process.platform === "win32" && command === "pnpm";
+  const argv0 = windowsPnpm ? "cmd.exe" : command;
+  const argv = windowsPnpm ? ["/d", "/s", "/c", "pnpm --version"] : [...args];
+  const result = spawnSync(argv0, argv, {
     encoding: "utf8",
     env: probeEnvironment(process.env),
     shell: false,
