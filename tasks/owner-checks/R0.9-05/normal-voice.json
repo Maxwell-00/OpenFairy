@@ -1,0 +1,23 @@
+{
+  "checked_at_utc": "2026-07-16T15:24:37.7158863Z",
+  "commit": "35c72a597d539acfd4a361b7a80a855a13a90685",
+  "status": "pass",
+  "session_id": "ses_01KXNPHJGG9MA4948TZ7Q0C4V4",
+  "asr_final_count": 1,
+  "turn_input_count": 1,
+  "model_request_count": 1,
+  "turn_final_count": 1,
+  "tts_chunk_count": 1,
+  "transcript_nonempty": true,
+  "assistant_final_nonempty": true,
+  "upload_bytes": 100224,
+  "recorded_duration_ms": 3130,
+  "speech_bytes": 100788,
+  "local_stop_observed": true,
+  "reload_replay_observed": true,
+  "asr_quality_claim": "functional_only_not_benchmark",
+  "observed_voice_attempt_count": 2,
+  "successful_normal_voice_attempt_count": 1,
+  "additional_complete_attempt_count": 1,
+  "additional_attempt_reason": "first attempt repeated because microphone state was incorrect"
+}

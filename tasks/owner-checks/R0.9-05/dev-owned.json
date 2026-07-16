@@ -1,0 +1,13 @@
+{
+  "checked_at_utc": "2026-07-16T15:26:30.9800916Z",
+  "commit": "35c72a597d539acfd4a361b7a80a855a13a90685",
+  "status": "pass",
+  "gateway_mode": "started_owned",
+  "health_ok": true,
+  "browser_open_observed": true,
+  "token_in_url": false,
+  "ctrl_c_observed": true,
+  "port_released": true,
+  "gateway_process_residue": 0,
+  "speech_worker_residue": 0
+}

@@ -1,0 +1,24 @@
+[
+  {
+    "session_id": "ses_01KXNPHJGG9MA4948TZ7Q0C4V4",
+    "classification": "successful_intended_owner_prompt",
+    "event_count": 11,
+    "asr_final_count": 1,
+    "turn_input_count": 1,
+    "model_request_count": 1,
+    "turn_final_count": 1,
+    "tts_chunk_count": 1,
+    "full_chain_observed": true
+  },
+  {
+    "session_id": "ses_01KXNPDMV2V7NTB6DH6C53889A",
+    "classification": "accidental_first_attempt_microphone_state_incorrect",
+    "event_count": 11,
+    "asr_final_count": 1,
+    "turn_input_count": 1,
+    "model_request_count": 1,
+    "turn_final_count": 1,
+    "tts_chunk_count": 1,
+    "full_chain_observed": true
+  }
+]
