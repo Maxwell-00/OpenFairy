@@ -1,0 +1,20 @@
+{
+  "checked_at_utc": "<UTC ISO-8601 timestamp>",
+  "commit": "06485c5507603226f94c5bdcb38712eeacedadcc",
+  "status": "pass",
+  "external_name": "OpenFairy v0.9 Developer Preview",
+  "internal_name": "Portfolio Release Track",
+  "single_authoritative_plan": true,
+  "amendment_file_removed": true,
+  "voice_session_ledger": "4/20",
+  "s4_complete": false,
+  "deferral_rows_have_landing_gates": true,
+  "r09_03_04_dispatchable": false,
+  "m3_06_status": "gated_but_deferred",
+  "screenshots_preserved": 3,
+  "screenshot_path_deviation_recorded": true,
+  "runtime_files_changed": 0,
+  "owner_evidence_files_changed": 0,
+  "provider_request_count": 0,
+  "docs_zh_files_changed": 0
+}
