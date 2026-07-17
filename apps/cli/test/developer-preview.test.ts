@@ -747,7 +747,9 @@ describe("developer-preview.launch-v0", () => {
   it("Case L — repository/demo policy", async () => {
     const serverPath = join(repoRoot, "apps/gateway/src/server.ts");
     const server = await readFile(serverPath);
+    expect(createHash("sha1").update(Buffer.concat([Buffer.from(`blob ${server.length}\0`), server])).digest("hex")).toBe("7fe2116db5c9ad95f7ea853c06d7b149ebeab4c2");
     expect(createHash("sha256").update(server).digest("hex")).toBe("038e7cb70578355e02366e0446513691e86f7529e3897935f6f16b21839931b3");
+    expect(server.length).toBe(64_699);
     expect(server.toString("utf8").split(/\r?\n/).filter((line) => line.trim()).length).toBe(1_628);
 
     const examplePath = join(repoRoot, "examples/fairy.v0.9.yaml");
@@ -765,12 +767,15 @@ describe("developer-preview.launch-v0", () => {
     for (const section of ["Project positioning", "Current status: OpenFairy v0.9 Developer Preview", "What is implemented", "What is explicitly deferred", "Architecture overview", "Prerequisites", "Quick start", "Configuration and secret references", "Doctor", "One-command dev start", "Web voice walkthrough", "Three demo scenarios", "Security / threat-model summary", "Replay and evidence", "Troubleshooting", "Technology stack", "Interview / portfolio summary", "Document map"]) {
       expect(readme).toContain(`## ${section}`);
     }
-    expect(readme).toContain("voice session ledger is **3/20**");
+    // Release policy 1: current ledger truth is 4/20.
+    expect(readme).toContain("current committed ledger is **4/20**");
+    // Release policy 2: S4 remains incomplete and cannot be presented as 20/20.
+    expect(readme).toContain("S4 remains incomplete");
     expect(readme).toContain("R0.9-03+04 bounded workflows and Morning Briefing are deferred");
     expect(readme).toContain("Stop** only stops playback in the browser; it is not barge-in");
     expect(readme).toContain("not a production-ready desktop product");
     expect(readme).toContain("does not claim ASR accuracy benchmarking");
-    expect(readme).not.toMatch(/\b20\/20\b|ASR accuracy benchmark:\s*PASS/i);
+    expect(readme).not.toMatch(/\b20\/20\b|S4\s+(?:is|:)\s*(?:complete|closed)|ASR accuracy benchmark:\s*PASS/i);
 
     for (const path of [
       "docs/demo/v0.9-demo-script.md",
@@ -784,7 +789,10 @@ describe("developer-preview.launch-v0", () => {
     }
     const demo = await readFile(join(repoRoot, "docs/demo/v0.9-demo-script.md"), "utf8");
     expect(demo).toContain("OpenFairy v0.9 Developer Preview");
+    // Release policy 3: historical close and current ledger are distinct.
     expect(demo).toContain("**3/20**");
+    expect(demo).toContain("current **4/20**");
+    expect(demo).toContain("S4 remains incomplete");
     expect(demo).toContain("synthetic secret fixture");
     expect(demo).toContain("not an ASR accuracy benchmark");
     const scenarioOne = await readFile(join(repoRoot, "docs/demo/scenarios/01-normal-voice.md"), "utf8");
@@ -801,13 +809,131 @@ describe("developer-preview.launch-v0", () => {
       expect(deliveredGuide.indexOf("$env:FAIRY_OWNER_LIVE_ASR = '1'")).toBeLessThan(deliveredGuide.indexOf("$env:FAIRY_OWNER_LIVE_TTS = '1'"));
       expect(deliveredGuide.indexOf("$env:FAIRY_OWNER_LIVE_TTS = '1'")).toBeLessThan(deliveredGuide.indexOf("pnpm fairy dev"));
     }
+    const mandatoryDeferralIds = [
+      "M2-S4-20",
+      "M2-PERSONA-JUDGE-90",
+      "M2-VECTOR-200K",
+      "M2-MEMORY-CANARY-CONTRADICTION",
+      "M2-GOVERNANCE-FRICTION-SOAK",
+      "M2-REAL-VISION-OCR",
+      "M2-LEARNED-SKILL-ACTIVATION",
+      "R09-01-ARTIFACT-IDENTITY",
+      "R09-01-PROVIDER-OBSERVABILITY",
+      "R09-01-SHUTDOWN-CANCEL-CLASSIFICATION",
+      "R09-02-SERVER-TS-EXTRACTION-FIRST",
+      "M3-06-LOCAL-ASR",
+      "M3-STREAMING-FRAMING",
+      "M3-VAD-ENDPOINTING",
+      "M3-STREAMING-ASR-TTS",
+      "M3-LANE-A-B",
+      "M3-ACK-BANK",
+      "M3-BARGE-IN",
+      "M3-DESKTOP-TRAY",
+      "M3-LATENCY-WER-CER",
+      "R09-03+04-MORNING-BRIEFING",
+      "M4-SUBAGENTS",
+      "M4-BOUNDED-FANOUT",
+      "M4-GENERIC-WORKFLOW",
+      "M4-TELEGRAM",
+      "M4-UNATTENDED-7D",
+      "M5-INSTALLER",
+      "M5-MCP",
+      "M5-SKILLS-HOOKS",
+      "M5-DASHBOARD",
+      "M5-COMPLETE-HARDENING",
+      "M5-EXTENSION-DOCS",
+      "M5-SOAK-2W",
+      "M5-V1"
+    ] as const;
+    // Release policy 4: the complete stable-ID ledger exists.
+    const deferrals = await readFile(join(repoRoot, "docs/v0.9-deferrals.md"), "utf8");
+    const deferralLines = deferrals.split(/\r?\n/);
+    for (const id of mandatoryDeferralIds) {
+      const row = deferralLines.find((line) => line.startsWith(`| \`${id}\` |`));
+      expect(row, `missing active deferral row ${id}`).toBeDefined();
+      // Release policy 5: every row has every field, a named landing gate, and an explicit no-silent-waiver rule.
+      expect(row?.split("|")).toHaveLength(13);
+      expect(row).toMatch(/\| \*\*[^|]+\*\* \|/);
+      expect(row).toContain("silence is not a waiver");
+    }
+    expect(deferrals).toContain("Silence is never a waiver");
+    expect(deferrals).not.toMatch(/\bTBD\b/);
+
+    const boundedOverlay = (source: string, begin: string, end: string): string => {
+      const beginIndex = source.indexOf(begin);
+      const endIndex = source.indexOf(end);
+      expect(beginIndex).toBeGreaterThanOrEqual(0);
+      expect(endIndex).toBeGreaterThan(beginIndex);
+      return source.slice(beginIndex, endIndex + end.length);
+    };
+    const roadmap = await readFile(join(repoRoot, "docs/ROADMAP.md"), "utf8");
+    const prd = await readFile(join(repoRoot, "docs/PRD.md"), "utf8");
+    const architecture = await readFile(join(repoRoot, "docs/ARCHITECTURE.md"), "utf8");
+    // Release policies 6-8: all three bounded current-state overlays are present.
+    const roadmapOverlay = boundedOverlay(roadmap, "<!-- BEGIN R0.9-06 CURRENT RELEASE OVERLAY -->", "<!-- END R0.9-06 CURRENT RELEASE OVERLAY -->");
+    const prdOverlay = boundedOverlay(prd, "<!-- BEGIN R0.9-06 CURRENT IMPLEMENTATION OVERLAY -->", "<!-- END R0.9-06 CURRENT IMPLEMENTATION OVERLAY -->");
+    const architectureOverlay = boundedOverlay(architecture, "<!-- BEGIN R0.9-06 CURRENT TOPOLOGY OVERLAY -->", "<!-- END R0.9-06 CURRENT TOPOLOGY OVERLAY -->");
+    expect(roadmapOverlay).toContain("## Current release overlay — OpenFairy v0.9 Developer Preview");
+    expect(prdOverlay).toContain("## Current implementation overlay — v0.9 Developer Preview");
+    expect(architectureOverlay).toContain("## Current v0.9 topology overlay");
+
+    // Release policy 9: the canonical plan owns the complete 60-second contract.
+    const canonicalPlan = await readFile(join(repoRoot, "docs/v0.9/OpenFairy-v0.9-final-tiered-plan.md"), "utf8");
+    for (const contract of [
+      "getUserMedia + AudioContext PCM capture",
+      "stop / auto-stop at 60 seconds",
+      "max_samples = 960000",
+      "max_wav_bytes = 1920044",
+      "50 秒 warning + 55 秒 countdown",
+      "取代此前 90 秒"
+    ]) {
+      expect(canonicalPlan).toContain(contract);
+    }
+    expect(canonicalPlan).toContain("R0.9-06′ release gate in progress until primary review and countersign");
+    // Release policy 10: the temporary amendment cannot survive consolidation.
+    await expect(readFile(join(repoRoot, "docs/v0.9/OpenFairy-v0.9-final-tiered-plan-60s-amended.md"), "utf8")).rejects.toMatchObject({ code: "ENOENT" });
+
+    // Release policy 11: screenshot capture is complete and the accepted path-line deviation is explicit.
     const assets = await readFile(join(repoRoot, "docs/demo/assets/README.md"), "utf8");
-    for (const name of ["01-doctor-pass.png", "02-web-voice-roundtrip.png", "03-replay-governance.png"]) {
+    expect(assets).toContain("Owner capture is complete");
+    expect(assets).toContain("DEV-R09-05-SCREENSHOT-PATH");
+    expect(assets).toContain("public derivative should crop");
+    const screenshotHashes = {
+      "01-doctor-pass.png": "d4a789dd8eea29078d8f3b0cf6846bbea4fe047172876ea8a6a54c7d98afe438",
+      "02-web-voice-roundtrip.png": "87a22ce56e5ff2017e7b4d80177dc175e18261bfcbcc5f65d562b415fa324c4c",
+      "03-replay-governance.png": "7f504e2623b6699941ef638cb5d5dd8ff4981794b58f55095c86b7336d2666e8"
+    } as const;
+    // Release policy 12: all three exact paths and byte hashes remain pinned.
+    for (const [name, expectedHash] of Object.entries(screenshotHashes)) {
       expect(assets).toContain(`docs/demo/assets/${name}`);
       expect(readme).toContain(`docs/demo/assets/${name}`);
+      expect(createHash("sha256").update(await readFile(join(repoRoot, "docs/demo/assets", name))).digest("hex")).toBe(expectedHash);
     }
-    const newRuntimeSources = `${await readFile(join(repoRoot, "apps/cli/src/doctor.ts"), "utf8")}\n${await readFile(join(repoRoot, "apps/cli/src/dev.ts"), "utf8")}`;
+
+    // Release policy 13: current-release surfaces cannot promote the preview to production, full milestones, S4 completion, or v1.0.
+    const currentReleaseSections = [roadmapOverlay, prdOverlay, architectureOverlay, readme, demo, canonicalPlan, deferrals].join("\n");
+    expect(currentReleaseSections).not.toMatch(/\b(?:is|are|status(?: is|:))\s+(?:production[- ]ready|v1\.0)\b|\bM[345]\s+(?:is|are|:)\s*(?:complete|closed)\b|\bS4\s+(?:is|:)\s*(?:complete|20\/20)\b|\bOpenFairy v1\.0\b/i);
+    // Release policy 14: Tier-2 Morning Briefing remains explicitly non-dispatchable.
+    const morningBriefing = await readFile(join(repoRoot, "tasks/R0.9-03+04-DEFERRED-bounded-morning-briefing.md"), "utf8");
+    expect(morningBriefing).toContain("DEFERRED / NOT DISPATCHABLE / DO NOT IMPLEMENT");
+    expect(deferrals).toContain("**DEFERRED / NOT DISPATCHABLE**");
+    // Release policy 15: M3-06 remains gated-but-deferred at the immutable model revision.
+    const m306Row = deferralLines.find((line) => line.startsWith("| `M3-06-LOCAL-ASR` |"));
+    expect(m306Row).toContain("gated-but-deferred");
+    expect(m306Row).toContain("Systran/faster-whisper-small");
+    expect(m306Row).toContain("536b0662742c02347bc0e980a01041f333bce120");
+    // Release policy 16 is the server blob/SHA/byte/line pin asserted at the start of Case L.
+
+    // Release policy 17: release policy cannot appear as runtime workflow/subagent behavior.
+    const newRuntimeSources = [
+      server.toString("utf8"),
+      await readFile(join(repoRoot, "apps/cli/src/doctor.ts"), "utf8"),
+      await readFile(join(repoRoot, "apps/cli/src/dev.ts"), "utf8"),
+      await readFile(join(repoRoot, "apps/web/app.js"), "utf8"),
+      await readFile(join(repoRoot, "apps/web/recorder.js"), "utf8")
+    ].join("\n");
     expect(newRuntimeSources).not.toMatch(/ExecutionContext|RunExecutor|Morning Briefing|Access-Control-Allow-Origin|createWebSocketServer/);
+    expect(newRuntimeSources).not.toMatch(/R0\.9-03\+04|R0\.9-06|M3-06|Portfolio Release Track|v0\.9-deferrals|subagent/i);
     const cliPackage = JSON.parse(await readFile(join(repoRoot, "apps/cli/package.json"), "utf8")) as { dependencies: Record<string, string> };
     expect(Object.entries(cliPackage.dependencies).filter(([name]) => name === "@fairy/gateway" || name === "@fairy/model-gateway").every(([name, version]) => name.startsWith("@fairy/") && version === "workspace:*")).toBe(true);
 

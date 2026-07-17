@@ -2,6 +2,14 @@
 
 Milestones are gates, not dates: each has exit criteria (suites named in [specs/evals.md](specs/evals.md)) that must pass before the next begins. Scope discipline is the primary schedule risk (PRD §8).
 
+<!-- BEGIN R0.9-06 CURRENT RELEASE OVERLAY -->
+## Current release overlay — OpenFairy v0.9 Developer Preview
+
+R0.9 is a release overlay, not a milestone renumbering. R0.9-01, R0.9-02, and R0.9-05′ are closed; R0.9-06′ remains the release gate until review and countersign. The real-session S4 ledger is currently **4/20** and incomplete. Full M3, M4, and M5 exits remain open, and the target-state milestone sections below are unchanged.
+
+The shipped voice path is non-streaming, artifact-backed MiMo cloud ASR plus MiniMax cloud TTS through the authenticated localhost Web surface. The binding landing gates and explicit waiver law for capabilities not shipped in this preview are recorded in [v0.9-deferrals.md](v0.9-deferrals.md).
+<!-- END R0.9-06 CURRENT RELEASE OVERLAY -->
+
 Milestone thesis — what each phase must *prove* (framing adopted from external review):
 **M1 the control plane works · M2 memory and research are trustworthy · M3 the voice is alive · M4 代行 is dependable · M5 hardened v1.0.**
 Debugging tools lead, not trail: the microscope arrives at M1, because agent systems are debugged into existence.

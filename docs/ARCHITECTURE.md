@@ -8,6 +8,32 @@
 
 This document is the system-level view. Each major subsystem has a deep-dive spec in `docs/specs/`; this file defines the boundaries between them, the protocols that connect them, and the concerns that cut across them.
 
+<!-- BEGIN R0.9-06 CURRENT TOPOLOGY OVERLAY -->
+## Current v0.9 topology overlay
+
+Unless a section is explicitly marked current, the architecture diagrams and §5.2 describe the full target architecture. The implemented v0.9 path is:
+
+```text
+authenticated localhost browser
+→ AudioContext PCM capture
+→ complete 16 kHz mono PCM16 WAV
+→ gateway-owned input artifact
+→ supervised MiMo ASR worker
+→ speech.asr.final
+→ existing voice-to-turn path
+→ one TurnRunner
+→ visible final
+→ supervised MiniMax TTS worker
+→ MP3 speech artifact
+→ authenticated browser playback
+→ canonical JSONL replay
+```
+
+Current clients are the CLI and authenticated localhost Web. Desktop tray, IM channels, remote/LAN clients, Opus streaming, partial ASR, VAD/endpointing, Lane A/B, acknowledgement bank, and barge-in are not current capabilities.
+
+Before M5, TypeScript runs source-first. One loopback gateway owns listeners, sessions, artifacts, governed provider supervision, and canonical events; the browser is an authenticated projection rather than a second truth store. Vendor dialects remain contained behind provider-worker boundaries, and neither raw nor base64 audio enters NDJSON or canonical JSONL.
+<!-- END R0.9-06 CURRENT TOPOLOGY OVERLAY -->
+
 ## 1. Architectural principles
 
 1. **OpenAI-format first, vendor-neutral always** (FR-12). One gateway owns all model I/O; the rest of the system sees only normalized events. No package outside `model-gateway` may import a vendor SDK.

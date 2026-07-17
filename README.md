@@ -6,7 +6,9 @@ OpenFairy is a local-first, model-agnostic AI companion runtime. Its gateway uni
 
 ## Current status: OpenFairy v0.9 Developer Preview
 
-This repository is an interviewable developer preview, not a production-ready desktop product. The closed R0.9-02 voice session ledger is **3/20**. R0.9-03+04 bounded workflows and Morning Briefing are deferred; M3-06 faster-whisper local ASR is deferred to full M3/v1.0.
+This repository is an interviewable developer preview, not a production-ready desktop product. R0.9-02 closed with the voice session ledger at **3/20**; the current committed ledger is **4/20**, so S4 remains incomplete. R0.9-03+04 bounded workflows and Morning Briefing are deferred; M3-06 faster-whisper local ASR is gated but deferred to full M3/v1.0.
+
+The [canonical v0.9 tiered plan](docs/v0.9/OpenFairy-v0.9-final-tiered-plan.md) is the single current plan authority. The [v0.9 deferral ledger](docs/v0.9-deferrals.md) records binding named landing gates, expiry conditions, and explicit waiver rules for capabilities outside this preview; it does not authorize their implementation.
 
 ## What is implemented
 
@@ -191,6 +193,8 @@ OpenFairy demonstrates that a voice-enabled assistant can be assembled around ex
 | [Product requirements](docs/PRD.md) | Product intent and non-functional requirements |
 | [Architecture](docs/ARCHITECTURE.md) | System views and responsibility boundaries |
 | [Roadmap](docs/ROADMAP.md) | Milestones and gates |
+| [Canonical v0.9 tiered plan](docs/v0.9/OpenFairy-v0.9-final-tiered-plan.md) | Current release plan and consolidated 60-second PTT contract |
+| [v0.9 deferral ledger](docs/v0.9-deferrals.md) | Binding stable-ID carry-ins, landing gates, and accepted deviations |
 | [Decisions](docs/DECISIONS.md) | Architecture decision records |
 | [Data governance](docs/specs/data-governance.md) | Labels, residency, routing, and egress |
 | [Voice pipeline](docs/specs/voice-pipeline.md) | Voice design and deferred full-M3 targets |

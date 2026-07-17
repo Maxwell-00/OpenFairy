@@ -1,6 +1,6 @@
 # OpenFairy v0.9 Developer Preview — 最终分层交付计划
 
-**状态：** FINAL PLAN  
+**状态：** FINAL PLAN — 60-second PTT contract consolidated; R0.9-06′ release gate in progress
 **基线：** M3-05 已在 `e9e88ec` 关闭；M3-06 faster-whisper 已 gate、未派发  
 **外部名称：** OpenFairy v0.9 Developer Preview  
 **内部名称：** Portfolio Release Track  
@@ -9,6 +9,10 @@
 **本文件取代：**
 - `OpenFairy-v0.9-fastest-product-plan.md`
 - `OpenFairy-v0.9-plus-subagents-plan.md`
+
+**60-second contract provenance：** 原始分层计划采用 90 秒上限；R0.9-02 gate D1 于 2026-07-15 使临时 60 秒 amendment 成为 binding overlay；R0.9-06′ 将该 amendment 的完整约束合并回本文件并删除临时副本。历史 closed review 对临时文件的引用仍是有效历史记录。
+
+**当前 Tier-1 状态：** `R0.9-01 CLOSED` · `R0.9-02 CLOSED` · `R0.9-05′ CLOSED` · `R0.9-06′ release gate in progress until primary review and countersign`。本 release overlay 不完成 M3、M4、M5 或 v1.0。
 
 ---
 
@@ -233,7 +237,7 @@ Tier 1 支持：
 - WAV；
 - MP3。
 
-**（gate 决断，2026-07-13）WebM 永不进入 artifact store，transcoder 永不建设。** 原因：Chrome/Edge 的 `MediaRecorder` 默认产出 webm/opus，而 MiMo 只收 wav/mp3——若把格式决定推迟到 R0.9-02，冲刺中期必然撞上"要么引入 ffmpeg 转码（违反本节禁令）、要么改 provider"的两难。裁决：**R0.9-02 在浏览器端直接产出 WAV**（`AudioContext` 采集 PCM 后 JS 端编码 WAV，或等价的 PCM 录制路径；实现由 R0.9-02 brief 定，约 50 行无依赖代码）。Push-to-talk 时长上限由 MiMo 的 10 MB base64 限制反推：16-bit 16 kHz 单声道 WAV ≈ 每秒 32 KB，raw ≤ 7.5 MB ≈ 约 3.9 分钟，远超按键说话需求；R0.9-02 的 UI 录音上限取 90 秒。artifact MIME 集合就此封闭为 WAV + MP3，不再有 R0.9-02 依赖。
+**（gate 决断，2026-07-13；owner 修订，2026-07-15）WebM 永不进入 artifact store，transcoder 永不建设。** 原因：Chrome/Edge 的 `MediaRecorder` 默认产出 webm/opus，而 MiMo 只收 WAV/MP3——若把格式决定推迟到 R0.9-02，冲刺中期必然撞上“要么引入 FFmpeg 转码（违反本节禁令）、要么改 provider”的两难。裁决：**R0.9-02 在浏览器端直接产出 16 kHz、mono、16-bit PCM WAV**（`getUserMedia` + `AudioContext` 采集 PCM、重采样并由 JS 编码 WAV，或 gate 认可的等价无依赖路径）。Push-to-talk 不按 provider 容量取产品上限：**推荐单次说话不超过 30 秒，硬上限为 60 秒，取代此前 90 秒规划值。** 权威时长以重采样后的 PCM sample count 计算：`max_samples = 16000 × 60 = 960000`；固定格式 WAV 的最大长度为 `44 + 960000 × 2 = 1920044` bytes。该值远低于 R0.9-01 的 `7,000,000` raw-byte 上限和 `10,000,000` predicted whole-body 上限。artifact MIME 集合就此封闭为 WAV + MP3，不再有 R0.9-02 格式依赖。
 
 音频：
 
@@ -284,9 +288,11 @@ R0.9-01 必须结算 M3-05 carry-in：
 ### 目标
 
 ```text
-MediaRecorder
-→ stop
-→ complete blob upload
+getUserMedia + AudioContext PCM capture
+→ resample to 16 kHz mono PCM16
+→ encode complete WAV in browser
+→ stop / auto-stop at 60 seconds
+→ authenticated complete-file upload
 → input artifact
 → R0.9-01 ASR
 → TurnRunner
@@ -295,11 +301,50 @@ MediaRecorder
 → browser playback
 ```
 
+### 录音格式与时长裁决
+
+- 浏览器输入固定为 `16 kHz / mono / 16-bit PCM WAV`；
+- 推荐单次说话时长：`≤ 30 秒`；
+- 硬上限：`60 秒`，取代此前 `90 秒`；
+- 权威计量不是 UI timer，而是重采样后的 PCM sample count：
+  - `max_samples = 960000`；
+  - `max_wav_bytes = 1920044`；
+- 50 秒提示“剩余 10 秒”；
+- 55 秒开始明显倒计时；
+- 达到 60 秒时自动停止，并复用正常“stop and send”路径；
+- 页面刷新、关闭或录音异常时丢弃未完成 buffer，不上传残缺 WAV；
+- 该上限是 repository-owned constant，不提供 YAML、CLI、query parameter 或浏览器侧 override。
+
+Gateway 必须独立校验：
+
+- token auth；
+- MIME、WAV magic、PCM format；
+- sample rate、channel、bits per sample；
+- data chunk/sample count；
+- duration `≤ 60 秒`；
+- fixed-format byte size。
+
+超过 60 秒的构造上传必须在 artifact 注册和 provider I/O 前 fail closed：
+
+```text
+artifact created       0
+staged bytes           0
+worker spawn           0
+provider connection    0
+provider request       0
+speech.asr.final       0
+turn.input             0
+model request          0
+```
+
 ### 最小 UI
 
 - new/open session；
 - start recording；
+- elapsed / remaining timer；
+- 50 秒 warning + 55 秒 countdown；
 - stop and send；
+- 60 秒 auto-stop and send；
 - statuses：
   - recording
   - uploading
@@ -319,7 +364,8 @@ MediaRecorder
 - loopback only；
 - gateway token required；
 - no provider secret/name in browser contract；
-- upload MIME/size/magic checks；
+- upload MIME/size/magic/PCM-format/sample-count/duration checks；
+- 超过 60 秒在 artifact 注册和 provider I/O 前 fail closed；
 - artifact fetch 做 auth、kind、MIME、ownership 检查；
 - no arbitrary artifact path/directory listing；
 - no raw audio in JSONL。
@@ -340,6 +386,9 @@ MediaRecorder
 
 - Windows Chrome/Edge；
 - one bilingual voice turn；
+- manual stop below 60 seconds；
+- exact 60-second auto-stop uses the same send path；
+- constructed over-60-second upload fails with zero artifact/provider/turn/model activity；
 - MP3 auto-play；
 - local stop；
 - reload 后 history/replay；

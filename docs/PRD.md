@@ -7,6 +7,22 @@
 | Owner | Maxwell |
 | Related | [ARCHITECTURE.md](ARCHITECTURE.md) · [ROADMAP.md](ROADMAP.md) · [DECISIONS.md](DECISIONS.md) |
 
+<!-- BEGIN R0.9-06 CURRENT IMPLEMENTATION OVERLAY -->
+## Current implementation overlay — v0.9 Developer Preview
+
+This overlay describes the current developer preview; the requirements below remain the target product contract.
+
+Implemented now:
+
+- text/session/replay spine with append-only JSONL;
+- governance, labels, memory/research primitives, and the sandbox/tool path;
+- non-streaming MiMo complete-file ASR and MiniMax MP3 TTS behind supervised workers;
+- authenticated localhost Web push-to-talk;
+- doctor, the source-first one-command dev launcher, and three bounded demo scenarios.
+
+Still target-state: streaming voice, VAD/endpointing, Lane A/B, acknowledgement bank, barge-in, local ASR, tray/IM clients, subagents, workflows/scheduler, installer/product packaging, production hardening, and v1.0 metrics. Their binding landing gates are in [v0.9-deferrals.md](v0.9-deferrals.md); none is made complete by this overlay.
+<!-- END R0.9-06 CURRENT IMPLEMENTATION OVERLAY -->
+
 ## 1. Vision
 
 Build a **personal AI companion** with the capability profile of Fairy from *Zenless Zone Zero*: always reachable, fast enough to talk to, deeply informed about its user, able to act in the real (digital) world — and with a personality you'd miss if it were gone.
