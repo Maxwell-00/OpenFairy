@@ -1,4 +1,4 @@
-import { spawnSync } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { createServer as createHttpServer, type RequestListener, type Server as HttpServer } from "node:http";
 import { mkdir, mkdtemp, readFile, readdir, rm, symlink, writeFile } from "node:fs/promises";
@@ -592,6 +592,81 @@ describe("developer-preview.launch-v0", () => {
       expect(reused).toMatchObject({ gateway: "reused", ok: true, portReleased: false });
       expect(spawned).toBe(0);
       expect((await fetch(`http://127.0.0.1:${healthy.port}/health`)).status).toBe(200);
+
+      let stdout = "";
+      let stderr = "";
+      const cli = spawn(process.execPath, [
+        "--import",
+        "tsx",
+        "apps/cli/src/bin/fairy.ts",
+        "dev",
+        "--config",
+        harness.configPath,
+        "--data-dir",
+        harness.dataDir,
+        "--port",
+        String(healthy.port),
+        "--no-open"
+      ], {
+        cwd: repoRoot,
+        env: harness.env,
+        shell: false,
+        stdio: ["ignore", "pipe", "pipe"],
+        windowsHide: true
+      });
+      let ready = false;
+      let resolveReady: (() => void) | undefined;
+      let rejectReady: ((error: Error) => void) | undefined;
+      const readyOutput = new Promise<void>((resolvePromise, reject) => {
+        resolveReady = resolvePromise;
+        rejectReady = reject;
+      });
+      const outputDeadline = setTimeout(() => rejectReady?.(new Error("reused CLI did not reach bounded readiness output")), 3_500);
+      const observeOutput = (): void => {
+        if (!ready && stdout.includes("Gateway: REUSED") && stdout.includes("Press Ctrl+C to stop this launcher")) {
+          ready = true;
+          clearTimeout(outputDeadline);
+          resolveReady?.();
+        }
+      };
+      cli.stdout.on("data", (chunk) => {
+        stdout += String(chunk);
+        observeOutput();
+      });
+      cli.stderr.on("data", (chunk) => {
+        stderr += String(chunk);
+      });
+      const cliExit = new Promise<{ readonly code: number | null; readonly signal: NodeJS.Signals | null }>((resolvePromise) => {
+        cli.once("exit", (code, signal) => {
+          if (!ready) {
+            clearTimeout(outputDeadline);
+            rejectReady?.(new Error(`reused CLI exited before observation: code=${String(code)} signal=${String(signal)}`));
+          }
+          resolvePromise({ code, signal });
+        });
+      });
+      try {
+        await readyOutput;
+        await new Promise((resolvePromise) => setTimeout(resolvePromise, 200));
+        expect(cli.exitCode).toBeNull();
+        expect(cli.signalCode).toBeNull();
+        expect(stdout).toContain("Gateway: REUSED");
+        expect(stdout).toContain("Press Ctrl+C to stop this launcher");
+        expect(stdout).not.toMatch(/Gateway: STARTED|Fairy gateway listening|gateway\.started|Browser:/);
+        expect(stderr).not.toMatch(/unsettled top-level await/i);
+        expect(await probeGatewayPort(healthy.port)).toBe("fairy-running");
+        expect(cli.kill("SIGTERM")).toBe(true);
+        await cliExit;
+        expect(cli.exitCode !== null || cli.signalCode !== null).toBe(true);
+        expect(stderr).not.toMatch(/unsettled top-level await/i);
+        expect(await probeGatewayPort(healthy.port)).toBe("fairy-running");
+      } finally {
+        clearTimeout(outputDeadline);
+        if (cli.exitCode === null && cli.signalCode === null) {
+          cli.kill("SIGKILL");
+          await cliExit;
+        }
+      }
     } finally {
       await closeHttp(healthy.server);
     }

@@ -1,6 +1,7 @@
 import { spawn, spawnSync, type ChildProcess } from "node:child_process";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { MessageChannel } from "node:worker_threads";
 
 import {
   evaluateReadiness,
@@ -148,6 +149,32 @@ const aborted = (signal: AbortSignal): Promise<void> => {
     return Promise.resolve();
   }
   return new Promise((resolvePromise) => signal.addEventListener("abort", () => resolvePromise(), { once: true }));
+};
+
+const abortedWithKeepAlive = (signal: AbortSignal): Promise<void> => {
+  if (signal.aborted) {
+    return Promise.resolve();
+  }
+  return new Promise((resolvePromise, reject) => {
+    const keepAlive = new MessageChannel();
+    const close = (): void => {
+      signal.removeEventListener("abort", onAbort);
+      keepAlive.port1.close();
+      keepAlive.port2.close();
+    };
+    const onAbort = (): void => {
+      close();
+      resolvePromise();
+    };
+    try {
+      keepAlive.port1.on("message", () => undefined);
+      keepAlive.port1.ref();
+      signal.addEventListener("abort", onAbort, { once: true });
+    } catch (error) {
+      close();
+      reject(error);
+    }
+  });
 };
 
 const waitForGateway = async (
@@ -307,7 +334,7 @@ export const runDev = async (options: DevOptions): Promise<DevResult> => {
   }
 
   if (!child) {
-    await aborted(signal);
+    await abortedWithKeepAlive(signal);
     return { browserOpened, doctor: report, gateway, ok: true, portReleased: false };
   }
 
