@@ -1,0 +1,74 @@
+{
+  "checked_at_utc": "2026-07-17T07:19:25.1152566Z",
+  "commit": "3337cbed7447e0a8755c3eeb8ef1bffd031d6dfb",
+  "status": "pass",
+  "doctor_ok": true,
+  "checks": [
+    {
+      "id": "runtime.node",
+      "status": "pass"
+    },
+    {
+      "id": "runtime.pnpm",
+      "status": "pass"
+    },
+    {
+      "id": "runtime.python",
+      "status": "pass"
+    },
+    {
+      "id": "config.load",
+      "status": "pass"
+    },
+    {
+      "id": "config.main-role",
+      "status": "pass"
+    },
+    {
+      "id": "config.gateway-auth",
+      "status": "pass"
+    },
+    {
+      "id": "config.speech-asr",
+      "status": "pass"
+    },
+    {
+      "id": "config.speech-tts",
+      "status": "pass"
+    },
+    {
+      "id": "storage.data-dir",
+      "status": "pass"
+    },
+    {
+      "id": "storage.artifacts",
+      "status": "pass"
+    },
+    {
+      "id": "storage.sessions",
+      "status": "pass"
+    },
+    {
+      "id": "network.gateway-port",
+      "status": "pass"
+    },
+    {
+      "id": "runtime.gateway-health",
+      "status": "warn"
+    },
+    {
+      "id": "web.assets",
+      "status": "pass"
+    },
+    {
+      "id": "optional.container-runtime",
+      "status": "pass"
+    },
+    {
+      "id": "optional.research",
+      "status": "warn"
+    }
+  ],
+  "speech_worker_delta": 0,
+  "provider_request_count": 0
+}

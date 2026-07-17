@@ -1,0 +1,14 @@
+{
+  "checked_at_utc": "2026-07-17T07:16:45.6041371Z",
+  "commit": "3337cbed7447e0a8755c3eeb8ef1bffd031d6dfb",
+  "status": "pass",
+  "session_id": "ses_01KXQEMHBTW3CQC470W1D0331N",
+  "canonical_replay": true,
+  "memory_gate_decision_count": 2,
+  "tool_call_count": 0,
+  "tool_result_count": 0,
+  "research_source_count": 0,
+  "research_citation_count": 0,
+  "hidden_reasoning_claimed": false,
+  "input_class": "bounded_non_sensitive_demo"
+}

@@ -1,0 +1,22 @@
+{
+  "checked_at_utc": "2026-07-17T07:19:49.1965677Z",
+  "commit": "3337cbed7447e0a8755c3eeb8ef1bffd031d6dfb",
+  "actions_run": 29546014727,
+  "status": "pass",
+  "doctor_provider_zero": "pass",
+  "dev_owned": "pass",
+  "dev_reused": "pass",
+  "normal_voice": "pass",
+  "real_voice_session_count": 2,
+  "successful_normal_voice_session_count": 1,
+  "accidental_complete_voice_attempt_count": 1,
+  "accidental_attempt_reason": "first attempt repeated because microphone state was incorrect",
+  "synthetic_secret_denial": "pass",
+  "memory_research_replay": "pass",
+  "screenshot_count": 3,
+  "leakage_scan": "pass",
+  "process_residue": 0,
+  "audio_committed": 0,
+  "s4_ledger": "4/20",
+  "r09_03_04": "deferred"
+}

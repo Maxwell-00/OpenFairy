@@ -1,0 +1,19 @@
+{
+  "checked_at_utc": "2026-07-17T07:18:28.1583048Z",
+  "commit": "3337cbed7447e0a8755c3eeb8ef1bffd031d6dfb",
+  "status": "pass",
+  "findings": {
+    "authorization_header": false,
+    "api_key_header": false,
+    "token_query": false,
+    "audio_data_url": false,
+    "long_base64": false,
+    "windows_user_path": false,
+    "unix_home_path": false
+  },
+  "generated_audio_in_docs": 0,
+  "gateway_process_residue": 0,
+  "speech_worker_process_residue": 0,
+  "gateway_port_available": true,
+  "screenshot_pixel_scan": "owner-confirmed"
+}

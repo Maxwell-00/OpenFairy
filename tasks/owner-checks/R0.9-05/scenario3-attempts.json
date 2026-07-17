@@ -1,0 +1,12 @@
+{
+  "checked_at_utc": "2026-07-17T07:12:21.9471425Z",
+  "commit": "3337cbed7447e0a8755c3eeb8ef1bffd031d6dfb",
+  "status": "recovered",
+  "failed_session_id": "ses_01KXQE8T9SF5CPZM6EKAS0S47C",
+  "successful_session_id": "ses_01KXQEMHBTW3CQC470W1D0331N",
+  "failure_class": "local_deterministic_main_model_fetch_failed",
+  "recovery": "refresh_local_mock_base_url_and_restart_gateway",
+  "public_model_provider_request_count": 0,
+  "speech_provider_request_count": 0,
+  "scenario_retried": true
+}

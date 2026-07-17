@@ -1,0 +1,16 @@
+{
+  "checked_at_utc": "2026-07-17T03:04:29.9795165Z",
+  "commit": "3337cbed7447e0a8755c3eeb8ef1bffd031d6dfb",
+  "actions_run": 29546014727,
+  "status": "pass",
+  "gateway_mode": "reused",
+  "dev_spawned_gateway": false,
+  "dev_browser_opened": false,
+  "launcher_remained_alive_until_ctrl_c": true,
+  "manual_ctrl_c_observed": true,
+  "unsettled_top_level_await_warning": false,
+  "pnpm_wrapper_exit_code": 1,
+  "pnpm_wrapper_exit_code_interpretation": "expected signal fallback from scripts/run-cli.mjs",
+  "launcher_process_residue": 0,
+  "original_gateway_alive_after_dev_exit": true
+}
