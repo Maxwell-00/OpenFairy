@@ -132,7 +132,7 @@ This walkthrough demonstrates the implemented path; it does not claim ASR accura
 
 Run Scenario 2 from a clean shell. If Scenario 1 enabled real speech providers, stop that dev launcher, clear both owner-live flags with the cleanup commands above, and restart dev from the clean shell before running the synthetic denial procedure.
 
-Use the [three-minute script](docs/demo/v0.9-demo-script.md) and [interview summary](docs/demo/interview-project-summary.md). Screenshot capture remains an owner gate:
+Use the [three-minute script](docs/demo/v0.9-demo-script.md) and [interview summary](docs/demo/interview-project-summary.md). The completed countersigned owner screenshots are:
 
 ![Doctor PASS owner capture](docs/demo/assets/01-doctor-pass.png)
 ![Web voice round-trip owner capture](docs/demo/assets/02-web-voice-roundtrip.png)
