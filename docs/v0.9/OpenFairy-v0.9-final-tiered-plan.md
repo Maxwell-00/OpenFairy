@@ -1,6 +1,6 @@
 # OpenFairy v0.9 Developer Preview — 最终分层交付计划
 
-**状态：** FINAL PLAN — 60-second PTT contract consolidated; R0.9-06′ release gate in progress
+**状态：** FINAL PLAN — 60-second PTT contract consolidated; R0.9-06′ closed with Fable countersign — Tier 1 COMPLETE (v0.9 Developer Preview)
 **基线：** M3-05 已在 `e9e88ec` 关闭；M3-06 faster-whisper 已 gate、未派发  
 **外部名称：** OpenFairy v0.9 Developer Preview  
 **内部名称：** Portfolio Release Track  
@@ -12,7 +12,7 @@
 
 **60-second contract provenance：** 原始分层计划采用 90 秒上限；R0.9-02 gate D1 于 2026-07-15 使临时 60 秒 amendment 成为 binding overlay；R0.9-06′ 将该 amendment 的完整约束合并回本文件并删除临时副本。历史 closed review 对临时文件的引用仍是有效历史记录。
 
-**当前 Tier-1 状态：** `R0.9-01 CLOSED` · `R0.9-02 CLOSED` · `R0.9-05′ CLOSED` · `R0.9-06′ release gate in progress until primary review and countersign`。本 release overlay 不完成 M3、M4、M5 或 v1.0。
+**当前 Tier-1 状态：** `R0.9-01 CLOSED` · `R0.9-02 CLOSED` · `R0.9-05′ CLOSED` · `R0.9-06′ ACCEPTED WITH NOTES / CLOSED (Fable countersign 2026-07-18)` — **Tier 1 COMPLETE**。本 release overlay 不完成 M3、M4、M5 或 v1.0。
 
 ---
 

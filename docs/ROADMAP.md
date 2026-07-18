@@ -5,7 +5,7 @@ Milestones are gates, not dates: each has exit criteria (suites named in [specs/
 <!-- BEGIN R0.9-06 CURRENT RELEASE OVERLAY -->
 ## Current release overlay — OpenFairy v0.9 Developer Preview
 
-R0.9 is a release overlay, not a milestone renumbering. R0.9-01, R0.9-02, and R0.9-05′ are closed; R0.9-06′ remains the release gate until review and countersign. The real-session S4 ledger is currently **4/20** and incomplete. Full M3, M4, and M5 exits remain open, and the target-state milestone sections below are unchanged.
+R0.9 is a release overlay, not a milestone renumbering. R0.9-01, R0.9-02, R0.9-05′, and the R0.9-06′ release gate are closed with Fable countersign — Tier 1 of the v0.9 Developer Preview is complete. The real-session S4 ledger is currently **4/20** and incomplete. Full M3, M4, and M5 exits remain open, and the target-state milestone sections below are unchanged.
 
 The shipped voice path is non-streaming, artifact-backed MiMo cloud ASR plus MiniMax cloud TTS through the authenticated localhost Web surface. The binding landing gates and explicit waiver law for capabilities not shipped in this preview are recorded in [v0.9-deferrals.md](v0.9-deferrals.md).
 <!-- END R0.9-06 CURRENT RELEASE OVERLAY -->

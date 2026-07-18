@@ -889,7 +889,8 @@ describe("developer-preview.launch-v0", () => {
     ]) {
       expect(canonicalPlan).toContain(contract);
     }
-    expect(canonicalPlan).toContain("R0.9-06′ release gate in progress until primary review and countersign");
+    expect(canonicalPlan).toContain("R0.9-06′ ACCEPTED WITH NOTES / CLOSED (Fable countersign 2026-07-18)");
+    expect(canonicalPlan).toContain("Tier 1 COMPLETE");
     // Release policy 10: the temporary amendment cannot survive consolidation.
     await expect(readFile(join(repoRoot, "docs/v0.9/OpenFairy-v0.9-final-tiered-plan-60s-amended.md"), "utf8")).rejects.toMatchObject({ code: "ENOENT" });
 
